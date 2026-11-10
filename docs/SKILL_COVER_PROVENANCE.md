@@ -8,12 +8,11 @@
 
 这些场景实际通过已配置的 Muse 服务生成，非 `image_gen` 工具产物。共提交3个独立异步图像任务，每张原图包含4个不同场景；均为2048×1152 WebP，经目检后按实际场景边界分别裁切、缩放为12张960×540 WebP，当前合计624,102字节。第三张原图的左右分界高度不同，已按实际画面分别处理；分镜组图采用留边保留三个镜头。没有将一次生成的相同肖像裁成不同技能封面。
 
-精确提示词与完整原图：
+完整原图、提示词与裁切清单单独留存，不随源码分发。三组场景分别为：
 
-- [第一组提示词](../artifacts/skill-cover-refresh/prompt-a.txt) · [原图A](../artifacts/skill-cover-refresh/sheet-a.webp)：产品广告、角色设计、电影运镜、电影特效。
-- [第二组提示词](../artifacts/skill-cover-refresh/prompt-b.txt) · [原图B](../artifacts/skill-cover-refresh/sheet-b.webp)：打斗技巧、科普概念、绘本、空间。
-- [第三组提示词](../artifacts/skill-cover-refresh/prompt-c.txt) · [原图C](../artifacts/skill-cover-refresh/sheet-c.webp)：图生视频、文生图、分镜、汽车导演。
-- [逐文件尺寸、裁切坐标、大小与SHA-256](../artifacts/skill-cover-refresh/cover-manifest.json)。
+- 第一组：产品广告、角色设计、电影运镜、电影特效。
+- 第二组：打斗技巧、科普概念、绘本、空间。
+- 第三组：图生视频、文生图、分镜、汽车导演。
 
 人物均按虚构成年人设定生成；封面为创作示例，不代表相应技能已经生成同等视频或支持所有表现效果。个人导入的其他技能使用按名称与来源标识生成的本地题签，不再误用文生图封面，不自动产生新的模型请求。旧版原图和裁切文件保留供已有素材记录及历史核验使用。
 
@@ -27,7 +26,7 @@
 
 人物设定是约25岁的虚构成年中国男女，没有提供真实肖像或名人身份。提示词明确要求原创人物、不近似名人或已知真人；此说明记录生成意图和来源，不表示已对所有现存人物做相似度检索。
 
-原始文件：[original-skill-cover.webp](../artifacts/muse-provider-check/original-skill-cover.webp)。原图由左侧成年男性、右侧成年女性的独立半身肖像组成，采用自然窗光、暖灰背景；原图目检无文字、标识或水印。
+历史原图 `original-skill-cover.webp` 已单独归档。原图由左侧成年男性、右侧成年女性的独立半身肖像组成，采用自然窗光、暖灰背景；原图目检无文字、标识或水印。
 
 ## 精确原始提示词
 
@@ -56,4 +55,4 @@ Create an original photorealistic cinematic editorial diptych poster with two fi
 | `realistic-character.webp` | `bf692a467a76b1266ab79340edc4597f8ed8095c742879ecd7edd9a194ad4133` |
 | `realistic-director.webp` | `4af3e9fd74da31b2f44fba262aa681098ee2f02c81b8ec91703fc90890350482` |
 
-浏览器显示证据：[Skill 库真人封面](../artifacts/skill-library-realistic-covers.png)。原始服务与协议验证见 [Muse模式与恢复记录](../context/research/2026-11-10-muse-modes-and-recovery.md)。本记录不包含访问密钥、Cookie、账号身份或原始个人诊断内容。
+生成过程与显示核验记录单独归档。本记录不包含访问密钥、Cookie、账号身份或原始个人诊断内容。

@@ -2,9 +2,7 @@
 
 以可编辑 AI 画布组织资料、图片、视频和创作任务，逐步实现从素材到分镜与作品的完整工作流。当前仓库提供独立的 React Web 和 Java API，本地持久化使用 **MySQL＋Redis**。
 
-从 GitHub 克隆后部署到自己的服务器，见 **[自托管部署指南](docs/SELF_HOSTING.md)**：提供生产 Dockerfile、同源 HTTPS 网关、MySQL/Redis 持久卷、随机配置初始化及 GitHub OAuth。GitHub Pages 无法运行本项目的后端与视频处理。生产镜像不包含作者的账号或密钥；本机尚未执行 Docker 冷启动验收。
-
-本轮界面和独立草稿实测见 [验收记录](context/verification/2026-11-10-enterprise-redesign.md)；传智杯赛道、原创要求、评分和提交差距见 [官方标准对照](context/research/2026-11-10-chuanzhi-official-assessment.md)。
+从 GitHub 克隆后部署到自己的服务器，见 **[自托管部署指南](docs/SELF_HOSTING.md)**：提供生产 Dockerfile、同源 HTTPS 网关、MySQL/Redis 持久卷、随机配置初始化及 GitHub OAuth。GitHub Ubuntu CI 已验证生产镜像构建、空卷启动、登录和数据持久化，详见[发布验证](https://github.com/dgasdasd/yingxu-ai-studio/actions/runs/42863488976)。GitHub Pages 无法运行本项目的后端与视频处理。生产镜像不包含作者的账号或密钥；真实生成需自备模型渠道与额度。
 
 ## 当前实现与边界
 
@@ -24,15 +22,15 @@
 - 本地素材保存在专属磁盘目录，访问经过 API 会话授权。画布与科普制作使用独立 MySQL 文档及修订号；科普真实视频合成已实现。对象存储直传、CDN、多实例任务分发与跨实例事件广播仍需后续实现及验证。
 - **尚未完成 5000 人并发压测。** 5000 在线用户、5000 持久连接、1000 次/秒业务请求和 5000 个同时执行的生成任务是不同指标，不能相互替代。
 
-详细接口见 [平台 API](apps/api/API_CONTRACT.md)、[账号池](apps/api/POOL_API_CONTRACT.md)、[个人渠道](apps/api/CHANNEL_API_CONTRACT.md) 和 [科普制作](apps/api/SCIENCE_VIDEO_API_CONTRACT.md)。科普制作的开源参考、固定版本和许可证核查见 [参考分析](context/research/2026-11-10-science-video-references.md)。
+详细接口见 [平台 API](apps/api/API_CONTRACT.md)、[账号池](apps/api/POOL_API_CONTRACT.md)、[个人渠道](apps/api/CHANNEL_API_CONTRACT.md) 和 [科普制作](apps/api/SCIENCE_VIDEO_API_CONTRACT.md)。第三方许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ## 画布源码迁移与构建
 
-画布的 React Web 源码从 [basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas) 的固定版本 [9cd3deacbcc598361807afc16c059a80dd18b6f9](https://github.com/basketikun/infinite-canvas/tree/9cd3deacbcc598361807afc16c059a80dd18b6f9) 迁入 `apps/canvas-engine`，保留上游 MIT 许可，并在此基础上适配平台项目、素材、模型目录、生成任务和保存协议。上游版权为 `Copyright (c) 2026 basketikun`；完整许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 [apps/canvas-engine/LICENSE](apps/canvas-engine/LICENSE)。本机参考克隆已移至项目之外的 `E:/codex/tools/source-references/infinite-canvas-9cd3deac-20261110`，不参与构建；项目中唯一运行的画布源码为 `apps/canvas-engine`。
+画布的 React Web 源码从 [basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas) 的固定版本 [9cd3deacbcc598361807afc16c059a80dd18b6f9](https://github.com/basketikun/infinite-canvas/tree/9cd3deacbcc598361807afc16c059a80dd18b6f9) 迁入 `apps/canvas-engine`，保留上游 MIT 许可，并在此基础上适配平台项目、素材、模型目录、生成任务和保存协议。上游版权为 `Copyright (c) 2026 basketikun`；完整许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 [apps/canvas-engine/LICENSE](apps/canvas-engine/LICENSE)。项目中唯一运行的画布源码为 `apps/canvas-engine`。
 
 子应用由 Vite 构建到 `apps/web/public/canvas-engine`，平台以同源 `/canvas-engine/index.html` iframe 加载。两侧使用检查窗口来源、origin 和项目 scope 的 `postMessage` RPC；平台负责会话、上传、任务与 MySQL 快照，子应用不保存提供方密钥。子应用的 React、样式和状态保持独立，部署时须一同提供 `/canvas-engine/` 静态资源及平台 `/api/`。
 
-迁入原生节点、圆点连线、框内文字、悬浮工具条、分组、素材/提示词面板、小地图与图片裁剪等功能，并补充本地 Muse 定制版的整理布局和多视频合成预览。整理布局保留组内相对位置；合成节点支持按顺序播放、上下排序、入出点、逐段音量，可导出包含真实素材、编排 JSON 和离线播放器的 ZIP，当前不渲染单个 MP4、不混合 BGM。原版独立 Codex/Claude Agent 会话入口由平台 Skill 市场替代。实际交互与持久化证据见 [画布迁移验收记录](context/research/2026-11-10-canvas-migration-verification.md)。
+迁入原生节点、圆点连线、框内文字、悬浮工具条、分组、素材/提示词面板、小地图与图片裁剪等功能，并补充本地 Muse 定制版的整理布局和多视频合成预览。整理布局保留组内相对位置；合成节点支持按顺序播放、上下排序、入出点、逐段音量，可导出包含真实素材、编排 JSON 和离线播放器的 ZIP，当前不渲染单个 MP4、不混合 BGM。原版独立 Codex/Claude Agent 会话入口由平台 Skill 市场替代。
 
 在仓库根目录安装和构建全部前端：
 
@@ -164,22 +162,20 @@ Docker 与本机独立服务默认使用相同端口，不能同时启动；切�
 
 ## 验证与容量验收
 
-2026-11-10 本轮验收记录：
+2026-11-11 本机三轮回归的基线为 `f625abc`；后续修复提交 `ae4011b` 在独立 GitHub Ubuntu 环境完成验证，公开结果见 [GitHub Actions](https://github.com/dgasdasd/yingxu-ai-studio/actions/runs/42863488976)。
 
 | 项目 | 已确认结果 |
 |---|---|
-| 本机运行 | Web `5178`、API `8088` 可用，专属 MySQL＋Redis 正常连接 |
-| Skill 市场 API | 3 项目录、2 项可安装；个人安装关系在 MySQL 持久化，版本检查、移除和权限隔离通过测试 |
-| 本机生成池 | 已接入平台独立账号池；本轮画布验收用户没有可用账号，未提交真实生成 |
-| 后端自动化测试 | 56 项全部通过，包含原生快照往返、修订冲突、首次保存并发及权限隔离 |
-| 前端自动化检查 | 引擎 60 项、平台 Web 33 项测试通过；类型检查及最终生产构建通过 |
-| 原生画布后端 | V5 迁移生效；独立只读核对 9 节点、5 连线、4 份持久化素材及视频编排参数；旧项目未改动 |
-| 运行实例接口验收 | 经 `5178 → 8088` 代理的 8 项检查全部通过，见 [latest-smoke.json](context/verification/latest-smoke.json)；未提交真实生成 |
-| 浏览器验收 | 框内文字、手工圆点连线、裁剪、分组、抓手平移、Skill 创建节点、独立视频入口、整理布局、视频编排连播及刷新恢复通过；截图见画布迁移验收记录 |
+| 本机前端回归 | 三轮各99项通过；画布类型检查与生产构建通过 |
+| 浏览器 worker | 三轮各11项通过 |
+| 部署初始化脚本 | 三轮各7项通过 |
+| 本机后端第三轮 | 报告218项，0失败、0错误，2项按运行条件跳过 |
+| 独立 Ubuntu CI | Web、API、containers 三个任务全部成功；API 使用真实 MySQL 8.4＋Redis 7.4 |
+| 生产容器验证 | 两个镜像构建、中文音频/字体/FFmpeg 检查、空卷启动、经 Nginx 的评审登录、Redis会话、MySQL保存与版本冲突、退出登录通过 |
 
 编排包先点击“导出编排包 ZIP”打包，再点击真实“下载编排包 ZIP”链接；修改编排会使旧链接失效。打包内容已自动化解包核验，但当前内嵌浏览器工具不支持 iframe 内 Blob 下载，未确认实际下载落盘。
 
-真实付费图片／视频生成、真实 GitHub OAuth 登录、最终媒体下载／质量和 5000 人容量验收仍未验证。接口可达、模型发现与健康状态不替代这些验收。
+本机 Muse 动态视频与原声链路已另行验证；CI 不消费模型额度，不承担供应商生成质量验收。上述检查不包含公网域名的 Caddy TLS、真实 GitHub OAuth 回调或5000人并发压测。其他部署仍需使用自己的账号核对模型能力、讲解内容与音画质量；接口可达、模型发现与健康状态不替代这些检查。
 
 常规验证：
 
