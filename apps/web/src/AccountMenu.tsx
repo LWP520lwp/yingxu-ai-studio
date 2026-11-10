@@ -46,7 +46,7 @@ export function AccountMenu({
               {user
                 ? user.provider === "github"
                   ? "GitHub 账户"
-                  : "本机工作空间"
+                  : user.provider === "reviewer" ? "受邀访问账号" : "本机工作空间"
                 : "登录后保存你的创作"}
             </span>
           </Dropdown.Label>
