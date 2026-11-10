@@ -53,7 +53,7 @@ jobs:
       DB_PASSWORD: ci-test-password-only
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: '6379'
-      APP_STORAGE_ROOT: ${{ runner.temp }}/workbench-assets
+      APP_STORAGE_ROOT: ./data/ci-assets
       APP_SCHEDULER_ENABLED: 'false'
       SCIENCE_TTS_PROVIDER: espeak
       SCIENCE_TTS_ESPEAK_SMOKE: 'true'
