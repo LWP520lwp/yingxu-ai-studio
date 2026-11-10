@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "image-to-video",
+  "name": "图片转视频",
+  "implementation": "supported-api",
+  "description": "将平台已有图片资产作为视频参考。须检查所选模型确实支持参考图片，不能将已上传等同于上游已支持。",
+  "requiredInputs": ["projectId", "nodeId", "sourceImageAssetId", "prompt", "model", "idempotencyKey"],
+  "request": {
+    "method": "POST",
+    "path": "/api/jobs",
+    "authentication": "platform-session",
+    "headers": {"Idempotency-Key": "{{idempotencyKey}}"},
+    "body": {
+      "projectId": "{{projectId}}",
+      "nodeId": "{{nodeId}}",
+      "kind": "video",
+      "prompt": "{{prompt}}",
+      "model": "{{model}}",
+      "width": 1280,
+      "height": 720,
+      "duration": 5,
+      "referenceAssetIds": ["{{sourceImageAssetId}}"]
+    }
+  },
+  "resultHandling": "query-existing-job-then-revision-checked-candidate-application",
+  "secrets": "server-only"
+}

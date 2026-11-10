@@ -1,0 +1,7 @@
+# Keep container entrypoints executable on Linux after a Windows checkout/build context.
+/deploy/*.sh text eol=lf
+/deploy/Dockerfile.* text eol=lf
+/deploy/Caddyfile text eol=lf
+/deploy/*.conf text eol=lf
+/compose*.yaml text eol=lf
+/.github/workflows/*.yml text eol=lf

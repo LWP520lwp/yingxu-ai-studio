@@ -1,0 +1,137 @@
+name: yingshu-studio
+
+services:
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN with scripts/init-deployment.mjs}
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+      - '${HTTPS_PORT:-443}:443/udp'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [frontend]
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [frontend, application]
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+      target: runtime
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      APP_PROFILE: prod
+      APP_BIND_ADDRESS: 0.0.0.0
+      APP_PORT: 8088
+      APP_STORAGE_ROOT: /var/lib/workbench/assets
+      FRONTEND_URL: ${APP_PUBLIC_ORIGIN:?Set the public HTTPS origin}
+      SESSION_COOKIE_SECURE: 'true'
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-}
+      REVIEWER_USERNAME: ${REVIEWER_USERNAME:-}
+      REVIEWER_PASSWORD_HASH: ${REVIEWER_PASSWORD_HASH:-}
+      REVIEWER_DISPLAY_NAME: ${REVIEWER_DISPLAY_NAME:-作品评审}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: workbench
+      DB_USERNAME: workbench
+      DB_PASSWORD: ${DB_PASSWORD:?Generate a unique database password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Generate a unique Redis password}
+      POOL_CREDENTIAL_MASTER_KEY: ${POOL_CREDENTIAL_MASTER_KEY:?Generate a stable independent encryption key}
+      APP_WORKER_CONCURRENCY: ${APP_WORKER_CONCURRENCY:-2}
+      APP_SSE_MAX_CONNECTIONS: ${APP_SSE_MAX_CONNECTIONS:-10000}
+      APP_SSE_MAX_CONNECTIONS_PER_USER: ${APP_SSE_MAX_CONNECTIONS_PER_USER:-8}
+      POOL_OVERVIEW_ENABLED: 'false'
+      MUSE_LOCAL_KEY_ENABLED: 'false'
+      BROWSER_INTERACTIVE_LOGIN_ENABLED: 'false'
+      MUSE_BASE_URL: ${MUSE_BASE_URL:-https://api.example.invalid}
+      MUSE_API_KEY: ${MUSE_API_KEY:-}
+      MUSE_MEDIA_ALLOWED_HOSTS: ${MUSE_MEDIA_ALLOWED_HOSTS:-}
+      SCIENCE_TTS_PROVIDER: espeak
+      SCIENCE_ESPEAK_BIN: /usr/bin/espeak-ng
+    volumes:
+      - media:/var/lib/workbench
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [application, database]
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: workbench
+      MYSQL_USER: workbench
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Generate a unique database password}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Generate a separate database root password}
+    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_0900_ai_ci, --local-infile=0]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: [CMD-SHELL, 'MYSQL_PWD=$$MYSQL_PASSWORD mysql --host=127.0.0.1 --user=$$MYSQL_USER --database=$$MYSQL_DATABASE --silent --execute="SELECT 1" >/dev/null']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    networks: [database]
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    user: redis
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Generate a unique Redis password}
+    command: [sh, -ec, 'exec redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction --requirepass "$$REDIS_PASSWORD"']
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [database]
+
+networks:
+  frontend:
+  application:
+  database:
+    internal: true
+
+volumes:
+  mysql-data:
+  redis-data:
+  media:
+  caddy-data:
+  caddy-config:
+

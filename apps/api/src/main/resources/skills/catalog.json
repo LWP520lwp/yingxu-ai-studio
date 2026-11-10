@@ -1,0 +1,910 @@
+[
+  {
+    "id": "image-create",
+    "name": "文生图",
+    "description": "把创作提示词生成图片素材，支持已有图片参考；生成结果作为画布候选素材，模型可用性取决于服务端配置。",
+    "category": "图像创作",
+    "capability": "image",
+    "status": "available",
+    "recipeVersion": "1.0.0",
+    "tags": [
+      "图片",
+      "素材",
+      "参考图"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "nodeId",
+        "prompt"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "当前用户拥有的已保存项目"
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "title": "创作提示词"
+        },
+        "model": {
+          "type": "string",
+          "default": "muse-image",
+          "maxLength": 120
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "image",
+      "authentication": "platform-session",
+      "requiredHeaders": [
+        "X-Workbench-Request: 1",
+        "Idempotency-Key"
+      ],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "automaticExecutionOnInstall": false
+    }
+  },
+  {
+    "id": "image-to-video",
+    "name": "图生视频",
+    "description": "以已有图片素材规划动态镜头，调用平台视频任务。首尾参考帧是否可用取决于所选模型，结果需人工预览确认。",
+    "category": "动态镜头",
+    "capability": "video",
+    "status": "available",
+    "recipeVersion": "1.0.0",
+    "tags": [
+      "视频",
+      "参考帧",
+      "镜头"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "nodeId",
+        "prompt",
+        "referenceAssetIds"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "title": "镜头描述"
+        },
+        "model": {
+          "type": "string",
+          "default": "muse-video",
+          "maxLength": 120
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1280
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 720
+        },
+        "duration": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20,
+          "default": 5
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "当前用户拥有的图片资产，最多首尾两帧"
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "video",
+      "authentication": "platform-session",
+      "requiredHeaders": [
+        "X-Workbench-Request: 1",
+        "Idempotency-Key"
+      ],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "referenceSupportMustBeConfirmed": true,
+      "automaticExecutionOnInstall": false
+    }
+  },
+  {
+    "id": "fight-video",
+    "name": "打斗技巧",
+    "description": "将文字情节转成动作镜头提示词，梳理人物站位、攻防节奏和镜头连续性，在画布中生成视频候选。",
+    "category": "动作设计",
+    "capability": "video",
+    "status": "available",
+    "recipeVersion": "1.0.1",
+    "tags": [
+      "打斗技巧",
+      "动作",
+      "分镜",
+      "文字生视频"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "nodeId",
+        "prompt"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "title": "动作情节",
+          "default": "请在这里填写人物、环境和动作情节。生成一个8秒影视动作镜头，先交代人物站位，按试探、攻防、收势推进。保持角色外观、左右位置与运动方向一致，动作有清楚的起势、接触和反应；镜头优先中景或全景，减少突兀切换。不出现血腥细节或伤口特写。"
+        },
+        "model": {
+          "type": "string",
+          "default": "muse-video",
+          "maxLength": 120
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1280
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 720
+        },
+        "duration": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20,
+          "default": 8
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "video",
+      "authentication": "platform-session",
+      "requiredHeaders": [
+        "X-Workbench-Request: 1",
+        "Idempotency-Key"
+      ],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "referenceSupportMustBeConfirmed": false,
+      "sourceTextRequired": true,
+      "promptTemplate": "请将以下情节设计成一个短片中的连贯影视动作镜头。\n\n【用户情节】\n{{text}}\n\n【动作与分镜约束】\n先交代环境、人物身份与站位，在所选时长内按试探、攻防、收势推进，聚焦一组清楚的动作因果，不堆叠过多动作。每个动作有起势、接触或避让、反应，人物肢体自然，空间距离可信。保持角色外观、左右位置、道具与运动方向一致。优先中景或全景展示完整动作，镜头平稳跟随，避免无因跳切、人物瞬移和道具凭空出现。不增加原文没有的角色或改变情节结果。采用影视编排表现，不出现血腥细节、伤口特写或断肢。",
+      "automaticExecutionOnInstall": false
+    }
+  },
+  {
+    "id": "storyboard-to-video",
+    "name": "分镜到视频",
+    "description": "多镜头、旁白、字幕和成片导出的流程规划。目前仅有单镜头图片和视频任务，完整合成尚未实现。",
+    "category": "作品合成",
+    "capability": "composition",
+    "status": "planned",
+    "recipeVersion": "0.1.0",
+    "tags": [
+      "分镜",
+      "合成",
+      "规划中"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "scenes"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scenes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "required": [
+              "nodeId",
+              "prompt"
+            ],
+            "properties": {
+              "nodeId": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "duration": {
+                "type": "number",
+                "minimum": 2,
+                "maximum": 20
+              }
+            }
+          }
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "planned-composition",
+      "steps": [
+        "prepare-storyboard",
+        "generate-scene-candidates",
+        "review-candidates",
+        "assemble-narration-captions-and-export"
+      ],
+      "execution": "description-only-no-batch-or-composition-endpoint",
+      "automaticExecutionOnInstall": false
+    }
+  },
+  {
+    "id": "product-shot",
+    "name": "产品质感广告",
+    "description": "围绕一个产品卖点设计短广告镜头，用光线、材质和克制运镜突出主体。",
+    "category": "商业广告",
+    "capability": "video",
+    "status": "available",
+    "recipeVersion": "1.0.0",
+    "tags": [
+      "产品",
+      "广告",
+      "材质",
+      "灯光"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "nodeId",
+        "prompt"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "title": "创作内容",
+          "default": "请填写产品外形、材质、核心卖点与希望呈现的使用场景。\n\n将以下内容设计为单个产品广告镜头。保持产品轮廓、标志位置、包装比例与参考一致，不添加不存在的功效或宣传数据。先用稳定构图建立主体，用柔和侧逆光表现材质，再以一次缓慢推进或小幅环绕展示一个卖点；主体清晰，背景克制，不增加无关道具或复杂转场。避免生成长段文字，品牌文字可在后期另行叠加。"
+        },
+        "model": {
+          "type": "string",
+          "default": "muse-video",
+          "maxLength": 120
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1280
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 720
+        },
+        "duration": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20,
+          "default": 8
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "video",
+      "authentication": "platform-session",
+      "requiredHeaders": [
+        "X-Workbench-Request: 1",
+        "Idempotency-Key"
+      ],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "referenceSupportMustBeConfirmed": false,
+      "sourceTextRequired": false,
+      "promptTemplate": "【创作内容】\n{{text}}\n\n【创作方法】\n将以下内容设计为单个产品广告镜头。保持产品轮廓、标志位置、包装比例与参考一致，不添加不存在的功效或宣传数据。先用稳定构图建立主体，用柔和侧逆光表现材质，再以一次缓慢推进或小幅环绕展示一个卖点；主体清晰，背景克制，不增加无关道具或复杂转场。避免生成长段文字，品牌文字可在后期另行叠加。",
+      "automaticExecutionOnInstall": false
+    }
+  },
+  {
+    "id": "character-sheet",
+    "name": "角色造型设定",
+    "description": "把角色文字设定整理成同一角色的服装、轮廓与色彩参考图。",
+    "category": "角色设计",
+    "capability": "image",
+    "status": "available",
+    "recipeVersion": "1.0.0",
+    "tags": [
+      "角色",
+      "服装",
+      "设定图",
+      "游戏"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "nodeId",
+        "prompt"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "当前用户拥有的已保存项目"
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "title": "创作内容",
+          "default": "请填写角色年龄、身份、服装轮廓、配色与性格特征。\n\n根据以下设定生成一张角色造型参考图。采用干净中性背景，展示同一角色的正面全身为主、侧面与背面为辅；面部、发型、服装结构、身高比例和配色保持一致。视觉重点是可辨识轮廓和服饰层次，减少装饰噪声。不要把不同视角画成不同人物，不添加原文没有的武器。参考图的精确多视图一致性仍需人工检查。"
+        },
+        "model": {
+          "type": "string",
+          "default": "muse-image",
+          "maxLength": 120
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "image",
+      "authentication": "platform-session",
+      "requiredHeaders": [
+        "X-Workbench-Request: 1",
+        "Idempotency-Key"
+      ],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "automaticExecutionOnInstall": false,
+      "promptTemplate": "【创作内容】\n{{text}}\n\n【创作方法】\n根据以下设定生成一张角色造型参考图。采用干净中性背景，展示同一角色的正面全身为主、侧面与背面为辅；面部、发型、服装结构、身高比例和配色保持一致。视觉重点是可辨识轮廓和服饰层次，减少装饰噪声。不要把不同视角画成不同人物，不添加原文没有的武器。参考图的精确多视图一致性仍需人工检查。",
+      "sourceTextRequired": false
+    }
+  },
+  {
+    "id": "cinema-camera",
+    "name": "电影感运镜",
+    "description": "用一个明确的镜头动作组织场景，控制景别、视线、空间与运动方向。",
+    "category": "影视镜头",
+    "capability": "video",
+    "status": "available",
+    "recipeVersion": "1.0.0",
+    "tags": [
+      "运镜",
+      "电影",
+      "镜头",
+      "空间"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "nodeId",
+        "prompt"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "title": "创作内容",
+          "default": "请填写主体、地点、时间、情绪，以及希望采用的推进、跟随或环绕运镜。\n\n将以下场景设计为一个连续影视镜头。在推进、跟随、环绕中选择最符合叙事情绪的一种，不堆叠多个复杂镜头。开头建立主体和环境，保持轴线、视线和运动方向一致，镜头速度平稳；前景、中景、背景层次清楚。角色外观、光线方向与场景布局在全程保持稳定。无需跳切，不凭空出现人物或物体。"
+        },
+        "model": {
+          "type": "string",
+          "default": "muse-video",
+          "maxLength": 120
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1280
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 720
+        },
+        "duration": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20,
+          "default": 8
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "video",
+      "authentication": "platform-session",
+      "requiredHeaders": [
+        "X-Workbench-Request: 1",
+        "Idempotency-Key"
+      ],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "referenceSupportMustBeConfirmed": false,
+      "sourceTextRequired": false,
+      "promptTemplate": "【创作内容】\n{{text}}\n\n【创作方法】\n将以下场景设计为一个连续影视镜头。在推进、跟随、环绕中选择最符合叙事情绪的一种，不堆叠多个复杂镜头。开头建立主体和环境，保持轴线、视线和运动方向一致，镜头速度平稳；前景、中景、背景层次清楚。角色外观、光线方向与场景布局在全程保持稳定。无需跳切，不凭空出现人物或物体。",
+      "automaticExecutionOnInstall": false
+    }
+  },
+  {
+    "id": "science-visual",
+    "name": "科普概念可视化",
+    "description": "把一个科学概念转成便于后续讲解的配图，突出结构、比例与因果关系。",
+    "category": "教育科普",
+    "capability": "image",
+    "status": "available",
+    "recipeVersion": "1.0.0",
+    "tags": [
+      "科普",
+      "教学",
+      "结构",
+      "科学"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "nodeId",
+        "prompt"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "当前用户拥有的已保存项目"
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "title": "创作内容",
+          "default": "请填写一个科学概念、目标观众与必须准确表达的结构或因果关系。\n\n将以下科学概念转成一张用于讲解的视觉配图。仅表达一个核心概念，以主体、对比或剖面表现结构与因果，使用克制且一致的色彩区分关键部分。忠于提供的事实，不虚构数据，不混淆宏观与微观尺度；抽象示意应明确采用示意风格。尽量避免小字、复杂公式和自动生成的文字标签。输出是待核对的候选配图，知识准确性需人工复核。"
+        },
+        "model": {
+          "type": "string",
+          "default": "muse-image",
+          "maxLength": 120
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "image",
+      "authentication": "platform-session",
+      "requiredHeaders": [
+        "X-Workbench-Request: 1",
+        "Idempotency-Key"
+      ],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "automaticExecutionOnInstall": false,
+      "promptTemplate": "【创作内容】\n{{text}}\n\n【创作方法】\n将以下科学概念转成一张用于讲解的视觉配图。仅表达一个核心概念，以主体、对比或剖面表现结构与因果，使用克制且一致的色彩区分关键部分。忠于提供的事实，不虚构数据，不混淆宏观与微观尺度；抽象示意应明确采用示意风格。尽量避免小字、复杂公式和自动生成的文字标签。输出是待核对的候选配图，知识准确性需人工复核。",
+      "sourceTextRequired": false
+    }
+  },
+  {
+    "id": "storybook-scene",
+    "name": "绘本场景创作",
+    "description": "用角色、环境与情绪组织单页绘本画面，预留标题与讲述空间。",
+    "category": "插画绘本",
+    "capability": "image",
+    "status": "available",
+    "recipeVersion": "1.0.0",
+    "tags": [
+      "绘本",
+      "插画",
+      "故事",
+      "儿童"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "nodeId",
+        "prompt"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "当前用户拥有的已保存项目"
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "title": "创作内容",
+          "default": "请填写故事中的一个情节、人物外观、地点、情绪与绘画风格。\n\n根据以下情节创作一张单页绘本插画。选择故事中的一个明确瞬间，角色动作和表情能读懂，前后景关系清楚。保持角色的外观设定，采用统一的绘画材质与配色，用环境细节服务情绪。构图为后期文字排版预留安静留白，但不要直接生成文字。不要把多个情节挤进同一画面，不添加原文没有的主要角色。"
+        },
+        "model": {
+          "type": "string",
+          "default": "muse-image",
+          "maxLength": 120
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "image",
+      "authentication": "platform-session",
+      "requiredHeaders": [
+        "X-Workbench-Request: 1",
+        "Idempotency-Key"
+      ],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "automaticExecutionOnInstall": false,
+      "promptTemplate": "【创作内容】\n{{text}}\n\n【创作方法】\n根据以下情节创作一张单页绘本插画。选择故事中的一个明确瞬间，角色动作和表情能读懂，前后景关系清楚。保持角色的外观设定，采用统一的绘画材质与配色，用环境细节服务情绪。构图为后期文字排版预留安静留白，但不要直接生成文字。不要把多个情节挤进同一画面，不添加原文没有的主要角色。",
+      "sourceTextRequired": false
+    }
+  },
+  {
+    "id": "space-concept",
+    "name": "空间氛围概念",
+    "description": "从文字需求探索建筑与室内氛围，控制透视、材质和自然光。",
+    "category": "空间概念",
+    "capability": "image",
+    "status": "available",
+    "recipeVersion": "1.0.0",
+    "tags": [
+      "建筑",
+      "室内",
+      "空间",
+      "场景"
+    ],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectId",
+        "nodeId",
+        "prompt"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "当前用户拥有的已保存项目"
+        },
+        "nodeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000,
+          "title": "创作内容",
+          "default": "请填写空间用途、建筑风格、关键材质、采光时间与画面视角。\n\n根据以下需求制作一张空间氛围概念图。采用清楚的单一视点，保证墙面、门窗、家具的透视和尺度关系可信。明确主材质、辅材质与自然光方向，以可辨识的空间层次表现用途，减少无关摆件。不要将概念图当作施工方案，不生成精确尺寸、结构计算或无法依据的性能数据。"
+        },
+        "model": {
+          "type": "string",
+          "default": "muse-image",
+          "maxLength": 120
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 4096,
+          "default": 1024
+        },
+        "referenceAssetIds": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "image",
+      "authentication": "platform-session",
+      "requiredHeaders": [
+        "X-Workbench-Request: 1",
+        "Idempotency-Key"
+      ],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "automaticExecutionOnInstall": false,
+      "promptTemplate": "【创作内容】\n{{text}}\n\n【创作方法】\n根据以下需求制作一张空间氛围概念图。采用清楚的单一视点，保证墙面、门窗、家具的透视和尺度关系可信。明确主材质、辅材质与自然光方向，以可辨识的空间层次表现用途，减少无关摆件。不要将概念图当作施工方案，不生成精确尺寸、结构计算或无法依据的性能数据。",
+      "sourceTextRequired": false
+    }
+  },
+  {
+    "id": "cinema-vfx",
+    "name": "电影特效",
+    "description": "将能量、粒子、烟雾与环境变化组织为一个有起因、发展和消散过程的影视特效镜头。",
+    "category": "影视镜头",
+    "capability": "video",
+    "status": "available",
+    "recipeVersion": "1.0.0",
+    "tags": ["电影", "特效", "粒子", "光效"],
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectId", "nodeId", "prompt"],
+      "properties": {
+        "projectId": {"type": "string", "minLength": 1},
+        "nodeId": {"type": "string", "minLength": 1, "maxLength": 128},
+        "prompt": {"type": "string", "minLength": 1, "maxLength": 12000, "title": "特效镜头描述", "default": "请描述主体、环境和特效的起因、运动方式与消散结果。保持参考画面主体一致，用一个连续镜头表现特效与环境的相互影响。"},
+        "model": {"type": "string", "default": "muse-video", "maxLength": 120},
+        "width": {"type": "integer", "minimum": 64, "maximum": 4096, "default": 1280},
+        "height": {"type": "integer", "minimum": 64, "maximum": 4096, "default": 720},
+        "duration": {"type": "integer", "minimum": 2, "maximum": 20, "default": 8},
+        "referenceAssetIds": {"type": "array", "maxItems": 2, "items": {"type": "string", "minLength": 1}, "default": []}
+      }
+    },
+    "recipe": {
+      "schemaVersion": 1,
+      "operation": "generation-job",
+      "method": "POST",
+      "path": "/api/jobs",
+      "kind": "video",
+      "authentication": "platform-session",
+      "requiredHeaders": ["X-Workbench-Request: 1", "Idempotency-Key"],
+      "resultHandling": "candidate-asset-with-revision-checked-application",
+      "providerConfigurationRequired": true,
+      "referenceSupportMustBeConfirmed": false,
+      "sourceTextRequired": false,
+      "automaticExecutionOnInstall": false,
+      "promptTemplate": "【用户镜头】\n{{text}}\n\n【电影特效方法】\n聚焦一个明确的特效事件，按起因、聚集或触发、释放、环境反馈、消散推进，控制在所选镜头时长内。让光效、粒子、烟雾和物体运动共享可信的空间、光线与作用方向。参考图中的人物外观、服装、主体比例和背景布局保持连续；特效有遮挡和层次，避免遮住主要人物表情。镜头采用稳定推进或跟随，不用无因跳切、整体闪烁或人物瞬移替代过程。只实现用户要求的特效，不擅自增加人物、道具或剧情结果。"
+    }
+  }
+]

@@ -1,0 +1,25 @@
+.composition-node{height:100%;display:flex;flex-direction:column;background:#fafafa;color:#242529;border-radius:24px;overflow:hidden;font:13px/1.5 system-ui}
+.composition-header{height:40px;display:flex;align-items:center;gap:8px;padding:0 14px;flex-shrink:0;font-weight:600;border-bottom:1px solid #ececef}
+.composition-summary{margin-left:auto;color:#7a7d85;font-size:11px;font-weight:400}
+.composition-player{min-height:0;display:flex;flex-direction:column;flex:1;background:#141519;color:#f7f7f9}
+.composition-screen{position:relative;min-height:100px;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.composition-screen video{width:100%;height:100%;object-fit:contain;max-height:440px;min-height:100px;background:#08090b}
+.composition-loading{color:#a2a5af;font-size:12px}.composition-error{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#111b;padding:20px;text-align:center;font-size:12px}
+.composition-playback{display:flex;align-items:center;gap:5px;min-height:38px;padding:3px 8px;font-size:11px;color:#c7c9d1;flex-shrink:0}
+.composition-playback button,.composition-clip-heading button{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:7px;background:transparent;color:inherit;cursor:pointer;flex-shrink:0}
+.composition-playback button:hover{background:#ffffff1a}.composition-playback button:disabled,.composition-clip-heading button:disabled{opacity:.25;cursor:default}.composition-playing-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:auto;max-width:30%}
+.composition-node-footer{height:42px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:11px;color:#858792;flex-shrink:0}
+.composition-node-footer button{display:flex;align-items:center;gap:5px;padding:5px 9px;border:1px solid #e2e2e7;border-radius:7px;background:#fff;color:#34353d;cursor:pointer;font-size:11px}.composition-node-footer button:hover{background:#eeeef3}
+.composition-open-hint{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:#8b8d98;background:#f2f2f5}.composition-empty{padding:24px;font-size:13px}
+.composition-modal-title{display:flex;align-items:center;gap:8px}.composition-modal-title small{margin-left:auto;margin-right:30px;font-size:12px;font-weight:400;color:#9295a0}
+.composition-editor{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(300px,1fr);gap:22px;padding-top:12px}
+.composition-editor-preview .composition-player{border-radius:12px;overflow:hidden}.composition-editor-preview .composition-screen{aspect-ratio:16/10}.composition-editor-preview .composition-playback{min-height:44px}
+.composition-export-note{font-size:12px;line-height:1.8;color:#90939d;margin:14px 0}.composition-clip-list{max-height:560px;overflow-y:auto;padding:0 4px 4px 0}
+.composition-download-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.composition-download-link{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid #cfc6e9;border-radius:7px;background:#f2eefb;color:#6f55ae;font-size:13px;text-decoration:none}.composition-download-link:hover{background:#e9e1f8;color:#5b4099}.composition-download-link:focus-visible{outline:2px solid #8270bd;outline-offset:3px}
+.composition-clip-card{padding:14px;border:1px solid #e7e7ed;border-radius:12px;margin-bottom:12px;background:#fafafd;color:#30323c}
+.composition-clip-heading{display:flex;align-items:center;gap:4px;margin-bottom:14px}.composition-clip-heading strong{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.composition-clip-number{display:flex;align-items:center;justify-content:center;background:#eae7f5;color:#7462b7;border-radius:6px;font-size:11px;width:23px;height:23px;margin-right:5px;flex-shrink:0}.composition-clip-heading button:hover{background:#eaeaf0}
+.composition-clip-range{display:grid;grid-template-columns:1fr 1fr;gap:12px}.composition-clip-range label{display:flex;flex-direction:column;gap:6px;font-size:11px;color:#787b89}.composition-clip-range .ant-input-number{width:100%}
+.composition-volume{display:flex;align-items:center;gap:7px;margin-top:14px;color:#787b89;font-size:11px}.composition-volume input{min-width:35px;flex:1;accent-color:#8270bd}.composition-volume output{width:32px;text-align:right}
+.composition-clip-duration{font-size:10px;color:#9699a5;margin-top:8px}
+@media(max-width:760px){.composition-editor{grid-template-columns:1fr}.composition-clip-list{max-height:300px}.composition-editor-preview .composition-screen{max-height:270px}.composition-modal-title small{display:none}}

@@ -1,0 +1,73 @@
+server:
+  address: ${APP_BIND_ADDRESS:127.0.0.1}
+  port: ${APP_PORT:8088}
+  servlet:
+    session:
+      timeout: 8h
+      cookie:
+        name: WORKBENCH_SESSION
+        http-only: true
+        same-site: lax
+        secure: ${SESSION_COOKIE_SECURE:false}
+spring:
+  application:
+    name: creative-workbench-api
+  profiles:
+    active: ${APP_PROFILE:dev}
+  datasource:
+    url: ${DB_URL:jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3308}/${DB_NAME:workbench}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=UTC}
+    username: ${DB_USERNAME:workbench}
+    password: ${DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 16
+      minimum-idle: 2
+      connection-timeout: 5000
+      connection-init-sql: "SET time_zone = '+00:00'"
+  flyway:
+    enabled: true
+    validate-on-migrate: true
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6381}
+      password: ${REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
+  session:
+    redis:
+      namespace: workbench:session
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 101MB
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:5178}
+  storage-root: ${APP_STORAGE_ROOT:./data/assets}
+  max-document-bytes: 2097152
+  github-client-id: ${GITHUB_CLIENT_ID:}
+  github-client-secret: ${GITHUB_CLIENT_SECRET:}
+  github-redirect-uri: ${GITHUB_REDIRECT_URI:}
+  muse-base-url: ${MUSE_BASE_URL:http://127.0.0.1:18610}
+  muse-api-key: ${MUSE_API_KEY:}
+  muse-local-key-enabled: ${MUSE_LOCAL_KEY_ENABLED:false}
+  muse-local-pool-url: ${MUSE_LOCAL_POOL_URL:}
+  muse-media-allowed-hosts: ${MUSE_MEDIA_ALLOWED_HOSTS:}
+  scheduler-enabled: ${APP_SCHEDULER_ENABLED:true}
+  worker-concurrency: ${APP_WORKER_CONCURRENCY:2}
+  sse-max-connections: ${APP_SSE_MAX_CONNECTIONS:10000}
+  sse-max-connections-per-user: ${APP_SSE_MAX_CONNECTIONS_PER_USER:8}
+  provider-timeout-seconds: ${MUSE_TIMEOUT_SECONDS:120}
+  pool-overview-enabled: ${POOL_OVERVIEW_ENABLED:}
+  pool-overview-owner-ids: ${POOL_OVERVIEW_OWNER_IDS:}
+  browser-worker-url: ${BROWSER_WORKER_URL:http://127.0.0.1:8091}
+  browser-worker-token: ${BROWSER_WORKER_TOKEN:}
+  browser-interactive-login-enabled: ${BROWSER_INTERACTIVE_LOGIN_ENABLED:false}
+  pool-credential-master-key: ${POOL_CREDENTIAL_MASTER_KEY:}

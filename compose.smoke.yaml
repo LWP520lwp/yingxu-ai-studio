@@ -1,0 +1,5 @@
+# CI-only loopback entrypoint. Public deployments use compose.production.yaml alone.
+services:
+  web:
+    ports:
+      - '127.0.0.1:${SMOKE_PORT:-18080}:8080'

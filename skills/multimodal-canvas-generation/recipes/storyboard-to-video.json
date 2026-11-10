@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "storyboard-to-video",
+  "name": "分镜到视频",
+  "implementation": "planned-composition",
+  "description": "多镜头创作流程规划。第一版已有单个图片和视频任务；不能把本配方描述成已实现的一键剧本成片、自动配音字幕或多镜头导出服务。",
+  "steps": [
+    {"operation": "prepare-storyboard", "implementation": "manual-or-future", "output": "每个镜头的提示词、目标节点、引用素材、时长和来源"},
+    {"operation": "generate-scene-image", "recipe": "image-create", "implementation": "optional-per-authorized-shot"},
+    {"operation": "generate-scene-video", "recipe": "image-to-video", "implementation": "per-shot-api-with-confirmed-model-capability"},
+    {"operation": "review-scene-candidates", "implementation": "revision-checked-project-edit"},
+    {"operation": "assemble-narration-captions-and-export", "implementation": "not-implemented-by-this-recipe"}
+  ],
+  "execution": "description-only-no-automatic-batch-execution",
+  "secrets": "server-only"
+}

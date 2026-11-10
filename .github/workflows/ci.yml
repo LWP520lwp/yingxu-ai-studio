@@ -1,0 +1,113 @@
+name: Build and verify
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: node --test scripts/init-deployment.test.mjs scripts/init-reviewer.test.mjs
+      - run: npm test
+      - run: npm run typecheck --workspace apps/canvas-engine
+      - run: npm run test --workspace apps/browser-worker
+      - run: npm run build
+
+  api:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: workbench
+          MYSQL_USER: workbench
+          MYSQL_PASSWORD: ci-test-password-only
+          MYSQL_ROOT_PASSWORD: ci-root-password-only
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=3s --health-retries=10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_NAME: workbench
+      DB_USERNAME: workbench
+      DB_PASSWORD: ci-test-password-only
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
+      APP_STORAGE_ROOT: ${{ runner.temp }}/workbench-assets
+      APP_SCHEDULER_ENABLED: 'false'
+      SCIENCE_TTS_PROVIDER: espeak
+      SCIENCE_TTS_ESPEAK_SMOKE: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng fonts-noto-cjk fontconfig
+      - run: mvn -B -ntp -f apps/api/pom.xml -Dscience.tts.require-available=true test
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate Compose without printing resolved credentials
+        run: |
+          node scripts/init-deployment.mjs --origin https://studio.example.com
+          node scripts/init-reviewer.mjs --env-file .env.production.local --credentials-file "$RUNNER_TEMP/workbench-reviewer.txt"
+          docker compose --env-file .env.production.local -f compose.production.yaml config --quiet
+      - uses: docker/setup-buildx-action@v3
+      - name: Build frontend runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.web
+          load: true
+          tags: yingshu-studio-web:latest
+          push: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - name: Build API runtime and native media smoke
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.api
+          target: runtime
+          load: true
+          tags: yingshu-studio-api:latest
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: Cold-start the production stack from empty volumes
+        run: docker compose --env-file .env.production.local -f compose.production.yaml -f compose.smoke.yaml up -d --no-build --wait --wait-timeout 240 web
+      - name: Verify production login and persistence through Nginx
+        run: node scripts/smoke-production.mjs --base-url http://127.0.0.1:18080 --origin https://studio.example.com --credentials-file "$RUNNER_TEMP/workbench-reviewer.txt"
+      - name: Report service state without environment values
+        if: failure()
+        run: docker compose --env-file .env.production.local -f compose.production.yaml -f compose.smoke.yaml ps --all
+      - name: Remove only this job's disposable stack
+        if: always()
+        run: docker compose --env-file .env.production.local -f compose.production.yaml -f compose.smoke.yaml down -v --remove-orphans

@@ -1,0 +1,5 @@
+.reviewer-login { width: 100%; }
+.reviewer-login .button { width: 100%; justify-content: center; }
+.reviewer-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; color: var(--text-secondary); font-size: 12px; }
+.reviewer-field input { width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: 7px; background: var(--surface-0); color: var(--text-primary); font-size: 14px; }
+.reviewer-field input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

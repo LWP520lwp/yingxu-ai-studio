@@ -1,0 +1,6 @@
+interface:
+  display_name: "多模态画布生成"
+  short_description: "使用平台会话生成图片与视频，追踪任务并按修订号应用画布候选结果"
+  default_prompt: "使用 $multimodal-canvas-generation 根据当前画布素材创建图片或视频任务，保留原版本并应用所选候选结果。"
+policy:
+  allow_implicit_invocation: true

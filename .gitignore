@@ -1,0 +1,47 @@
+# Credentials and machine-local configuration
+.env
+.env.local
+.env.*.local
+.env.production
+.env.test
+!.env.example
+!.env.production.example
+
+# Private research, local verification media, and competition paperwork
+/context/
+/.context/
+/artifacts/
+*评委*凭据*
+*reviewer-credentials*
+/私有资料/
+
+# Dependencies and builds
+node_modules/
+dist/
+target/
+.vite/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+__pycache__/
+*.py[cod]
+
+# Canvas engine bundles are regenerated from apps/canvas-engine.
+/apps/web/public/canvas-engine/
+# Local upstream reference checkout; migrated source is tracked separately.
+/vendor/infinite-canvas/
+
+# Local runtime data and logs
+data/
+logs/
+*.log
+*.pid
+.runtime/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# One-time local model diagnostics; may contain unreviewed provider prose.
+/artifacts/muse-provider-check/story-text-diagnostic*

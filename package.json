@@ -1,0 +1,19 @@
+{
+  "name": "frameflow-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "apps/canvas-engine",
+    "apps/browser-worker"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspace apps/canvas-engine && npm run build --workspace apps/web",
+    "build:canvas": "npm run build --workspace apps/canvas-engine",
+    "test": "npm run test --workspace apps/web"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

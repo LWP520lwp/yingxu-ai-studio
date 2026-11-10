@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "image-create",
+  "name": "文生图",
+  "implementation": "supported-api",
+  "description": "通过平台图片任务生成素材，关联已保存的画布节点，结果作为候选版本。真实可用性取决于服务端模型配置和会话。",
+  "requiredInputs": ["projectId", "nodeId", "prompt", "model", "idempotencyKey"],
+  "request": {
+    "method": "POST",
+    "path": "/api/jobs",
+    "authentication": "platform-session",
+    "headers": {"Idempotency-Key": "{{idempotencyKey}}"},
+    "body": {
+      "projectId": "{{projectId}}",
+      "nodeId": "{{nodeId}}",
+      "kind": "image",
+      "prompt": "{{prompt}}",
+      "model": "{{model}}",
+      "width": 1024,
+      "height": 1024,
+      "referenceAssetIds": []
+    }
+  },
+  "resultHandling": "query-existing-job-then-revision-checked-candidate-application",
+  "secrets": "server-only"
+}
