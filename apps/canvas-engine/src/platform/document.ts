@@ -3,6 +3,7 @@ import { configureStorageScope } from "@/lib/localforage-storage";
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { Asset } from "@/stores/use-asset-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
+import { validateWorkbenchDocument } from "@/lib/canvas/workbench-document";
 import { getPlatformInit, platformRequest, type PlatformInit, type PlatformAsset } from "./rpc";
 
 export type DocumentSnapshot = {
@@ -73,6 +74,15 @@ export function readNativeProject(value: unknown, projectId: string): CanvasProj
         if (!isRecord(edge) || typeof edge.id !== "string" || !ids.has(text(edge.fromNodeId)) || !ids.has(text(edge.toNodeId)) || edge.fromNodeId === edge.toNodeId)
             throw new Error("已保存的画布包含无效连接，已保留原数据");
     }
+    const domainIssues = validateWorkbenchDocument({
+        id: projectId,
+        title: text(value.title, "创作画布"),
+        revision: 0,
+        viewport: { x: finite((value.viewport as Record<string, unknown> | undefined)?.x, 0), y: finite((value.viewport as Record<string, unknown> | undefined)?.y, 0), k: finite((value.viewport as Record<string, unknown> | undefined)?.k, 1) },
+        nodes: copy(value.nodes) as CanvasNodeData[],
+        connections: copy(value.connections) as CanvasConnection[],
+    });
+    if (domainIssues.length) throw new Error(`已保存的画布域校验失败：${domainIssues[0].message}`);
     const now = new Date().toISOString();
     const viewport = isRecord(value.viewport) ? value.viewport : {};
     return {

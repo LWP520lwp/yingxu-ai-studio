@@ -2,17 +2,18 @@ import { platformRequest } from "./rpc";
 
 export type PlatformAction = "home" | "projects" | "newProject" | "skills" | "pool" | "settings";
 
+const ACTIONS = new Set<PlatformAction>(["home", "projects", "newProject", "skills", "pool", "settings"]);
+
+/** Ask the host to switch workspace context without navigating the iframe. */
 export async function openPlatformAction(action: PlatformAction) {
+    if (!ACTIONS.has(action)) throw new Error("此画布入口尚未接入工作台");
     await platformRequest("platform.action", { action });
 }
 
-/** Embedded routes belong to the host; the iframe keeps its one active canvas. */
+/** The host owns routes; the embedded editor only keeps its active project. */
 export function platformActionForPath(pathname: string, projectId: string): PlatformAction | null {
     const path = pathname.replace(/\/+$/, "") || "/";
+    const exact: Record<string, PlatformAction> = { "/": "home", "/skills": "skills", "/pool": "pool", "/settings": "settings", "/config": "settings" };
     if (path === `/canvas/${projectId}`) return null;
-    if (path === "/") return "home";
-    if (path === "/skills") return "skills";
-    if (path === "/pool") return "pool";
-    if (path === "/settings" || path === "/config") return "settings";
-    return "projects";
+    return exact[path] || "projects";
 }

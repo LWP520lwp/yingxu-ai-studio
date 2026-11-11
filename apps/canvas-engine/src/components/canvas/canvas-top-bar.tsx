@@ -78,7 +78,7 @@ export function CanvasTopBar({
 
     return (
         <>
-            <div className="pointer-events-none absolute left-0 right-0 top-0 z-50 flex h-16 items-center justify-between gap-2 pl-1 pr-3 max-[520px]:gap-1 max-[520px]:pr-2">
+            <div className="canvas-atlas-topbar pointer-events-none absolute left-0 right-0 top-0 z-50 flex h-16 items-center justify-between gap-2 pl-1 pr-3 max-[520px]:gap-1 max-[520px]:pr-2">
                 <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
                     <Tooltip title={sidePanelOpen ? t("canvas.collapsePanel") : t("canvas.expandPanel")}>
                         <button

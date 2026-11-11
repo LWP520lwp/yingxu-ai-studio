@@ -6,7 +6,7 @@ let resolveScope: (scope: string) => void;
 const scopeReady = new Promise<string>((resolve) => { resolveScope = resolve; });
 const instances = new Map<string, ReturnType<typeof localforage.createInstance>>();
 
-/** Each iframe has one immutable owner/project scope. Never read the upstream app's storage. */
+/** Each embedded editor has one immutable owner/project scope. */
 export function configureStorageScope(userId: string, projectId: string) {
     if (!userId || !projectId) throw new Error("画布存储缺少用户或项目标识");
     const scope = `${encodeURIComponent(userId)}:${encodeURIComponent(projectId)}`;
@@ -19,7 +19,7 @@ async function scopedInstance(storeName: string) {
     const scope = await scopeReady;
     const key = `${scope}:${storeName}`;
     if (!instances.has(key)) instances.set(key, localforage.createInstance({
-        name: `frameflow-canvas-engine:${scope}`, storeName,
+        name: `yingxu-atlas-canvas:${scope}`, storeName,
     }));
     return instances.get(key)!;
 }
@@ -38,7 +38,7 @@ export function createScopedStorage(storeName: string) {
 
 const appState = createScopedStorage("app_state");
 async function fallbackKey(name: string) {
-    return `frameflow:canvas-engine:${await scopeReady}:${name}`;
+    return `yingxu:atlas-canvas:${await scopeReady}:${name}`;
 }
 
 export const localForageStorage: StateStorage = {

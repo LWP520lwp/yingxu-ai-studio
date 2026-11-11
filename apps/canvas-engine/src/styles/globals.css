@@ -617,3 +617,198 @@
         scroll-behavior: auto !important;
     }
 }
+
+/* Atlas canvas system
+ *
+ * The canvas uses a separate visual language from the host application: deep
+ * blue-black surfaces, a single mineral-teal accent, compact rectangular
+ * controls and editorial spacing. This keeps the editor recognizable as our
+ * own product while preserving the existing component contracts and state.
+ */
+.canvas-atlas-shell {
+    --atlas-ink: #091120;
+    --atlas-panel: #101c2d;
+    --atlas-panel-raised: #15243a;
+    --atlas-line: #2a3d58;
+    --atlas-soft-line: rgba(140, 169, 201, .14);
+    --atlas-accent: #61e6d2;
+    --atlas-accent-dim: #153f47;
+    --atlas-warm: #f1b86a;
+    isolation: isolate;
+    background:
+        radial-gradient(circle at 79% 13%, rgba(57, 99, 139, .18), transparent 27%),
+        radial-gradient(circle at 28% 88%, rgba(24, 85, 83, .12), transparent 30%),
+        var(--atlas-ink) !important;
+}
+
+.canvas-atlas-stage {
+    background: transparent;
+}
+
+.canvas-atlas-stage::after {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    content: "";
+    background: linear-gradient(110deg, rgba(3, 9, 19, .14), transparent 30%, transparent 75%, rgba(5, 13, 27, .18));
+}
+
+.canvas-atlas-stage > .canvas-atlas-viewport {
+    z-index: 2;
+}
+
+.canvas-atlas-topbar {
+    height: 58px !important;
+    padding: 0 22px 0 16px !important;
+    border-bottom: 1px solid var(--atlas-soft-line);
+    background: linear-gradient(180deg, rgba(10, 22, 39, .96), rgba(10, 22, 39, .78));
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .16);
+    backdrop-filter: blur(14px);
+}
+
+.canvas-atlas-topbar button {
+    border-radius: 8px !important;
+}
+
+.canvas-atlas-topbar [class*="font-semibold"] {
+    letter-spacing: .01em;
+}
+
+.canvas-atlas-panel__body {
+    background: linear-gradient(180deg, #111e31 0%, #0d1829 100%) !important;
+    border-color: var(--atlas-line) !important;
+    box-shadow: 12px 0 30px rgba(0, 0, 0, .13);
+}
+
+.canvas-atlas-panel__body > div:first-child {
+    margin: 12px 12px 0;
+    padding: 4px;
+    gap: 3px;
+    border: 1px solid var(--atlas-soft-line);
+    border-radius: 10px;
+    background: rgba(4, 12, 24, .46);
+}
+
+.canvas-atlas-panel__body > div:first-child button {
+    flex: 1;
+    border-radius: 7px;
+    padding: 9px 7px 8px;
+    font-size: 11px;
+    letter-spacing: .02em;
+}
+
+.canvas-atlas-panel__body > div:first-child button[aria-current="true"],
+.canvas-atlas-panel__body > div:first-child button:hover {
+    background: rgba(97, 230, 210, .10);
+}
+
+.canvas-atlas-viewport {
+    background-color: #0b1424 !important;
+}
+
+.canvas-atlas-grid {
+    opacity: .27 !important;
+    mix-blend-mode: screen;
+}
+
+.canvas-atlas-node {
+    filter: drop-shadow(0 12px 26px rgba(0, 0, 0, .16));
+}
+
+.canvas-atlas-node__frame {
+    border-radius: 12px !important;
+    border-width: 1px !important;
+    border-color: #2a3d58 !important;
+    box-shadow: 0 0 0 1px rgba(7, 15, 29, .28), 0 18px 36px rgba(0, 0, 0, .18) !important;
+    transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.canvas-atlas-node:hover .canvas-atlas-node__frame {
+    border-color: rgba(97, 230, 210, .72) !important;
+    box-shadow: 0 0 0 3px rgba(97, 230, 210, .10), 0 20px 42px rgba(0, 0, 0, .24) !important;
+}
+
+.canvas-atlas-node [data-node-panel] {
+    filter: drop-shadow(0 18px 34px rgba(0, 0, 0, .22));
+}
+
+.canvas-atlas-connections path {
+    stroke: #6686a6;
+    stroke-width: 1.45;
+    opacity: .72;
+}
+
+.canvas-atlas-connections path:hover,
+.canvas-atlas-connections path[data-selected="true"] {
+    stroke: var(--atlas-accent);
+    opacity: 1;
+}
+
+.canvas-atlas-commandbar {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 20px !important;
+    justify-content: flex-end !important;
+    padding-right: 26px;
+}
+
+.canvas-atlas-commandbar__inner {
+    height: 50px !important;
+    gap: 4px !important;
+    padding: 5px 7px !important;
+    border-radius: 10px !important;
+    border-color: rgba(100, 135, 170, .34) !important;
+    background: rgba(10, 24, 42, .92) !important;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255, 255, 255, .06) !important;
+}
+
+.canvas-atlas-commandbar__inner .ant-btn {
+    border-radius: 7px !important;
+    color: #a8bdd5 !important;
+}
+
+.canvas-atlas-commandbar__inner .ant-btn:hover,
+.canvas-atlas-commandbar__inner .ant-btn:focus-visible {
+    background: rgba(97, 230, 210, .12) !important;
+    color: var(--atlas-accent) !important;
+}
+
+.canvas-atlas-commandbar__inner .ant-btn[aria-pressed="true"] {
+    background: var(--atlas-accent-dim) !important;
+    color: var(--atlas-accent) !important;
+}
+
+/* The same Atlas geometry remains available in light mode without reverting
+   to the host application's old neutral-green surface. */
+html:not(.dark) .canvas-atlas-shell {
+    --atlas-ink: #edf3f7;
+    --atlas-panel: #f8fbfd;
+    --atlas-panel-raised: #e6eef4;
+    --atlas-line: #b8c9d6;
+    --atlas-soft-line: rgba(48, 76, 101, .18);
+    --atlas-accent: #087f78;
+    --atlas-accent-dim: #d5eeeb;
+    --atlas-warm: #9b5b1d;
+    color: #172738;
+    background: radial-gradient(circle at 79% 13%, rgba(71, 132, 157, .13), transparent 27%), var(--atlas-ink) !important;
+}
+html:not(.dark) .canvas-atlas-viewport { background-color: #edf3f7 !important; }
+html:not(.dark) .canvas-atlas-panel__body { background: linear-gradient(180deg, #f9fcfe, #eaf1f6) !important; }
+html:not(.dark) .canvas-atlas-topbar { background: rgba(248, 251, 253, .92); }
+html:not(.dark) .canvas-atlas-node__frame { background: linear-gradient(145deg, #ffffff, #e8f0f5) !important; border-color: var(--atlas-line) !important; box-shadow: 0 12px 28px rgba(30, 64, 88, .13) !important; }
+html:not(.dark) .canvas-atlas-commandbar__inner { background: rgba(248, 251, 253, .95) !important; }
+html:not(.dark) .canvas-atlas-commandbar__inner .ant-btn { color: #3f5d72 !important; }
+html:not(.dark) .canvas-atlas-commandbar__inner .ant-btn:hover,
+html:not(.dark) .canvas-atlas-commandbar__inner .ant-btn:focus-visible { color: var(--atlas-accent) !important; }
+html:not(.dark) .canvas-atlas-stage::after { background: linear-gradient(110deg, rgba(219, 231, 238, .10), transparent 30%, transparent 75%, rgba(219, 231, 238, .08)); }
+
+@media (max-width: 720px) {
+    .canvas-atlas-topbar { padding-inline: 8px !important; }
+    .canvas-atlas-commandbar { padding-right: 8px; }
+    .canvas-atlas-commandbar__inner { max-width: calc(100vw - 16px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .canvas-atlas-node__frame { transition: none; }
+}

@@ -213,7 +213,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
         <div
             ref={containerRef}
             data-canvas-viewport
-            className="relative h-full w-full select-none overflow-hidden"
+            className="canvas-atlas-viewport relative h-full w-full select-none overflow-hidden"
             style={{ background: theme.canvas.background, cursor }}
             onPointerDown={handlePointerDown}
             onDoubleClick={handleDoubleClick}
@@ -248,7 +248,7 @@ function CanvasGrid({ viewport, mode }: { viewport: ViewportTransform; mode: Can
 
     return (
         <div
-            className="pointer-events-none absolute inset-0 opacity-40"
+            className="canvas-atlas-grid pointer-events-none absolute inset-0 opacity-40"
             style={{
                 backgroundImage,
                 backgroundSize: `${gridSize}px ${gridSize}px`,
