@@ -67,3 +67,16 @@ export const localForageStorage: StateStorage = {
         }
     },
 };
+
+/**
+ * Gives a persisted store a product-owned key while reading one legacy key
+ * once. New writes always use the product key, so old installations migrate
+ * without losing drafts or preferences.
+ */
+export function createMigratingStorage(legacyKey: string): StateStorage {
+    return {
+        getItem: async (name) => (await localForageStorage.getItem(name)) ?? (await localForageStorage.getItem(legacyKey)),
+        setItem: (name, value) => localForageStorage.setItem(name, value),
+        removeItem: (name) => localForageStorage.removeItem(name),
+    };
+}

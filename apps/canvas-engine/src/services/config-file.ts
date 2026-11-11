@@ -1,12 +1,13 @@
 import { saveAs } from "file-saver";
 
 import i18n from "@/i18n";
+import { isSupportedFileId, PRODUCT_FILE_ID } from "@/lib/product-identity";
 import { defaultConfig, defaultWebdavSyncConfig, platformConfig, useConfigStore, type AiConfig, type WebdavSyncConfig } from "@/stores/use-config-store";
 import { PROMPT_SOURCE_INTERVALS, usePromptSourceStore, type PromptSourceSchedule } from "@/stores/use-prompt-source-store";
 import { DEFAULT_PROMPT_SOURCES, type PromptSource } from "@/services/api/prompt-source-presets";
 
 type AppConfigFile = {
-    app: "infinite-canvas";
+    app: string;
     version: 1;
     exportedAt: string;
     config: AiConfig;
@@ -20,7 +21,7 @@ type AppConfigFile = {
 export function exportAppConfig() {
     const { config, webdav } = useConfigStore.getState();
     const { sources, schedule } = usePromptSourceStore.getState();
-    const data: AppConfigFile = { app: "infinite-canvas", version: 1, exportedAt: new Date().toISOString(), config: platformConfig(config), webdav: { ...webdav, password: "" }, promptSources: { sources, schedule } };
+    const data: AppConfigFile = { app: PRODUCT_FILE_ID, version: 1, exportedAt: new Date().toISOString(), config: platformConfig(config), webdav: { ...webdav, password: "" }, promptSources: { sources, schedule } };
     saveAs(new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" }), "frameflow-preferences.json");
 }
 
@@ -32,7 +33,7 @@ export async function importAppConfig(file: File) {
     } catch {
         throw new Error(i18n.t("config.invalidFile"));
     }
-    if (data?.app !== "infinite-canvas" || data.version !== 1 || !isRecord(data.config) || !isRecord(data.webdav) || !isRecord(data.promptSources) || !Array.isArray(data.promptSources.sources)) throw new Error(i18n.t("config.invalidFile"));
+    if (!isSupportedFileId(data?.app) || data.version !== 1 || !isRecord(data.config) || !isRecord(data.webdav) || !isRecord(data.promptSources) || !Array.isArray(data.promptSources.sources)) throw new Error(i18n.t("config.invalidFile"));
     // Older exports contain local channel keys and scripts. Import preferences only;
     // server credentials are deliberately managed through the channel API instead.
     const imported = { ...defaultConfig };

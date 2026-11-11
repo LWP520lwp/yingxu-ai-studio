@@ -131,7 +131,7 @@ type Props = {
 };
 type RpcRequest = { type: string; id: string; scopeId: string; method: string; params?: Record<string, unknown> };
 
-/** The full MIT canvas runs on this origin; account credentials stay in the platform API. */
+/** The isolated canvas runs on this origin; account credentials stay in the platform API. */
 export const CanvasEngine = forwardRef<CanvasEngineHandle, Props>(function CanvasEngine(props, ref) {
   const frame = useRef<HTMLIFrameElement>(null);
   const current = useRef(props);
@@ -139,7 +139,7 @@ export const CanvasEngine = forwardRef<CanvasEngineHandle, Props>(function Canva
   useEffect(() => {
     frame.current?.contentWindow?.postMessage({ type: "frameflow:catalog", scopeId: scope.current, models: props.models }, window.location.origin);
   }, [props.models]);
-  const [status, setStatus] = useState("正在加载完整画布…");
+  const [status, setStatus] = useState("正在加载画布…");
   const [failure, setFailure] = useState("");
   const [reload, setReload] = useState(0);
   const scope = useRef(crypto.randomUUID());

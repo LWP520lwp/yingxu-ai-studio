@@ -9,7 +9,8 @@ export type PromptSourceSchedule = {
     lastFetchedAt: string;
 };
 
-const PROMPT_SOURCE_STORE_KEY = "infinite-canvas:prompt_source_store_v2";
+const PROMPT_SOURCE_STORE_KEY = "yingxu-atlas:prompt_source_store:v3";
+const LEGACY_PROMPT_SOURCE_STORE_KEY = "infinite-canvas:prompt_source_store_v2";
 
 const defaultSchedule: PromptSourceSchedule = {
     intervalMinutes: 30,
@@ -46,7 +47,11 @@ export const usePromptSourceStore = create<PromptSourceStore>()(
         }),
         {
             name: PROMPT_SOURCE_STORE_KEY,
-            storage: createJSONStorage(() => localForageStorage),
+            storage: createJSONStorage(() => ({
+                getItem: async (name: string) => (await localForageStorage.getItem(name)) ?? (await localForageStorage.getItem(LEGACY_PROMPT_SOURCE_STORE_KEY)),
+                setItem: (name: string, value: string) => localForageStorage.setItem(name, value),
+                removeItem: (name: string) => localForageStorage.removeItem(name),
+            })),
             partialize: (state) => ({ sources: state.sources, schedule: state.schedule }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<PromptSourceStore>;

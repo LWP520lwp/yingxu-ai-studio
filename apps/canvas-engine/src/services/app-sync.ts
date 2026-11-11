@@ -1,6 +1,7 @@
 import { createScopedStorage } from "@/lib/localforage-storage";
 
 import i18n from "@/i18n";
+import { isSupportedFileId, PRODUCT_FILE_ID } from "@/lib/product-identity";
 import { getMediaBlob, resolveMediaUrl, setMediaBlob } from "@/services/file-storage";
 import { getImageBlob, resolveImageUrl, setImageBlob } from "@/services/image-storage";
 import { downloadWebdavFile, uploadWebdavFile, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -25,7 +26,7 @@ type AppSyncFile = {
 };
 
 type DomainManifest<T> = {
-    app: "infinite-canvas";
+    app: string;
     version: 1;
     domain: DomainKey;
     exportedAt: string;
@@ -156,7 +157,7 @@ async function syncDomain<T>(config: WebdavSyncConfig, onProgress: AppSyncProgre
 
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: "上传新增媒体", status: "active" });
         const uploaded = await uploadChangedFiles(config, options.key, mergedData, remoteManifest?.files || [], onProgress);
-        const manifest: DomainManifest<T> = { app: "infinite-canvas", version: 1, domain: options.key, exportedAt: new Date().toISOString(), data: mergedData, files: uploaded.files };
+        const manifest: DomainManifest<T> = { app: PRODUCT_FILE_ID, version: 1, domain: options.key, exportedAt: new Date().toISOString(), data: mergedData, files: uploaded.files };
         const manifestFile = new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" });
         emitProgress(onProgress, { domain: options.key, label: options.label, stage: `上传清单 ${formatBytes(manifestFile.size)}`, status: "active" });
         await uploadWebdavFile(config, domainPath(options.key, WEBDAV_MANIFEST_FILE_NAME), manifestFile, "application/json");
@@ -180,9 +181,9 @@ async function readDomainManifest<T>(config: WebdavSyncConfig, domain: DomainKey
     const file = await downloadWebdavFile(config, domainPath(domain, WEBDAV_MANIFEST_FILE_NAME));
     if (!file) return null;
     const data = JSON.parse(await file.text()) as DomainManifest<T>;
-    if (data.app !== "infinite-canvas" || data.domain !== domain) throw new Error(i18n.t("config.webdav.errors.invalidManifest", { domain }));
+    if (!isSupportedFileId(data.app) || data.domain !== domain) throw new Error(i18n.t("config.webdav.errors.invalidManifest", { domain }));
     return {
-        app: "infinite-canvas",
+        app: PRODUCT_FILE_ID,
         version: 1,
         domain,
         exportedAt: data.exportedAt || new Date().toISOString(),

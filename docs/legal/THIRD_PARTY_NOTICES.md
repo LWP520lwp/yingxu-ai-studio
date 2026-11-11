@@ -11,7 +11,7 @@
 
 The React web canvas source has been copied and modified for this workbench. Local changes integrate platform projects, authenticated assets, model capabilities, generation jobs, same-origin window RPC, and MySQL-backed native canvas snapshots. The upstream author is credited for the imported canvas implementation. This adaptation does not imply endorsement by the upstream author.
 
-The migrated source and its license remain in `apps/canvas-engine`. Dependencies retain their respective licenses; this notice covers the imported infinite-canvas source.
+The migrated source remains in `apps/canvas-engine`; the upstream license text is stored under `apps/canvas-engine/legal/`. Dependencies retain their respective licenses; this notice covers the imported infinite-canvas source.
 
 ### MIT License
 

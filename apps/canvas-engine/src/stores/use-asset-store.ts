@@ -42,11 +42,12 @@ export function assetCoverUrl(asset: Asset) {
     return asset.kind === "image" && cover === own ? previewUrlFor(asset.data.storageKey) || cover : cover;
 }
 
-const ASSET_STORE_KEY = "infinite-canvas:asset_store";
+const ASSET_STORE_KEY = "yingxu-atlas:asset_store:v2";
+const LEGACY_ASSET_STORE_KEY = "infinite-canvas:asset_store";
 
 const assetStorage: PersistStorage<AssetStore> = {
     getItem: async (name) => {
-        const value = await localForageStorage.getItem(name);
+        const value = (await localForageStorage.getItem(name)) ?? (await localForageStorage.getItem(LEGACY_ASSET_STORE_KEY));
         if (!value) return null;
         const parsed = JSON.parse(value) as StorageValue<AssetStore>;
         parsed.state.assets = await Promise.all(

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 
+import { panViewport, zoomViewportAt } from "@/lib/canvas/canvas-geometry";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ViewportTransform } from "@/types/canvas";
@@ -92,22 +93,10 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
         const target = event.target instanceof Element ? event.target : null;
         if (target?.closest("[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown")) return;
 
-        const delta = -event.deltaY;
-        const factor = Math.pow(1.1, delta / 100);
-        const newScale = Math.min(Math.max(viewport.k * factor, 0.05), 5);
         const rect = containerRef.current?.getBoundingClientRect();
         if (!rect) return;
 
-        const mouseX = event.clientX - rect.left;
-        const mouseY = event.clientY - rect.top;
-        const worldX = (mouseX - viewport.x) / viewport.k;
-        const worldY = (mouseY - viewport.y) / viewport.k;
-
-        onViewportChange({
-            x: mouseX - worldX * newScale,
-            y: mouseY - worldY * newScale,
-            k: newScale,
-        });
+        onViewportChange(zoomViewportAt(viewport, { x: event.clientX - rect.left, y: event.clientY - rect.top }, event.deltaY));
     };
 
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -158,11 +147,7 @@ export function InfiniteCanvas({ containerRef, viewport, tool, backgroundMode = 
                 panState.current.hasMoved = true;
             }
 
-            nextViewportRef.current = {
-                x: panState.current.initialX + dx,
-                y: panState.current.initialY + dy,
-                k: scaleRef.current,
-            };
+            nextViewportRef.current = panViewport({ x: panState.current.initialX, y: panState.current.initialY, k: scaleRef.current }, dx, dy);
             if (frameRef.current) return;
             frameRef.current = requestAnimationFrame(() => {
                 frameRef.current = null;

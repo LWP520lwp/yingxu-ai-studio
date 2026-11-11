@@ -90,4 +90,4 @@ docker compose --env-file .env.production.local -f compose.production.yaml ps
 - `.github/workflows/ci.yml`：前端测试/完整构建、MySQL8.4+Redis7.4真实后端测试、Ubuntu eSpeak中文配音集成测试，以及两个生产镜像构建。API镜像build会实际生成中文WAV，并用FFmpeg/ffprobe和已安装中文字体完成中文字幕H.264样片检查。容器任务还从空卷启动生产配置，经 Nginx 验证画布静态资源、关闭开发登录、私有评审登录、Redis会话、MySQL项目保存与版本冲突、退出登录。该冷启动检查只绑定 CI 回环端口，不运行公网 Caddy TLS，也不消费模型额度。
 - 后续修复提交 `ae4011b` 的 [GitHub Ubuntu CI](https://github.com/LWP520lwp/yingxu-ai-studio/actions/runs/42945444758) 已全部成功：Web、API、containers 三个任务通过，包含真实 MySQL 8.4＋Redis 7.4 后端测试、两个生产镜像构建、原生媒体检查、空卷启动及经 Nginx 的私有评审登录与持久化验证。本机三轮回归基线为 `f625abc`：前端每轮99项、浏览器 worker 每轮11项、部署脚本每轮7项通过；后端第三轮报告218项，0失败、0错误，2项按运行条件跳过。
 - 本机 Muse 动态视频与原声链路已单独验证；CI 不消费模型额度。CI通过不代表已验证公网域名的 Caddy TLS、真实 GitHub OAuth 回调或供应商生成质量。其他部署须使用自己的账号核对模型能力、讲解内容与音画质量。
-- 本仓库保留第三方许可证及声明；分发或修改时应遵循根目录及各组件的许可证。
+- 组件许可证文本随源码保留在对应目录，分发或修改时请遵循各组件的许可证。

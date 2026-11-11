@@ -38,8 +38,12 @@ export const usePluginStore = create<PluginStore>()(
             remove: (id) => set((state) => ({ plugins: state.plugins.filter((item) => item.id !== id) })),
         }),
         {
-            name: "infinite-canvas:plugin_store",
-            storage: createJSONStorage(() => localForageStorage),
+            name: "yingxu-atlas:plugin_store:v2",
+            storage: createJSONStorage(() => ({
+                getItem: async (name: string) => (await localForageStorage.getItem(name)) ?? (await localForageStorage.getItem("infinite-canvas:plugin_store")),
+                setItem: (name: string, value: string) => localForageStorage.setItem(name, value),
+                removeItem: (name: string) => localForageStorage.removeItem(name),
+            })),
         },
     ),
 );
