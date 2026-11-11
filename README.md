@@ -4,7 +4,7 @@
 
 以可编辑 AI 画布组织资料、图片、视频和创作任务，逐步实现从素材到分镜与作品的完整工作流。当前仓库提供独立的 React Web 和 Java API，本地持久化使用 **MySQL＋Redis**。
 
-从 GitHub 克隆后部署到自己的服务器，见 **[自托管部署指南](docs/SELF_HOSTING.md)**：提供生产 Dockerfile、同源 HTTPS 网关、MySQL/Redis 持久卷、随机配置初始化及 GitHub OAuth。GitHub Ubuntu CI 已验证生产镜像构建、空卷启动、登录和数据持久化，详见[发布验证](https://github.com/dgasdasd/yingxu-ai-studio/actions/runs/42863488976)。GitHub Pages 无法运行本项目的后端与视频处理。生产镜像不包含作者的账号或密钥；真实生成需自备模型渠道与额度。
+从 GitHub 克隆后部署到自己的服务器，见 **[自托管部署指南](docs/SELF_HOSTING.md)**：提供生产 Dockerfile、同源 HTTPS 网关、MySQL/Redis 持久卷、随机配置初始化及 GitHub OAuth。GitHub Ubuntu CI 已验证生产镜像构建、空卷启动、登录和数据持久化，详见[发布验证](https://github.com/LWP520lwp/yingxu-ai-studio/actions/runs/42945444758)。GitHub Pages 无法运行本项目的后端与视频处理。生产镜像不包含作者的账号或密钥；真实生成需自备模型渠道与额度。
 
 ## 当前实现与边界
 
@@ -164,7 +164,7 @@ Docker 与本机独立服务默认使用相同端口，不能同时启动；切�
 
 ## 验证与容量验收
 
-2026-11-11 本机三轮回归的基线为 `f625abc`；后续修复提交 `ae4011b` 在独立 GitHub Ubuntu 环境完成验证，公开结果见 [GitHub Actions](https://github.com/dgasdasd/yingxu-ai-studio/actions/runs/42863488976)。
+2026-11-11 本机三轮回归的基线为 `f625abc`；后续修复提交 `ae4011b` 在独立 GitHub Ubuntu 环境完成验证，公开结果见 [GitHub Actions](https://github.com/LWP520lwp/yingxu-ai-studio/actions/runs/42945444758)。
 
 | 项目 | 已确认结果 |
 |---|---|
