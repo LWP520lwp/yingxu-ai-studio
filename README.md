@@ -8,7 +8,7 @@
 
 ## 当前实现与边界
 
-- 平台前端：React、TypeScript、Vite；创作画布是迁入的独立 React 子应用。API：Java 21、Spring Boot、Spring Security、JDBC、Flyway。
+- 平台前端：React、TypeScript、Vite；创作画布由独立的画布引擎负责节点、连线和素材交互。API：Java 21、Spring Boot、Spring Security、JDBC、Flyway。
 - MySQL 保存用户、项目、项目版本、素材与生成任务；Redis 用于会话、缓存及请求限流。服务不使用 H2 或内存数据代替 MySQL。
 - 原生画布通过 `/api/projects/{id}/canvas-engine` 在 MySQL 保存完整 `CanvasProject` 快照，独立修订号用于并发冲突检查。原项目文档和修订号保留；节点、连线、分组、视口、聊天会话及扩展字段不转换成旧版画布结构。
 - Skill 市场提供用途分类、搜索、收藏、详情、安装／移除和应用到画布；涵盖产品广告、角色设定、电影运镜、打斗技巧、电影特效、教育科普、绘本与空间概念。文字工具条、视频配置与 Agent 生成区均可选择视频 Skill，组合镜头文字与参考图；安装或准备不会自动提交生成。定义版本、个人安装及收藏关系保存在 MySQL，`storyboard-to-video@0.1.0` 仍为规划中。
@@ -24,15 +24,15 @@
 - 本地素材保存在专属磁盘目录，访问经过 API 会话授权。画布与科普制作使用独立 MySQL 文档及修订号；科普真实视频合成已实现。对象存储直传、CDN、多实例任务分发与跨实例事件广播仍需后续实现及验证。
 - **尚未完成 5000 人并发压测。** 5000 在线用户、5000 持久连接、1000 次/秒业务请求和 5000 个同时执行的生成任务是不同指标，不能相互替代。
 
-详细接口见 [平台 API](apps/api/API_CONTRACT.md)、[账号池](apps/api/POOL_API_CONTRACT.md)、[个人渠道](apps/api/CHANNEL_API_CONTRACT.md) 和 [科普制作](apps/api/SCIENCE_VIDEO_API_CONTRACT.md)。第三方许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+详细接口见 [平台 API](apps/api/API_CONTRACT.md)、[账号池](apps/api/POOL_API_CONTRACT.md)、[个人渠道](apps/api/CHANNEL_API_CONTRACT.md) 和 [科普制作](apps/api/SCIENCE_VIDEO_API_CONTRACT.md)。
 
-## 画布源码迁移与构建
+## 画布功能与构建
 
-画布的 React Web 源码从 [basketikun/infinite-canvas](https://github.com/basketikun/infinite-canvas) 的固定版本 [9cd3deacbcc598361807afc16c059a80dd18b6f9](https://github.com/basketikun/infinite-canvas/tree/9cd3deacbcc598361807afc16c059a80dd18b6f9) 迁入 `apps/canvas-engine`，保留上游 MIT 许可，并在此基础上适配平台项目、素材、模型目录、生成任务和保存协议。上游版权为 `Copyright (c) 2026 basketikun`；完整许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 [apps/canvas-engine/LICENSE](apps/canvas-engine/LICENSE)。项目中唯一运行的画布源码为 `apps/canvas-engine`。
+画布引擎位于 `apps/canvas-engine`，负责文字、图片、视频、分组、节点连线、抓手平移、缩放、小地图、提示词面板和素材裁剪。画布快照通过平台 API 保存到 MySQL，项目修订号用于并发冲突检查，提供方密钥只保存在服务端。
 
-子应用由 Vite 构建到 `apps/web/public/canvas-engine`，平台以同源 `/canvas-engine/index.html` iframe 加载。两侧使用检查窗口来源、origin 和项目 scope 的 `postMessage` RPC；平台负责会话、上传、任务与 MySQL 快照，子应用不保存提供方密钥。子应用的 React、样式和状态保持独立，部署时须一同提供 `/canvas-engine/` 静态资源及平台 `/api/`。
+画布引擎单独构建到 `apps/web/public/canvas-engine`，平台以同源 `/canvas-engine/index.html` 加载。画布与平台之间通过受限的窗口消息协议传递项目、素材和生成任务，部署时需要同时提供画布静态资源和平台 `/api/`。
 
-迁入原生节点、圆点连线、框内文字、悬浮工具条、分组、素材/提示词面板、小地图与图片裁剪等功能，并补充本地 Muse 定制版的整理布局和多视频合成预览。整理布局保留组内相对位置；合成节点支持按顺序播放、上下排序、入出点、逐段音量，可导出包含真实素材、编排 JSON 和离线播放器的 ZIP，当前不渲染单个 MP4、不混合 BGM。原版独立 Codex/Claude Agent 会话入口由平台 Skill 市场替代。
+画布支持整理布局、连续分镜和多视频编排预览。编排节点可以按顺序播放、调整上下顺序、设置入出点和逐段音量，并导出包含素材引用、编排 JSON 与离线播放器的 ZIP；科普成片仍由科普短视频模块负责生成与合成。
 
 在仓库根目录安装和构建全部前端：
 
