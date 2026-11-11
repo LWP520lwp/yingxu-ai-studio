@@ -4,7 +4,7 @@ export const capabilityNames: Record<ModelCapability, string> = {
 };
 export type ChannelModel = { name: string; capability: ModelCapability };
 export type GenerationChannel = {
-  id: string; name: string; baseUrl: string; apiFormat: "openai"; enabled: boolean;
+  id: string; name: string; baseUrl: string; apiFormat: "openai" | "ark"; enabled: boolean;
   hasKey: boolean; models: ChannelModel[];
 };
 export type ModelCandidate = {

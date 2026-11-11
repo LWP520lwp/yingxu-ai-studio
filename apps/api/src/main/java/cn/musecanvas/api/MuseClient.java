@@ -117,6 +117,15 @@ public class MuseClient {
         if(raw.path("data").isObject())node=raw.path("data");
         String task=text(node,"task_id","id");String status=text(node,"status","state");String url=text(node,"url","video_url","result_url");String b64=text(node,"b64_json");
         if(url==null)url=text(node.path("result"),"url","video_url");if(url==null)url=text(node.path("content"),"url","video_url");
+        // Ark Seedance returns content as an array of typed media blocks in some
+        // API versions (for example [{"type":"video","video_url":"..."}]).
+        // Accept that documented shape while keeping the existing provider shapes.
+        if(url==null&&node.path("content").isArray())for(JsonNode part:node.path("content")){
+            url=text(part,"url","video_url","image_url","uri");
+            if(url==null)url=text(part.path("video_url"),"url","uri");
+            if(url==null)url=text(part.path("image_url"),"url","uri");
+            if(url!=null)break;
+        }
         for(String field:List.of("data","images","results")){
             JsonNode array=node.path(field);if(array.isArray()&&!array.isEmpty()){
                 JsonNode first=array.get(0);if(first.isString())url=first.asString();else{if(url==null)url=text(first,"url","image_url");if(b64==null)b64=text(first,"b64_json");}

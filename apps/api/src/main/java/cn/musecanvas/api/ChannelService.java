@@ -14,7 +14,12 @@ public class ChannelService {
     public record Input(String id,String name,String baseUrl,String apiFormat,Boolean enabled,String apiKey,List<Model> models) {
         @Override public String toString(){return "ChannelInput[id="+id+", apiKey=[redacted]]";}
     }
-    public record Channel(String id,String owner,String name,String baseUrl,boolean enabled,String encryptedKey,List<Model> models) {}
+    public record Channel(String id,String owner,String name,String baseUrl,String apiFormat,boolean enabled,String encryptedKey,List<Model> models) {
+        /** Backwards-compatible constructor for persisted OpenAI-compatible channels and tests. */
+        public Channel(String id,String owner,String name,String baseUrl,boolean enabled,String encryptedKey,List<Model> models) {
+            this(id,owner,name,baseUrl,"openai",enabled,encryptedKey,models);
+        }
+    }
     public record Route(Channel channel,String model) {}
     private final JdbcTemplate jdbc;
     private final CredentialCipher cipher;
@@ -38,15 +43,16 @@ public class ChannelService {
             result.add(Map.of("id","channel:"+channel.id()+":"+model.name(),"name",channel.name()+" · "+model.name(),"available",channel.enabled()&&cipher.ready()));
         return List.copyOf(result);
     }
-    List<Channel> channels(String owner){return jdbc.query("SELECT * FROM user_generation_channel WHERE owner_id=? ORDER BY created_at",(rs,n)->new Channel(rs.getString("id"),owner,rs.getString("name"),rs.getString("base_url"),rs.getBoolean("enabled"),rs.getString("encrypted_key"),readModels(rs.getString("models_json"))),owner);}
+    List<Channel> channels(String owner){return jdbc.query("SELECT * FROM user_generation_channel WHERE owner_id=? ORDER BY created_at",(rs,n)->new Channel(rs.getString("id"),owner,rs.getString("name"),rs.getString("base_url"),Optional.ofNullable(rs.getString("api_format")).orElse("openai"),rs.getBoolean("enabled"),rs.getString("encrypted_key"),readModels(rs.getString("models_json"))),owner);}
     Channel require(String owner,String id){return channels(owner).stream().filter(c->c.id().equals(id)).findFirst().orElseThrow(ApiException::notFound);}
     private static List<Model> readModels(String value){try{return List.of(Json.MAPPER.readValue(value,Model[].class));}catch(Exception e){throw new IllegalStateException("Invalid persisted channel models");}}
-    Map<String,Object> view(Channel c){return Map.of("id",c.id(),"name",c.name(),"baseUrl",c.baseUrl(),"apiFormat","openai","enabled",c.enabled(),"hasKey",!c.encryptedKey().isBlank(),"models",c.models());}
+    Map<String,Object> view(Channel c){return Map.of("id",c.id(),"name",c.name(),"baseUrl",c.baseUrl(),"apiFormat",c.apiFormat(),"enabled",c.enabled(),"hasKey",!c.encryptedKey().isBlank(),"models",c.models());}
     @Transactional
     public Map<String,Object> save(String owner,Input input){
         if(input==null)throw ApiException.invalid("渠道配置必填");
         String name=input.name()==null?"":input.name().trim();if(name.isBlank()||name.length()>80)throw ApiException.invalid("渠道名称应为 1–80 字符");
-        if(!"openai".equals(input.apiFormat()))throw ApiException.invalid("当前支持 OpenAI 兼容协议");
+        String apiFormat=input.apiFormat()==null||input.apiFormat().isBlank()?"openai":input.apiFormat().trim().toLowerCase(Locale.ROOT);
+        if(!Set.of("openai","ark").contains(apiFormat))throw ApiException.invalid("当前支持 OpenAI 兼容协议和豆包 Ark 协议");
         String base=normalizeBase(input.baseUrl());
         List<Model> models=validateModels(input.models());
         jdbc.queryForObject("SELECT id FROM app_user WHERE id=? FOR UPDATE",String.class,owner);
@@ -56,12 +62,12 @@ public class ChannelService {
         String key=input.apiKey()==null?"":input.apiKey().trim();
         if(!key.isBlank()&&(key.length()>8192||key.chars().anyMatch(ch->ch<32||ch==127)))throw ApiException.invalid("API Key 格式无效");
         if(key.isBlank()&&prior==null)throw ApiException.invalid("新增渠道需要填写 API Key");
-        if(key.isBlank()&&prior!=null&&!MuseClient.origin(URI.create(prior.baseUrl())).equals(MuseClient.origin(URI.create(base))))throw ApiException.invalid("切换渠道域名需要重新填写 API Key");
+        if(key.isBlank()&&prior!=null&&(!MuseClient.origin(URI.create(prior.baseUrl())).equals(MuseClient.origin(URI.create(base)))||!prior.apiFormat().equals(apiFormat)))throw ApiException.invalid("切换渠道协议或服务域名需要重新填写 API Key");
         if(!cipher.ready())throw ApiException.invalid("部署尚未配置服务端凭证加密密钥");
         String encrypted=key.isBlank()?prior.encryptedKey():cipher.encrypt("channel:"+id,key);
         boolean enabled=input.enabled()==null||input.enabled();
-        if(prior==null)jdbc.update("INSERT INTO user_generation_channel(id,owner_id,name,base_url,encrypted_key,enabled,models_json) VALUES(?,?,?,?,?,?,?)",id,owner,name,base,encrypted,enabled,Json.write(models));
-        else jdbc.update("UPDATE user_generation_channel SET name=?,base_url=?,encrypted_key=?,enabled=?,models_json=? WHERE id=? AND owner_id=?",name,base,encrypted,enabled,Json.write(models),id,owner);
+        if(prior==null)jdbc.update("INSERT INTO user_generation_channel(id,owner_id,name,base_url,api_format,encrypted_key,enabled,models_json) VALUES(?,?,?,?,?,?,?,?)",id,owner,name,base,apiFormat,encrypted,enabled,Json.write(models));
+        else jdbc.update("UPDATE user_generation_channel SET name=?,base_url=?,api_format=?,encrypted_key=?,enabled=?,models_json=? WHERE id=? AND owner_id=?",name,base,apiFormat,encrypted,enabled,Json.write(models),id,owner);
         return view(require(owner,id));
     }
     public Map<String,Object> delete(String owner,String id){require(owner,id);jdbc.update("DELETE FROM user_generation_channel WHERE id=? AND owner_id=?",id,owner);return Map.of("ok",true);}

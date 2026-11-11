@@ -10,10 +10,10 @@ export type ModelSettingsProps = {
   open: boolean; onOpenChange: (open: boolean) => void; onChanged: () => void | Promise<void>;
   initialCapability?: ModelCapability;
 };
-type Draft = { id?: string; name: string; baseUrl: string; apiKey: string; enabled: boolean; models: ModelCandidate[] };
+type Draft = { id?: string; name: string; baseUrl: string; apiFormat: "openai" | "ark"; apiKey: string; enabled: boolean; models: ModelCandidate[] };
 type Confirmation = { kind: "close" | "delete" } | { kind: "switch"; selection: GenerationChannel | "new" };
-const blank = (): Draft => ({ name: "", baseUrl: "", apiKey: "", enabled: true, models: [] });
-const fromChannel = (channel: GenerationChannel): Draft => ({ id: channel.id, name: channel.name, baseUrl: channel.baseUrl, apiKey: "", enabled: channel.enabled, models: configuredCandidates(channel.models) });
+const blank = (): Draft => ({ name: "", baseUrl: "", apiFormat: "openai", apiKey: "", enabled: true, models: [] });
+const fromChannel = (channel: GenerationChannel): Draft => ({ id: channel.id, name: channel.name, baseUrl: channel.baseUrl, apiFormat: channel.apiFormat || "openai", apiKey: "", enabled: channel.enabled, models: configuredCandidates(channel.models) });
 const icons = { text: TextT, vision: Eye, image: ImageSquare, video: VideoCamera };
 
 /** The settings lifetime is independent from any project, canvas iframe or editor. */
@@ -35,7 +35,7 @@ export function ModelSettings({ open, onOpenChange, onChanged, initialCapability
   const changed = useRef(onChanged); changed.current = onChanged;
   const prior = channels.find((channel) => channel.id === draft.id);
   const selectedCount = draft.models.filter((model) => model.selected).length;
-  const serialized = (value: Draft) => json({ name: value.name, baseUrl: value.baseUrl, enabled: value.enabled, models: value.models.filter((model) => model.selected).map(({ name, capability }) => ({ name, capability })) });
+  const serialized = (value: Draft) => json({ name: value.name, baseUrl: value.baseUrl, apiFormat: value.apiFormat, enabled: value.enabled, models: value.models.filter((model) => model.selected).map(({ name, capability }) => ({ name, capability })) });
   const dirty = Boolean(draft.apiKey || serialized(draft) !== serialized(prior ? fromChannel(prior) : blank()));
 
   const load = async (scope: AbortController) => {
@@ -84,7 +84,7 @@ export function ModelSettings({ open, onOpenChange, onChanged, initialCapability
     const old = channels.find((channel) => channel.id === value.id);
     if (!value.apiKey.trim() && (!old?.hasKey || new URL(old.baseUrl).origin !== target.origin)) throw new Error("新增渠道或切换服务域名时，请填写 API Key。");
     const models = selectedChannelModels(value.models);
-    const result = await api<GenerationChannel>("/channels", { method: "PUT", body: json({ id: value.id, name, baseUrl: value.baseUrl.trim(), apiFormat: "openai", enabled: value.enabled, apiKey: value.apiKey.trim() || undefined, models }), signal: AbortSignal.any([scope.signal, AbortSignal.timeout(20_000)]) });
+    const result = await api<GenerationChannel>("/channels", { method: "PUT", body: json({ id: value.id, name, baseUrl: value.baseUrl.trim(), apiFormat: value.apiFormat, enabled: value.enabled, apiKey: value.apiKey.trim() || undefined, models }), signal: AbortSignal.any([scope.signal, AbortSignal.timeout(20_000)]) });
     if (scope.signal.aborted) return result;
     setChannels((current) => current.some((channel) => channel.id === result.id) ? current.map((channel) => channel.id === result.id ? result : channel) : [...current, result]);
     const next = { ...fromChannel(result), models: [...configuredCandidates(result.models), ...value.models.filter((model) => !model.selected)] };
@@ -157,10 +157,11 @@ export function ModelSettings({ open, onOpenChange, onChanged, initialCapability
       <form className="ms-editor" onSubmit={submit}>
         {error && <div className="ms-feedback error" role="alert"><WarningCircle size={17}/><span>{error}</span>{!channels.length && loading === false && <button type="button" className="text-button" onClick={() => lifetime.current && void load(lifetime.current)}>重新读取</button>}</div>}
         {notice && <div className="ms-feedback success" role="status"><CheckCircle size={17}/><span>{notice}</span></div>}
-        <div className="ms-editor-heading"><div><span className="ms-eyebrow">OPENAI COMPATIBLE</span><h3>{draft.id ? draft.name || "编辑渠道" : "连接一个模型渠道"}</h3><p>使用供应商提供的基础地址与 API Key。</p></div><label className="ms-enabled"><input type="checkbox" checked={draft.enabled} disabled={Boolean(working) || loading} onChange={(event) => update("enabled", event.target.checked)}/><Power size={14}/>启用渠道</label></div>
+        <div className="ms-editor-heading"><div><span className="ms-eyebrow">{draft.apiFormat === "ark" ? "DOUBAO ARK" : "OPENAI COMPATIBLE"}</span><h3>{draft.id ? draft.name || "编辑渠道" : "连接一个模型渠道"}</h3><p>使用供应商提供的基础地址与 API Key。</p></div><label className="ms-enabled"><input type="checkbox" checked={draft.enabled} disabled={Boolean(working) || loading} onChange={(event) => update("enabled", event.target.checked)}/><Power size={14}/>启用渠道</label></div>
         <fieldset className="ms-connection" disabled={Boolean(working) || loading}>
           <label className="ms-field"><span>渠道名称</span><input value={draft.name} maxLength={80} autoComplete="off" placeholder="例如：我的模型服务" onChange={(event) => update("name", event.target.value)}/></label>
-          <label className="ms-field"><span>API 基础地址</span><input type="url" value={draft.baseUrl} maxLength={512} autoComplete="off" placeholder="https://api.example.com/v1" onChange={(event) => update("baseUrl", event.target.value)}/><small>HTTPS 443 公网地址，可包含 /v1；本机 Muse 从账号池接入。</small></label>
+          <label className="ms-field"><span>协议</span><select value={draft.apiFormat} onChange={(event) => { const format = event.target.value === "ark" ? "ark" : "openai"; update("apiFormat", format); if (format === "ark" && !draft.baseUrl) update("baseUrl", "https://ark.cn-beijing.volces.com/api/v3"); }}><option value="openai">OpenAI 兼容协议</option><option value="ark">豆包 Ark 官方 API</option></select><small>Ark 使用方舟 API Key；OpenAI 兼容渠道使用供应商文档中的 Key。</small></label>
+          <label className="ms-field"><span>API 基础地址</span><input type="url" value={draft.baseUrl} maxLength={512} autoComplete="off" placeholder={draft.apiFormat === "ark" ? "https://ark.cn-beijing.volces.com/api/v3" : "https://api.example.com/v1"} onChange={(event) => update("baseUrl", event.target.value)}/><small>HTTPS 443 公网地址；豆包 Ark 默认填入官方 Base URL，本机 Muse 从账号池接入。</small></label>
           <label className="ms-field ms-key"><span><Key size={14}/>API Key{prior?.hasKey && <em>已加密保存</em>}</span><input type="password" value={draft.apiKey} maxLength={8192} autoComplete="new-password" placeholder={prior?.hasKey ? "留空保留已保存的 Key" : "填写供应商 API Key"} onChange={(event) => update("apiKey", event.target.value)}/><small>{prior?.hasKey ? "留空沿用当前凭证；更换服务域名时需重新填写。" : "仅保存在服务端，保存后不会回传，也不写入浏览器存储。"}</small></label>
         </fieldset>
         <section className="ms-models" aria-labelledby="ms-model-heading">

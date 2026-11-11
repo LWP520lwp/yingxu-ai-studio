@@ -61,7 +61,7 @@ docker compose --env-file .env.production.local -f compose.production.yaml ps
 - 科普制作默认使用 `muse_video`：按分镜调用所选 Muse 视频模型，要求真实运动和原生中文讲解，校验音轨与时长后合成 H.264/AAC MP4；也可以绑定本人已有的合格视频。缺少视频或原声时明确失败，保留已完成的生成结果供重试复用。
 - 动态视频的 SRT 是依据镜头时段和讲稿生成的字幕草稿，需对照实际语音核对；当前没有 ASR 转写、逐字强制对齐或机器事实认证。创作者需要核对资料、画面科学性和原生旁白内容。
 - 旧 `image_narration` API 保留图文配音兼容。仅该模式使用 Windows 慧慧或 Linux **eSpeak NG“中文 · 本地基础音色”**，后者音色偏机械；`SCIENCE_TTS_PROVIDER` 支持 `auto`、`sapi`、`espeak`，`SCIENCE_ESPEAK_BIN` 可指定路径。它不替代默认 Muse 视频与原声，也不自动下载声音模型。
-- 图片/视频/文本大模型需要部署者或登录用户在配置中心接入自己的兼容渠道及API Key。仓库和镜像**不带作者账号的额度、Cookie或供应商凭据**。没有模型配置时，登录、草稿、画布与已有素材管理仍可运行；AI 生成会显示未配置。没有文本模型时可以整理已有讲稿，不从空主题编造科学结论。
+- 图片/视频/文本大模型需要部署者或登录用户在配置中心接入自己的兼容渠道及 API Key。除 OpenAI 兼容协议外，配置中心支持豆包 Ark 官方 API：基础地址填写 `https://ark.cn-beijing.volces.com/api/v3`，模型目录通过 `/models` 获取，文本走 `/chat/completions`，Seedream 生图走 `/images/generations`，Seedance 视频走 `/contents/generations/tasks`。仓库和镜像**不带作者账号的额度、Cookie 或供应商凭据**。没有模型配置时，登录、草稿、画布与已有素材管理仍可运行；AI 生成会显示未配置。没有文本模型时可以整理已有讲稿，不从空主题编造科学结论。
 
 个人生成渠道的Key只加密存于API端MySQL，前端构建不读取 `.env.production.local`。镜像构建上下文通过 `.dockerignore` 排除全部环境文件、权重、运行数据和本机产物。
 

@@ -11,6 +11,7 @@ type Scene = { id: string; role: "hook" | "explain" | "experiment" | "question";
 type ScienceDocument = { schemaVersion: 1; topic: string; title: string; audience: "children" | "teen" | "general"; structure: "misconception" | "experiment" | "explain"; aspectRatio: "16:9" | "9:16" | "1:1"; models?: { text?: string; image?: string; video?: string }; sources: Source[]; scenes: Scene[] };
 type Snapshot = { revision: number; document: ScienceDocument };
 type ScienceRun = { productionMode?: string; captionTiming?: string; resolvedVideos?: Record<string, string>; narrationUrl?: string; id: string; status: string; stage?: string; error?: string; resultAssetId?: string; resultUrl?: string; subtitleUrl?: string; createdAt: string };
+type RagHit = { chunkId: string; title: string; sourceUrl?: string; excerpt: string; citation: string; score: number };
 type Props = { project: Project; active: boolean; assets: Asset[]; models: Bootstrap["models"]; modelCatalogVersion?: number; onAsset: (asset: Asset) => void; onUpload: () => void; onSettings: (capability?: "text" | "image" | "video") => void; onTitle?: (title: string) => void };
 const emptyDocument = (): ScienceDocument => ({ schemaVersion: 1, topic: "", title: "", audience: "general", structure: "misconception", aspectRatio: "9:16", sources: [], scenes: [] });
 const roles: Record<Scene["role"], string> = { hook: "悬念 / 误区", explain: "原理解释", experiment: "观察 / 小实验", question: "思考追问" };
@@ -43,6 +44,8 @@ export const ScienceStudio = forwardRef<ScienceStudioHandle, Props>(function Sci
   const [runs, setRuns] = useState<ScienceRun[]>([]);
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState("");
+  const [ragBusy, setRagBusy] = useState(false);
+  const [ragHits, setRagHits] = useState<RagHit[]>([]);
   const controller = useRef(new AbortController());
   const pendingSave = useRef<Promise<boolean> | null>(null);
   const callbacks = useRef(props); callbacks.current = props;
@@ -149,6 +152,29 @@ export const ScienceStudio = forwardRef<ScienceStudioHandle, Props>(function Sci
     } catch (cause) { if (!signal.aborted) setError(message(cause)); }
     finally { if (!signal.aborted) setPlanning(false); }
   }
+  async function syncKnowledge() {
+    const sources = current.current.sources.filter((source) => source.excerpt.trim());
+    if (!sources.length) { setError("请先填写至少一份资料原文，再同步到知识库。"); return; }
+    setRagBusy(true); setError(""); setNotice("");
+    try {
+      for (const source of sources) {
+        await api(`/projects/${props.project.id}/rag/documents`, { method: "POST", body: json({ title: source.title.trim() || "未命名资料", sourceUrl: source.url.trim() || undefined, content: source.excerpt, metadata: { sourceId: source.id } }) });
+      }
+      setNotice(`已将 ${sources.length} 份资料同步到项目知识库，整理脚本时会自动检索相关段落。`);
+    } catch (cause) { setError(message(cause)); }
+    finally { setRagBusy(false); }
+  }
+  async function searchKnowledge() {
+    const query = current.current.topic.trim();
+    if (!query) { setError("请先填写视频主题，再检索知识库。"); return; }
+    setRagBusy(true); setError("");
+    try {
+      const result = await api<{ results: RagHit[] }>(`/projects/${props.project.id}/rag/search`, { method: "POST", body: json({ query, topK: 5 }) });
+      setRagHits(result.results || []);
+      setNotice(result.results?.length ? `知识库返回 ${result.results.length} 条相关段落。` : "知识库暂未找到相关段落，可先同步资料。");
+    } catch (cause) { setError(message(cause)); }
+    finally { setRagBusy(false); }
+  }
   async function createRun() {
     if (creating || activeRun) return;
     setCreating(true); setError("");
@@ -200,9 +226,10 @@ export const ScienceStudio = forwardRef<ScienceStudioHandle, Props>(function Sci
         </div>
         <button className="button primary science-next" disabled={!loaded || planning || !textModelAvailable || !document.topic.trim() || (!document.sources.some((source) => source.excerpt.trim()) && !document.scenes.some((scene) => scene.narration.trim()))} onClick={() => void plan()}><MagicWand size={16}/>{planning ? "正在整理分镜…" : "整理脚本与分镜"}</button>
       </section>
-      <section className="science-sources"><div className="science-section-heading"><div><h2>资料与证据卡</h2><p>粘贴资料中的关键原文；网址用于追溯和片尾来源，不会自动抓取网页。</p></div><button className="button secondary" disabled={document.sources.length >= 12} onClick={() => patch({ sources: [...document.sources, { id: crypto.randomUUID(), title: "", url: "", excerpt: "" }] })}><Plus size={14}/>添加资料</button></div>
+      <section className="science-sources"><div className="science-section-heading"><div><h2>资料与证据卡</h2><p>粘贴资料中的关键原文；网址用于追溯和片尾来源，不会自动抓取网页。</p></div><div className="science-source-actions"><button className="button secondary" disabled={ragBusy || !document.sources.some((source) => source.excerpt.trim())} onClick={() => void syncKnowledge()}><BookOpen size={14}/>{ragBusy ? "同步中…" : "同步到知识库"}</button><button className="button secondary" disabled={ragBusy || !document.topic.trim()} onClick={() => void searchKnowledge()}><MagicWand size={14}/>检索主题</button><button className="button secondary" disabled={document.sources.length >= 12} onClick={() => patch({ sources: [...document.sources, { id: crypto.randomUUID(), title: "", url: "", excerpt: "" }] })}><Plus size={14}/>添加资料</button></div></div>
         {!document.sources.length && <div className="science-empty"><BookOpen size={30}/><h3>先给知识一个可靠的起点</h3><p>教材、公开论文、权威科普资料，或你已核对的讲稿。</p><button className="button secondary" onClick={() => patch({ sources: [{ id: crypto.randomUUID(), title: "我的讲稿", url: "", excerpt: "" }] })}><Plus size={14}/>添加第一份资料</button></div>}
         {document.sources.map((source, index) => <article className="science-source" key={source.id}><div><strong>资料 {index + 1}</strong><button className="icon-button" aria-label={`移除资料 ${index + 1}`} onClick={() => patch({ sources: document.sources.filter((item) => item.id !== source.id), scenes: document.scenes.map((scene) => ({ ...scene, sourceIds: scene.sourceIds.filter((id) => id !== source.id), verified: scene.sourceIds.includes(source.id) ? false : scene.verified })) })}><Trash size={14}/></button></div><label className="science-field">来源名称<input aria-label={`资料 ${index + 1} 名称`} maxLength={200} value={source.title} onChange={(event) => patchSource(source.id, { title: event.target.value })} placeholder="教材章节 / 论文标题 / 我的讲稿"/></label><label className="science-field">来源网址（可选）<input aria-label={`资料 ${index + 1} 网址`} value={source.url || ""} maxLength={1000} onChange={(event) => patchSource(source.id, { url: event.target.value })} placeholder="https://…"/></label><label className="science-field">关键原文 / 已核对讲稿<textarea aria-label={`资料 ${index + 1} 原文`} value={source.excerpt} maxLength={3000} onChange={(event) => patchSource(source.id, { excerpt: event.target.value })} placeholder="粘贴需要讲解的原文或讲稿；保留条件、数字和适用范围。"/></label></article>)}
+        {ragHits.length > 0 && <aside className="science-rag-results" aria-label="知识库检索结果"><strong>知识库检索结果</strong>{ragHits.map((hit) => <p key={hit.chunkId}><span>{hit.citation}</span>{hit.excerpt}</p>)}</aside>}
       </section>
     </div>}
     {loaded && step === 2 && <section className="science-storyboard"><div className="science-section-heading"><div><h2>分镜与科学核对</h2><p>每幕编写动作、变化与运镜，关联依据并核对讲解。每幕默认 15 秒，讲解建议不超过 45 字。</p></div><button className="button secondary" disabled={!loaded || document.scenes.length >= 6} onClick={() => patch({ scenes: [...document.scenes, { id: crypto.randomUUID(), role: "explain", narration: "", visualPrompt: "", sourceIds: [], verified: false }] })}><Plus size={14}/>添加分镜</button></div>{planSummary && <p className="science-plan-summary">{planSummary}</p>}

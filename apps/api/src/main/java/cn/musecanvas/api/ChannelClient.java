@@ -94,18 +94,26 @@ public class ChannelClient {
             var body=Map.of("model",route.model(),"prompt",request.prompt(),"n",1,"size",request.width()+"x"+request.height());
             httpRequest=send(route.channel(),endpoint(route.channel().baseUrl(),"/images/generations"),"POST","application/json",Json.write(body).getBytes(StandardCharsets.UTF_8),jobId);
         }else{
-            String boundary="Workbench"+UUID.randomUUID().toString().replace("-","");
-            byte[] body=videoBody(boundary,route.model(),request);
-            httpRequest=send(route.channel(),endpoint(route.channel().baseUrl(),"/videos"),"POST","multipart/form-data; boundary="+boundary,body,jobId);
+            if("ark".equals(route.channel().apiFormat())){
+                // Volcengine Ark's official Seedance endpoint is JSON and returns an
+                // asynchronous task. Keep this adapter explicit so generic OpenAI
+                // /videos providers continue to use their existing multipart shape.
+                var body=arkVideoBody(route.model(),request);
+                httpRequest=send(route.channel(),endpoint(route.channel().baseUrl(),"/contents/generations/tasks"),"POST","application/json",Json.write(body).getBytes(StandardCharsets.UTF_8),jobId);
+            }else{
+                String boundary="Workbench"+UUID.randomUUID().toString().replace("-","");
+                byte[] body=videoBody(boundary,route.model(),request);
+                httpRequest=send(route.channel(),endpoint(route.channel().baseUrl(),"/videos"),"POST","multipart/form-data; boundary="+boundary,body,jobId);
+            }
         }
         return parseOutcome(json(httpRequest,request.kind().equals("image")?(int)(AssetService.MAX_BYTES*4/3+1024*1024):2*1024*1024));
     }
 
     public MuseClient.Outcome poll(ChannelService.Route route,String kind,String taskId)throws Exception{
         if(!"video".equals(kind))throw new MuseClient.Rejected("兼容图片接口没有返回同步结果，请核对供应商任务");
-        URI target=endpoint(route.channel().baseUrl(),"/videos/"+safeId(taskId));
+        URI target=endpoint(route.channel().baseUrl(),("ark".equals(route.channel().apiFormat())?"/contents/generations/tasks/":"/videos/")+safeId(taskId));
         MuseClient.Outcome result=parseOutcome(json(send(route.channel(),target,"GET",null,null),2*1024*1024));
-        if(result.completed()&&result.url()==null&&result.base64()==null)return new MuseClient.Outcome(taskId,result.status(),target+"/content",null,result.error());
+        if(result.completed()&&result.url()==null&&result.base64()==null)return new MuseClient.Outcome(taskId,result.status(),target+("ark".equals(route.channel().apiFormat())?"":"/content"),null,result.error());
         return result;
     }
 
@@ -162,7 +170,7 @@ public class ChannelClient {
         throw new IllegalStateException("渠道暂不可用（HTTP "+status+"）");
     }
     static MuseClient.Outcome parseOutcome(JsonNode raw){var parsed=MuseClient.parse(raw);return new MuseClient.Outcome(parsed.taskId(),parsed.error()==null?parsed.status():"failed",parsed.url(),parsed.base64(),parsed.error()==null?null:"渠道任务失败，请核对上游生成历史");}
-    static URI endpoint(String base,String path){String value=base.replaceAll("/+$","");return URI.create(value+(value.endsWith("/v1")?"":"/v1")+path);}
+    static URI endpoint(String base,String path){String value=base.replaceAll("/+$","");return URI.create(value+(value.endsWith("/v1")||value.endsWith("/api/v3")?"":"/v1")+path);}
     static String safeId(String value){if(value==null||!value.matches("[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}"))throw new MuseClient.Rejected("上游任务标识无效");return URLEncoder.encode(value,StandardCharsets.UTF_8).replace("+","%20");}
     static String guessCapability(String name){
         if(name==null)return null;
@@ -170,8 +178,12 @@ public class ChannelClient {
         if(List.of("video","sora","veo","kling","seedance","hailuo").stream().anyMatch(id::contains)||id.matches("(?:.*/)?wan[-0-9].*"))return "video";
         if(List.of("dall-e","dalle","seedream","flux","imagen","sdxl","stable-diffusion").stream().anyMatch(id::contains)||id.matches("(?:.*/)?(?:gpt-image|image)[-0-9].*"))return "image";
         if(id.contains("vision")||id.matches(".*(?:^|[-_./])vl(?:$|[-_./]).*"))return "vision";
-        if(id.matches("(?:gpt-[0-9].*|chatgpt-.*|o[134](?:[-.].*)?|claude[-/].*|(?:qwen|deepseek|glm|gemini)[-/.].*)"))return "text";
+        if(id.matches("(?:gpt-[0-9].*|chatgpt-.*|o[134](?:[-.].*)?|claude[-/].*|(?:qwen|deepseek|glm|gemini|doubao-seed)[-/.].*)"))return "text";
         return null;
+    }
+    static Map<String,Object> arkVideoBody(String model,JobService.Request request){
+        String ratio= MuseClient.ratio(request.width(),request.height());
+        return Map.of("model",model,"content",List.of(Map.of("type","text","text",request.prompt())),"ratio",ratio,"duration",request.duration(),"watermark",false,"generate_audio",true);
     }
     static byte[] videoBody(String boundary,String model,JobService.Request r){
         var fields=new LinkedHashMap<String,String>();fields.put("model",model);fields.put("prompt",r.prompt());fields.put("size",r.width()+"x"+r.height());fields.put("seconds",String.valueOf(r.duration()));

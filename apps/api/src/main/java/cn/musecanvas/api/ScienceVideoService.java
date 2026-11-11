@@ -28,15 +28,17 @@ public class ScienceVideoService {
     private final ScienceVideoDocument documents;private final ScienceTtsService tts;private final VideoCompositionRenderer renderer;private final VideoCompositionDocument composition;
     private final JobService jobs;private final ChannelService channels;private final ChannelClient client;private final AppSettings settings;private final String ffmpeg,ffprobe;
     private final MuseTextGateway museText;
+    private final RagService rag;
     private final AtomicBoolean busy=new AtomicBoolean();private final Semaphore planners=new Semaphore(4);private final Set<String> planning=ConcurrentHashMap.newKeySet();
     private final ExecutorService executor=Executors.newSingleThreadExecutor(Thread.ofPlatform().name("science-video-production").factory());
     @Autowired
-    public ScienceVideoService(JdbcTemplate jdbc,TransactionTemplate tx,WorkbenchStore store,AssetService assets,ScienceVideoDocument documents,ScienceTtsService tts,VideoCompositionRenderer renderer,VideoCompositionDocument composition,JobService jobs,ChannelService channels,ChannelClient client,AppSettings settings,Environment env,MuseTextGateway museText){
+    public ScienceVideoService(JdbcTemplate jdbc,TransactionTemplate tx,WorkbenchStore store,AssetService assets,ScienceVideoDocument documents,ScienceTtsService tts,VideoCompositionRenderer renderer,VideoCompositionDocument composition,JobService jobs,ChannelService channels,ChannelClient client,AppSettings settings,Environment env,MuseTextGateway museText,RagService rag){
         this.jdbc=jdbc;this.tx=tx;this.store=store;this.assets=assets;this.documents=documents;this.tts=tts;this.renderer=renderer;this.composition=composition;this.jobs=jobs;this.channels=channels;this.client=client;this.settings=settings;
         ffmpeg=env.getProperty("app.ffmpeg-bin",env.getProperty("FFMPEG_BIN","ffmpeg"));ffprobe=env.getProperty("app.ffprobe-bin",env.getProperty("FFPROBE_BIN","ffprobe"));
-        this.museText=museText;
+        this.museText=museText;this.rag=rag;
     }
-    public ScienceVideoService(JdbcTemplate jdbc,TransactionTemplate tx,WorkbenchStore store,AssetService assets,ScienceVideoDocument documents,ScienceTtsService tts,VideoCompositionRenderer renderer,VideoCompositionDocument composition,JobService jobs,ChannelService channels,ChannelClient client,AppSettings settings,Environment env){this(jdbc,tx,store,assets,documents,tts,renderer,composition,jobs,channels,client,settings,env,null);}
+    public ScienceVideoService(JdbcTemplate jdbc,TransactionTemplate tx,WorkbenchStore store,AssetService assets,ScienceVideoDocument documents,ScienceTtsService tts,VideoCompositionRenderer renderer,VideoCompositionDocument composition,JobService jobs,ChannelService channels,ChannelClient client,AppSettings settings,Environment env,MuseTextGateway museText){this(jdbc,tx,store,assets,documents,tts,renderer,composition,jobs,channels,client,settings,env,museText,null);}
+    public ScienceVideoService(JdbcTemplate jdbc,TransactionTemplate tx,WorkbenchStore store,AssetService assets,ScienceVideoDocument documents,ScienceTtsService tts,VideoCompositionRenderer renderer,VideoCompositionDocument composition,JobService jobs,ChannelService channels,ChannelClient client,AppSettings settings,Environment env){this(jdbc,tx,store,assets,documents,tts,renderer,composition,jobs,channels,client,settings,env,null,null);}
     public Map<String,Object> capabilities(){var result=new LinkedHashMap<>(tts.capabilities());result.put("renderAvailable",renderer.available());result.put("defaultProductionMode","muse_video");result.put("productionModes",List.of("muse_video","image_narration"));result.put("nativeAudioRequiresValidation",true);result.put("nativeCaptionTiming","scene");return result;}
     public Map<String,Object> get(String owner,String project){store.project(owner,project);return jdbc.query("SELECT revision,document,updated_at FROM project_science_video WHERE project_id=?",(r,n)->snapshot(r),project).stream().findFirst().orElseGet(()->Map.of("revision",0L,"document",ScienceVideoDocument.empty()));}
     public Map<String,Object> save(String owner,String project,Long base,JsonNode raw){
@@ -47,15 +49,19 @@ public class ScienceVideoService {
         JsonNode doc=documents.validate(owner,project,raw);if(!planners.tryAcquire())throw new ApiException(HttpStatus.TOO_MANY_REQUESTS,"SCIENCE_PLAN_BUSY","规划请求较多，请稍后重试");
         if(!planning.add(owner)){planners.release();throw ApiException.invalid("当前已有一个讲稿规划正在进行");}
         try{
-            var base=mutable(doc);var scenes=new ArrayList<Map<String,Object>>();String source="source";
+            JsonNode effectiveDoc=doc;var retrieved=List.<Map<String,Object>>of();
+            if(rag!=null&&!doc.path("topic").asString().isBlank()){
+                try{retrieved=rag.context(owner,project,doc.path("topic").asString(),6);effectiveDoc=withRetrievedSources(doc,retrieved);}catch(ApiException ignored){/* An unavailable/empty knowledge base must not block source-only planning. */}
+            }
+            var base=mutable(effectiveDoc);var scenes=new ArrayList<Map<String,Object>>();String source="source";
             if(model==null||model.isBlank()){
-                for(JsonNode scene:doc.path("scenes"))if(!scene.path("narration").asString().isBlank())for(String sentence:ScienceVideoDocument.sentences(scene.path("narration").asString(),45)){if(scenes.size()>=6)break;scenes.add(scene("scene_"+(scenes.size()+1),sentence,strings(scene.path("sourceIds"))));}
-                if(scenes.isEmpty())for(JsonNode ref:doc.path("sources")){for(String sentence:ScienceVideoDocument.sentences(ref.path("excerpt").asString(),45)){if(scenes.size()>=6)break;scenes.add(scene("scene_"+(scenes.size()+1),sentence,List.of(ref.path("id").asString())));}if(scenes.size()>=6)break;}
+                for(JsonNode scene:effectiveDoc.path("scenes"))if(!scene.path("narration").asString().isBlank())for(String sentence:ScienceVideoDocument.sentences(scene.path("narration").asString(),45)){if(scenes.size()>=6)break;scenes.add(scene("scene_"+(scenes.size()+1),sentence,strings(scene.path("sourceIds"))));}
+                if(scenes.isEmpty())for(JsonNode ref:effectiveDoc.path("sources")){for(String sentence:ScienceVideoDocument.sentences(ref.path("excerpt").asString(),45)){if(scenes.size()>=6)break;scenes.add(scene("scene_"+(scenes.size()+1),sentence,List.of(ref.path("id").asString())));}if(scenes.size()>=6)break;}
                 if(scenes.isEmpty())throw ApiException.invalid("未选择文本模型时，请先提供来源原文摘录或已有讲稿；空主题不能生成知识内容");
             }else{
-                if(doc.path("sources").isEmpty()||stringsOfExcerpts(doc).isBlank())throw ApiException.invalid("请先提供参考资料摘录，再由文本模型规划科普讲稿");
+                if(effectiveDoc.path("sources").isEmpty()||stringsOfExcerpts(effectiveDoc).isBlank())throw ApiException.invalid("请先提供参考资料摘录，或先在知识库导入与主题相关的资料");
                 boolean muse="muse-spark".equals(model)||"muse-service-spark".equals(model);
-                String reply;if(muse){if(museText==null)throw ApiException.invalid("Muse文本服务未接入当前部署");reply=museText.complete(owner,model,PLAN_SYSTEM,Json.write(doc),4000);}else reply=client.textPlan(channels.route(owner,model),PLAN_SYSTEM,Json.write(doc));JsonNode answer;
+                String reply;if(muse){if(museText==null)throw ApiException.invalid("Muse文本服务未接入当前部署");reply=museText.complete(owner,model,PLAN_SYSTEM,Json.write(effectiveDoc),4000);}else reply=client.textPlan(channels.route(owner,model),PLAN_SYSTEM,Json.write(effectiveDoc));JsonNode answer;
                 try{answer=ModelJson.object(reply);}catch(Exception e){throw ApiException.invalid("文本模型未返回有效的科普分幕JSON，草稿没有被覆盖");}
                 ScienceVideoDocument.fields(answer,Set.of("title","scenes"));if(answer.has("title"))base.put("title",ScienceVideoDocument.text(answer.path("title"),200,true));
                 if(!answer.path("scenes").isArray()||answer.path("scenes").isEmpty()||answer.path("scenes").size()>6)throw ApiException.invalid("文本模型须返回1至6幕，草稿没有被覆盖");
@@ -64,7 +70,7 @@ public class ScienceVideoService {
                 }source="model";
             }
             base.put("scenes",scenes);JsonNode planned=documents.validate(owner,project,Json.read(Json.write(base)));
-            return Map.of("document",planned,"source",source,"summary",source.equals("model")?"已按提供的资料规划分幕；请逐幕核对科学表述、来源和画面后再制作":"已按提供的原文拆分，最多保留6幕；未补写新知识，请逐幕核对并选择画面");
+            return Map.of("document",planned,"source",source,"retrieved",retrieved,"summary",source.equals("model")?"已按提供的资料与知识库检索结果规划分幕；请逐幕核对科学表述、来源和画面后再制作":"已按提供的原文与知识库资料拆分，最多保留6幕；未补写新知识，请逐幕核对并选择画面");
         }finally{planning.remove(owner);planners.release();}
     }
     public List<Map<String,Object>> runs(String owner,String project){store.project(owner,project);return jdbc.query("SELECT * FROM science_video_run WHERE owner_id=? AND project_id=? ORDER BY created_at DESC LIMIT 30",(r,n)->runRow(r),owner,project);}
@@ -269,6 +275,8 @@ public class ScienceVideoService {
         for(String[] pair:List.of(new String[]{"timeline","timeline"},new String[]{"imageJobs","image_jobs"},new String[]{"resolvedAssets","resolved_assets"},new String[]{"videoJobs","video_jobs"},new String[]{"resolvedVideos","resolved_videos"})){String value=r.getString(pair[1]);out.put(pair[0],value==null?null:Json.read(value));}out.put("createdAt",WorkbenchStore.iso(r,"created_at"));out.put("updatedAt",WorkbenchStore.iso(r,"updated_at"));return out;
     }
     private static Map<String,Object> scene(String id,String narration,List<String> refs){return Map.of("id",id,"role","explain","narration",narration,"visualPrompt","","sourceIds",refs,"verified",false);}
+    private static JsonNode withRetrievedSources(JsonNode original,List<Map<String,Object>> hits){
+        if(hits.isEmpty())return original;var base=mutable(original);var sources=new ArrayList<Map<String,Object>>();for(JsonNode source:original.path("sources")){var row=new LinkedHashMap<String,Object>();row.put("id",source.path("id").asString());row.put("title",source.path("title").asString());row.put("url",source.path("url").asString());row.put("excerpt",source.path("excerpt").asString());sources.add(row);}var seen=new HashSet<String>();for(Map<String,Object> row:sources)seen.add(String.valueOf(row.get("id")));for(Map<String,Object> hit:hits){if(sources.size()>=12)break;String id="rag_"+Json.hash(String.valueOf(hit.get("chunkId"))).substring(0,24);if(!seen.add(id))continue;var row=new LinkedHashMap<String,Object>();row.put("id",id);row.put("title",String.valueOf(hit.getOrDefault("title","知识库资料")));row.put("url",String.valueOf(hit.getOrDefault("sourceUrl","")));row.put("excerpt",String.valueOf(hit.getOrDefault("excerpt","")));sources.add(row);}base.put("sources",sources);return Json.read(Json.write(base));}
     @SuppressWarnings("unchecked") private static Map<String,Object> mutable(JsonNode node){return Json.MAPPER.readValue(Json.write(node),LinkedHashMap.class);}
     private static Map<String,String> stringMap(Object raw){var result=new LinkedHashMap<String,String>();if(raw!=null){JsonNode node=Json.read(String.valueOf(raw));for(String name:node.propertyNames())result.put(name,node.path(name).asString());}return result;}
     private static List<String> strings(JsonNode node){var result=new ArrayList<String>();if(!node.isArray())return result;for(JsonNode value:node){if(!value.isString())throw ApiException.invalid("来源标识须为文字");result.add(value.asString());}return result;}

@@ -69,6 +69,25 @@ class ChannelClientTest {
         assertThrows(MuseClient.Rejected.class,()->client.download(route,polled,"video")); // PNG is never accepted as a video.
         assertEquals(1,sent.stream().filter(r->r.method().equals("POST")).count());assertEquals(3,sent.size());
     }
+    @Test void arkUsesOfficialSeedanceTaskEndpointAndParsesTypedVideoContent()throws Exception {
+        var ark=new ChannelService.Channel("ark-id","owner","豆包 Ark","https://ark.cn-beijing.volces.com/api/v3","ark",true,"encrypted",List.of(new ChannelService.Model("doubao-seedance-1-0-pro","video")));
+        when(service.key(ark)).thenReturn(KEY);
+        responses(r->switch(r.uri().getPath()){
+            case "/api/v3/contents/generations/tasks" -> json("{\"id\":\"cgt_1\",\"status\":\"queued\"}");
+            case "/api/v3/contents/generations/tasks/cgt_1" -> json("{\"id\":\"cgt_1\",\"status\":\"succeeded\",\"content\":[{\"type\":\"video\",\"video_url\":\"https://provider.example/generated.mp4\"}]}");
+            default -> response(200,PNG,Map.of());
+        });
+        var client=new ChannelClient(new AppSettings(new MockEnvironment()),service,http,uri->{assertEquals("https",uri.getScheme());});
+        var route=new ChannelService.Route(ark,"doubao-seedance-1-0-pro");
+        var submitted=client.submit("ark-job",route,request("video"));
+        assertEquals("cgt_1",submitted.taskId()); assertFalse(submitted.completed());
+        var completed=client.poll(route,"video",submitted.taskId());
+        assertTrue(completed.completed()); assertEquals("https://provider.example/generated.mp4",completed.url());
+        assertEquals("/api/v3/contents/generations/tasks",sent.getFirst().uri().getPath());
+        var payload=Json.read(body(sent.getFirst())); assertEquals("doubao-seedance-1-0-pro",payload.path("model").asString());
+        assertEquals("text",payload.path("content").get(0).path("type").asString());
+        assertEquals(8,payload.path("duration").asInt()); assertEquals("1:1",payload.path("ratio").asString());
+    }
     @Test void publicMediaRedirectDoesNotReceiveProviderCredential()throws Exception {
         responses(r->r.uri().getHost().equals("provider.example")?response(302,new byte[0],Map.of("Location",List.of("https://cdn.example/image.png"))):response(200,PNG,Map.of()));
         var client=client();var route=new ChannelService.Route(CHANNEL,"gpt-image-1");
