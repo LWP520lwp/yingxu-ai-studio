@@ -100,9 +100,9 @@ import {
 import { App, Button, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import {
-  ProductActiveConnectionPath as ActiveConnectionPath,
-  ProductConnectionPath as ConnectionPath,
-} from "@/product-engine/ConnectionLayer";
+  AtlasActiveConnectionPath as ActiveConnectionPath,
+  AtlasConnectionPath as ConnectionPath,
+} from "@/atlas-engine/surface/AtlasConnectionLayer";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
 import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
