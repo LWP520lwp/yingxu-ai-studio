@@ -138,7 +138,7 @@ GitHub OAuth 开发回调默认使用 `http://localhost:${APP_PORT}/login/oauth2
 
 生成结果下载默认仅允许模型服务自身来源。若提供方返回外部 CDN 地址，应在 `MUSE_MEDIA_ALLOWED_HOSTS` 中填写经核实的精确主机名，以逗号分隔；不支持通配符，外部地址仅接受 HTTPS 443，并拒绝非公开地址。配置为空时不会自动信任任意返回的下载链接。真实生成与 CDN 允许列表仍需凭实际提供方配置联调，未配置时不能声称已完成生成验证。
 
-原安装的 `scripts/Manage.ps1` 曾生成本机中转服务的 `poolKey`；它不是 Muse 或豆包官方 API Key，也不会替用户取得供应商凭据。新项目不创建或轮换原安装的 Key。Muse 与豆包网页会话由本机 browser worker 的独立持久浏览器配置管理，用户须在可见窗口完成登录与验证。worker 的安装和启动方式见 [apps/browser-worker/README.md](apps/browser-worker/README.md)；可在其所属桌面会话运行 `start-browser-worker.ps1`，或向 `start-dev.ps1` 显式传入 `-WithBrowserWorker`。API 与 worker 必须使用同一个随机 `BROWSER_WORKER_TOKEN`，worker 绑定 `127.0.0.1`，不能通过公网反向代理暴露。`BROWSER_INTERACTIVE_LOGIN_ENABLED` 默认关闭，仅在专用桌面会话及本机管理访问已配置后显式启用。
+Muse 与豆包网页登录会话由本机 browser worker 的独立持久浏览器配置管理，用户须在可见窗口完成登录与验证。worker 的安装和启动方式见 [apps/browser-worker/README.md](apps/browser-worker/README.md)；可在其所属桌面会话运行 `start-browser-worker.ps1`，或向 `start-dev.ps1` 显式传入 `-WithBrowserWorker`。API 与 worker 必须使用同一个随机 `BROWSER_WORKER_TOKEN`，worker 绑定 `127.0.0.1`，不能通过公网反向代理暴露。`BROWSER_INTERACTIVE_LOGIN_ENABLED` 默认关闭，仅在专用桌面会话及本机管理访问已配置后显式启用。
 
 账号池允许已登录用户查看自己的 Muse／豆包登录状态、创建网页账号、检查/关闭浏览器窗口及停用账号。账号停用会保留数据库记录和磁盘 profile。网页登录状态只表示 worker 所见的浏览器界面，不保证账号额度或实际生成可用；生产 API 生成请使用已验证的 Ark API Key 渠道。远程访问会打开部署机器上的浏览器窗口，自托管者应在可操作该桌面的环境中完成网页登录。
 
@@ -146,7 +146,7 @@ GitHub OAuth 开发回调默认使用 `http://localhost:${APP_PORT}/login/oauth2
 
 如需使用特殊 Muse 服务密钥路线，必须设置独立的 Base64 编码 32 字节 `POOL_CREDENTIAL_MASTER_KEY`。若要从本机 MuseProvider 导入已有密钥，还需显式启用 `MUSE_LOCAL_KEY_ENABLED=true`，并将 `MUSE_LOCAL_POOL_URL` 设置为与 `MUSE_BASE_URL` 相同的字面回环来源；导入后数据库只保存 AES-GCM 密文。妥善备份主密钥，丢失或更换后现有密文无法解密。不要把此密钥或 worker bearer token 放进 `VITE_` 变量。
 
-`POOL_OVERVIEW_ENABLED` 留空时跟随开发 profile；生产默认关闭，部署者显式设为 `true` 后，每位登录用户都可管理自己的账号。只有“从宿主导入本地 Muse 服务凭据”要求回环访问及本机开发身份、`POOL_OVERVIEW_OWNER_IDS` 授权或 `ROLE_ADMIN`；此授权不限制个人账号 CRUD。旧版无所有者的账号只迁给明确的本机开发身份，不归首次访问的 GitHub 用户。服务账号默认私有，所有者主动开启共享后才向其他登录用户提供调用；撤回共享立即阻止其他用户继续租用或轮询此通道。计数来自数据库账号状态，不代表真实剩余额度、并发数或生成成功，密钥始终保存在服务端。
+`POOL_OVERVIEW_ENABLED` 留空时跟随开发 profile；生产默认关闭，部署者显式设为 `true` 后，每位登录用户都可管理自己的账号。只有“从宿主导入本地 Muse 服务凭据”要求回环访问及本机开发身份、`POOL_OVERVIEW_OWNER_IDS` 授权或 `ROLE_ADMIN`；此授权不限制个人账号 CRUD。没有明确所有者的服务账号不会自动转移给首次登录的 GitHub 用户。服务账号默认私有，所有者主动开启共享后才向其他登录用户提供调用；撤回共享立即阻止其他用户继续租用或轮询此通道。计数来自数据库账号状态，不代表真实剩余额度、并发数或生成成功，密钥始终保存在服务端。
 
 ## Docker 基础设施替代方案
 
