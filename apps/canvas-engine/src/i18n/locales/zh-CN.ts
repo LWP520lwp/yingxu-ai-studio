@@ -113,54 +113,54 @@ export default {
     label: "图片{{index}}",
     separator: "、",
     promptPrefix:
-      "参考图片编号：{{labels}}。请按这些编号理解提示词中的图片引用。\n\n{{prompt}}",
+      "可用参考图按以下编号标记：{{labels}}。请将提示词中的编号与对应图片匹配后再执行。\n\n{{prompt}}",
   },
   modelPlugin: {
     pollTimeout: "插件轮询超时，请检查调用脚本或稍后重试",
     executionFailed: "模型调用脚本执行失败：{{message}}",
     noImages: "模型调用脚本没有返回图片",
     variables: {
-      prompt: "用户输入的提示词（已拼接系统提示词）",
-      images: "参考图，dataURL 数组（改图 / 图生视频时有值）",
+      prompt: "传给模型的完整提示词，系统指令已合并其中",
+      images: "已读取的参考图 dataURL 列表；图像编辑和图生视频时可能包含内容",
       videos:
-        "参考视频 File 数组，可直接 form.append；画布或工作台接入的参考视频，无则为空数组",
+        "连接到任务的参考视频 File 列表，可逐项 form.append 上传；未连接时为空数组",
       audios:
-        "参考音频 File 数组，可直接 form.append；画布或工作台接入的参考音频，无则为空数组",
-      messages: "对话消息数组，含系统消息",
+        "连接到任务的参考音频 File 列表，可逐项 form.append 上传；未连接时为空数组",
+      messages: "本次文本对话的消息序列，首项可能是系统指令",
       params:
-        "生成参数：生图 {size,resolution,quality,count,background}、视频 {mode,seconds,size,resolution,ratio,generateAudio,watermark}（mode 为 frames 首尾帧或 reference 全能参考；超过 2 张图时为 reference）、音频 {voice,format,speed,instructions}",
-      model: "模型名称（不含渠道前缀）",
-      baseUrl: "渠道接口地址（原样，未拼 /v1）",
-      apiKey: "渠道 API Key，请求头里自己带上",
-      systemPrompt: "系统提示词原文",
-      reasoningEffort: "文本推理强度；auto 表示由脚本决定是否传递",
-      http: "便捷请求：http.post(path, body, {headers,params,responseType})、http.get(path, opts)、http.url(path)；默认带 Authorization: Bearer apiKey，可用 headers 覆盖；path 相对时按 baseUrl 拼 /v1",
+        "可用字段：图片 size、resolution、quality、count、background；视频 mode、seconds、size、resolution、ratio、generateAudio、watermark；音频 voice、format、speed、instructions。视频 mode 可取 frames 或 reference；图片多于两张时使用 reference。",
+      model: "当前模型标识，不含服务渠道前缀",
+      baseUrl: "渠道配置中的原始 API 根地址，不会自动补上 /v1",
+      apiKey: "渠道密钥；原始请求需要自行将其放入鉴权请求头",
+      systemPrompt: "渠道设置中的系统指令原文",
+      reasoningEffort: "文本推理档位；auto 时由调用脚本决定是否发送",
+      http: "便捷客户端：http.post、http.get 和 http.url。请求默认携带 Bearer apiKey，也可通过 headers 覆盖；相对地址会按规则接到 baseUrl 的 /v1 下。",
       request:
-        "原始请求 request({ method, url, headers, params, data, responseType })，不加任何默认头，鉴权头自己写；url 相对时按 baseUrl 拼接（不加 /v1）",
-      poll: "轮询 poll(request, extract, {intervalMs,timeoutMs})，extract 返回真值即结束",
-      sleep: "sleep(ms) 延时",
-      signal: "取消信号，可透传给 http/request",
-      onDelta: "onDelta(text) 推送流式文本（文本模型）",
+        "底层 request({ method, url, headers, params, data, responseType }) 不会补充默认请求头，包含鉴权在内的 headers 由脚本提供。相对 url 直接接到 baseUrl 后，不添加 /v1。",
+      poll: "使用 poll(request, extract, {intervalMs,timeoutMs}) 查询异步任务；extract 产出有效结果时停止轮询",
+      sleep: "等待指定毫秒数：sleep(ms)",
+      signal: "任务取消信号，可继续传给 http 或 request",
+      onDelta: "文本模型可调用 onDelta(text) 逐段发送生成内容",
     },
     returns: {
       image:
-        "文生图（images 为空）和图生图（images 有参考图）接口不同，脚本需自行区分；返回图片 URL 或 dataURL 字符串，也可返回它们的数组，或 [{ dataUrl }] / [{ url }] / [{ b64_json }]",
-      video: "脚本内部完成轮询，返回 { url } 或 { blob } 或视频 URL 字符串",
+        "按 images 是否为空选择文生图或参考图编辑接口。结果可用 URL、dataURL，或由 { dataUrl }、{ url }、{ b64_json } 组成的对象数组表示。",
+      video: "脚本负责等待远端任务完成，最终返回 { url }、{ blob } 或视频地址",
       audio:
-        "返回 Blob，或 base64 / dataURL 字符串，或 { b64_json } / { data } / { url }",
-      text: "用 onDelta(text) 推送流式，最终 return 完整文本字符串",
+        "音频结果可返回 Blob、base64/dataURL 字符串，或含 b64_json、data、url 的对象",
+      text: "通过 onDelta(text) 发送增量内容，并 return 最终完整文本",
     },
     templates: { openai: "OpenAI 规范", gemini: "Gemini 规范" },
     authoring: {
       intro:
-        "请为 Infinite Canvas 编写一段模型调用脚本。能力类型：{{capability}}。目标模型：{{model}}。",
+        "请为映序创作台编写{{capability}}模型请求脚本，目标模型为 {{model}}。",
       shape:
-        "请写成一个 async function，把用到的变量写在参数列表里，并把 params 拆成 size、quality、count 等字段，方便对照。不要 import，不要 Markdown 代码围栏。函数内发请求并 return 结果；因为运行时会注入同名局部变量，最后需要 return await 函数名({ 同样的参数 })。",
+        "请定义 async function，并把实际用到的注入变量列入形参；将 params 展开为 size、quality、count 等便于检查的字段。不要写 import 或 Markdown 围栏。函数中完成请求并返回结果，末尾再以相同参数调用它：return await 函数名({ 同样的参数 })。",
       returnTitle: "返回要求",
       variablesTitle: "可用变量",
       rulesTitle: "写法要求",
       rules:
-        "- 写成 async function，参数列表列出用到的变量；params 拆开写出 size、quality、count、seconds 等字段。函数上方用 /** */ 注释写清每个字段。\n- 用 request({ method, url, headers, params, data, responseType }) 发原始 HTTP 请求；需要自动带 Authorization: Bearer apiKey 时用 http.post / http.get。\n- 相对路径：request 按 baseUrl 拼接且不加 /v1；http 的相对 path 会按 baseUrl 拼 /v1。\n- 异步视频任务通常先创建再 poll(request, extract, { intervalMs, timeoutMs })，extract 返回真值即结束。\n- images 是参考图 dataURL 字符串数组。videos、audios 是参考视频/音频 File 数组，可直接 form.append(字段名, file)；没有参考时为空数组。\n- 使用 FormData 时不要手动设置 Content-Type，交给浏览器带 boundary。\n- 函数末尾 return 结果，并在文件最后 return await 函数名({ 同样的参数 })。只输出完整脚本，不要解释。",
+        "- 用 async function 编写，并显式声明会用到的参数；params 中的选项拆开列出并用 /** */ 说明。\n- 需要完整控制请求时使用 request({ method, url, headers, params, data, responseType })；需要默认 Bearer 鉴权时可选 http.post / http.get。\n- request 的相对地址接到 baseUrl 后且不增加 /v1；http 的相对 path 会补到 baseUrl/v1 下。\n- 视频接口若返回异步任务，先创建任务，再用 poll(request, extract, { intervalMs, timeoutMs }) 查到结果。\n- images 是 dataURL 列表；videos 与 audios 是可用 form.append 上传的 File 列表，没有素材时为空。\n- FormData 的 Content-Type 交给浏览器设置，手动填写会导致 boundary 不匹配。\n- 函数需要 return 结果；文件最后以 return await 函数名({ 同样的参数 }) 调用。仅输出完整脚本。",
       examplesTitle: "完整示例（请按实际接口改写，不要原样照搬）",
       draftTitle: "用户当前草稿（请在此基础上修改；若为空则从零编写）",
       anyModel: "（当前选中的模型）",
@@ -734,12 +734,12 @@ export default {
       clear: "清空",
       clearDescription: "这会删除当前画布上的所有节点和连线。",
       reversePreset:
-        "请根据参考图片反推一段适合用于 AI 生图的提示词。\n\n要求：\n1. 只输出提示词正文，不要解释。\n2. 覆盖主体、构图、风格、光线、色彩、材质、镜头和氛围。\n3. 尽量写成可直接用于生图模型的完整提示词。",
+        "阅读参考图并写出可直接用于图像生成的描述。依次交代主体与构图，再补充视觉风格、光照、色彩、质感、镜头表现和氛围。只返回完整提示词，不要添加标题或说明。",
       maskPrompt:
-        "参考{{source}}为原图，{{mask}}是在原图上用蓝色半透明标注出的待修改区域。请只修改蓝色标注覆盖的区域，其余区域与原图保持完全一致，输出与原图相同尺寸的完整图片，并且结果中不要保留任何蓝色标注。修改要求：{{prompt}}",
+        "请对原图 {{source}} 执行局部重绘。蒙版 {{mask}} 标出的蓝色半透明区域是唯一允许改动的范围；区域之外请维持原样。输出尺寸须与原图一致，成图中不要出现蒙版颜色。改动目标：{{prompt}}",
       maskNodeTitle: "遮罩标注",
       editTextPrompt:
-        "请根据要求修改以下文本。\n\n原文：\n{{source}}\n\n修改要求：\n{{prompt}}",
+        "请按修改目标重写原文，并保留未要求变动的信息。\n\n原文：\n{{source}}\n\n修改目标：\n{{prompt}}",
     },
     reverseComposer:
       "参考图片：@[node:{{imageId}}]\n任务说明：@[node:{{textId}}]",
@@ -786,7 +786,7 @@ export default {
       originalMode: "原图",
       maskTitle: "局部遮罩编辑",
       maskHint:
-        "滚轮缩放 · 中键或空格+左键拖动画面 · Alt+左/右键横拖调笔刷 · Ctrl/Cmd+Z 撤回 · Ctrl/Cmd+Shift+Z 重做",
+        "滚轮调整缩放 · 中键拖动或按住空格并拖动画布 · Alt+拖动左右键调节笔刷 · Ctrl/Cmd+Z 撤销 · Ctrl/Cmd+Shift+Z 重做",
       maskHistoryLimit: "最多保留最近 100 次涂抹供撤回。",
       brush: "画笔",
       erase: "擦除",
@@ -804,9 +804,9 @@ export default {
       maskGenerate: "立刻生成",
       splitTitle: "切分图片",
       splitDescription:
-        "生成 {{count}} 个图片子节点，并按原图网格排列到画布右侧",
+        "按源图网格创建 {{count}} 个图片节点，并放置在当前画布右侧",
       splitHint:
-        "滚轮缩放 · 中键或空格+左键拖动画面 · Delete 删除选中线 · Ctrl/Cmd+Z 撤回 · Ctrl/Cmd+Shift+Z 重做",
+        "滚轮调整缩放 · 中键拖动或按住空格并拖动画布 · Delete 移除所选分割线 · Ctrl/Cmd+Z 撤销 · Ctrl/Cmd+Shift+Z 重做",
       undoSplitTitle: "撤回切图调整 (Ctrl/Cmd+Z)",
       undoSplit: "撤回切图调整",
       redoSplitTitle: "重做切图调整 (Ctrl/Cmd+Shift+Z)",
@@ -920,9 +920,9 @@ export default {
       topDown: "俯视 {{angle}} 度",
       lowAngle: "仰视 {{angle}} 度",
       angleLabel:
-        "AI 多角度：{{horizontal}}，{{pitch}}，镜头距离 {{distance}}，{{lens}}镜头",
+        "AI 视角方案：{{horizontal}}、{{pitch}}；相机距离 {{distance}}；镜头 {{lens}}",
       anglePrompt:
-        "基于参考图重新生成同一主体的新视角，保持主体、颜色、材质和画面风格一致，不要只做透视变形。{{angle}}。",
+        "请依据参考图生成同一主体的另一机位画面。保持主体特征、配色、材质和整体风格连续，通过真实视点变化呈现新角度，避免仅将原图做透视拉伸。{{angle}}。",
     },
     platformGeneration: {
       audioUnavailable: "平台暂未开放音频生成；可以上传、播放和编辑音频素材",
@@ -1075,7 +1075,7 @@ export default {
     proxy: {
       title: "本地代理",
       description:
-        "开启后，拉取模型列表、生图、生视频、生成文本、生成音频和 WebDAV 同步等请求都会先发给本机代理再转发出去，用来绕开浏览器跨域限制。",
+        "启用后，模型查询、图像/视频/文本/音频生成及 WebDAV 流量会经本机代理转发，以解决浏览器跨域请求受限的问题。",
       startHint:
         "项目不内置本地转发程序。需要绕过浏览器跨域时，请单独启动兼容代理服务，再填写它提供的地址。",
       address: "代理地址",
@@ -1265,7 +1265,7 @@ export default {
       add: "增加模型",
       fetch: "拉取模型列表",
       description:
-        "如果上游不提供 OpenAI /models 模型列表接口，请在这里手动增加模型名称。",
+        "渠道未提供 OpenAI 兼容的 /models 列表时，可在此维护模型名称。",
       fetchedTab: "新获取的模型 ({{count}})",
       existingTab: "已有的模型 ({{count}})",
       visibleSelected: "当前列表已选择 {{selected}} / {{total}}",
@@ -1277,17 +1277,17 @@ export default {
     scriptEditor: {
       title: "{{capability}}调用脚本",
       description:
-        "按左侧三步配置：看懂规则、复制说明给外部 AI 写脚本，再粘贴到右侧保存。留空则使用系统默认调用。",
+        "先查看脚本约束，再复制上下文交给其他 AI 编写，最后把结果放入右侧保存。未填写自定义内容时会使用内置请求。",
       stepRule: "看懂规则",
       stepRuleHint:
-        "写成一个 async function，把 prompt、images、params 等写在参数里，params 再拆出 size、quality、count 等字段。函数里发请求并 return 结果，最后再调用一次该函数。",
+        "编写 async function，并为 prompt、images、params 等注入项声明形参；将 params 展开为 size、quality、count 等字段。函数体负责请求和返回，文件末尾调用该函数。",
       stepAi: "让外部 AI 写",
       stepAiCopy: "点击下方按钮，复制本页的变量、返回要求和写法说明。",
       stepAiAsk:
-        "打开 ChatGPT、Claude 或其他 AI，先粘贴说明，再附上你要对接的接口文档。",
+        "在你选择的 AI 对话中粘贴这份说明，并附上目标服务的 API 文档。",
       stepAiPaste: "把 AI 返回的脚本粘贴到右侧编辑器，确认后保存。",
       stepAiIncludes:
-        "复制内容包含当前模型、返回要求、全部可用变量和写法约束，不会带上 API Key 原文。",
+        "复制的上下文含当前模型、输入变量、响应格式和脚本约束；其中不会包含 API Key。",
       stepEdit: "粘贴保存",
       editorTitle: "脚本编辑器",
       editorHint: "把外部 AI 写好的脚本粘贴到这里，也可以先插入模板再改。",
@@ -1310,7 +1310,7 @@ export default {
     webdav: {
       title: "WebDAV 同步",
       description:
-        "同步画布、我的资产、生成记录和本地媒体文件，不包含 AI API Key。开启本地代理时经本机代理转发，否则浏览器直连 WebDAV。",
+        "画布、资产、生成历史和本地媒体可同步到 WebDAV；AI API Key 不会写入同步包。开启代理后经本机转发，否则由浏览器直接连接。",
       lastSynced: "上次同步 {{time}}",
       neverSynced: "尚未同步",
       url: "WebDAV 地址",
@@ -1328,7 +1328,7 @@ export default {
       preparing: "准备同步",
       failed: "WebDAV 同步失败",
       completed:
-        "同步完成：{{projects}} 个画布，{{assets}} 个资产，{{records}} 条记录，本次上传 {{files}} 个文件 {{bytes}}",
+        "本轮同步已完成：画布 {{projects}} 个、资产 {{assets}} 项、记录 {{records}} 条；上传 {{files}} 个文件（{{bytes}}）",
       domains: {
         canvas: "画布",
         assets: "我的资产",

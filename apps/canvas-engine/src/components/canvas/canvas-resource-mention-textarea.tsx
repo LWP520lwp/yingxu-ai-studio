@@ -1,4 +1,12 @@
-import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -22,6 +30,10 @@ import {
   searchResourceMentions,
   type ResourceMention,
 } from "@/lib/canvas/resource-mentions";
+import {
+  getPromptChipKeyAction,
+  movePromptChoice,
+} from "@/lib/canvas/prompt-chip-session";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> & {
@@ -34,7 +46,7 @@ type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChan
 };
 
 type Theme = (typeof canvasThemes)[keyof typeof canvasThemes];
-type PickerProps = {
+type SuggestionMenuProps = {
   id: string;
   input: HTMLTextAreaElement;
   caret: number;
@@ -45,8 +57,8 @@ type PickerProps = {
 };
 
 export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
-  function CanvasResourceMentionTextarea(
-    {
+  function CanvasResourceMentionTextarea(props, forwardedRef) {
+    const {
       value,
       references,
       onChange,
@@ -57,150 +69,210 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
       style,
       highlightLabels = true,
       ...nativeProps
-    },
-    forwardedRef,
-  ) {
+    } = props;
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const pickerId = `resource-picker-${useId().replace(/:/g, "")}`;
-    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const menuId = `resource-picker-${useId().replace(/:/g, "")}`;
+    const inputRef = useRef<HTMLTextAreaElement | null>(null);
     const mirrorRef = useRef<HTMLDivElement | null>(null);
+    const dismissTimer = useRef<number | null>(null);
     const [mention, setMention] = useState<ResourceMention | null>(null);
     const [activeIndex, setActiveIndex] = useState(0);
-    const [hasRangeSelection, setHasRangeSelection] = useState(false);
+    const [selectionIsRange, setSelectionIsRange] = useState(false);
 
-    const choices = useMemo(
-      () => mention ? searchResourceMentions(references, mention.query) : [],
-      [mention, references],
-    );
     const labels = useMemo(
-      () => highlightLabels ? activeResourceMentionLabels(references) : [],
+      () => (highlightLabels ? activeResourceMentionLabels(references) : []),
       [highlightLabels, references],
     );
-    const splitText = useMemo(() => createResourceMentionTextSplitter(labels), [labels]);
-    const drawHighlights = labels.length > 0 && !hasRangeSelection;
-    const hasPicker = Boolean(mention && choices.length && textareaRef.current);
+    const splitText = useMemo(
+      () => createResourceMentionTextSplitter(labels),
+      [labels],
+    );
+    const options = useMemo(
+      () => (mention ? searchResourceMentions(references, mention.query) : []),
+      [mention, references],
+    );
+    const showHighlights = labels.length > 0 && !selectionIsRange;
+    const showMenu = Boolean(mention && options.length && inputRef.current);
 
-    const setTextareaRef = useCallback((element: HTMLTextAreaElement | null) => {
-      textareaRef.current = element;
-      if (typeof forwardedRef === "function") forwardedRef(element);
-      else if (forwardedRef) forwardedRef.current = element;
-    }, [forwardedRef]);
+    const setInputRef = useCallback(
+      (element: HTMLTextAreaElement | null) => {
+        inputRef.current = element;
+        if (typeof forwardedRef === "function") forwardedRef(element);
+        else if (forwardedRef) forwardedRef.current = element;
+      },
+      [forwardedRef],
+    );
 
-    const closePicker = () => {
+    const dismissMenu = useCallback(() => {
       setMention(null);
       setActiveIndex(0);
-    };
+    }, []);
 
-    const reflectSelection = () => {
-      const element = textareaRef.current;
-      setHasRangeSelection(Boolean(element && element.selectionStart !== element.selectionEnd));
-    };
+    const syncSelectionState = useCallback((input = inputRef.current) => {
+      setSelectionIsRange(Boolean(input && input.selectionStart !== input.selectionEnd));
+    }, []);
 
-    const restoreCaret = (position: number) => {
+    const focusAt = useCallback((position: number) => {
       requestAnimationFrame(() => {
-        const element = textareaRef.current;
-        if (!element) return;
-        element.focus();
-        element.setSelectionRange(position, position);
+        const input = inputRef.current;
+        if (!input) return;
+        input.focus();
+        input.setSelectionRange(position, position);
       });
-    };
+    }, []);
 
-    const writeValue = (next: string, caret?: number) => {
-      onChange(next);
-      if (caret !== undefined) restoreCaret(caret);
-    };
+    const commitText = useCallback(
+      (next: string, caret?: number) => {
+        onChange(next);
+        if (caret !== undefined) focusAt(caret);
+      },
+      [focusAt, onChange],
+    );
 
-    const discoverMention = (text: string, cursor: number) => {
-      const next = findResourceMention(text, cursor);
-      if (!next || !references.some((reference) => reference.active)) {
-        closePicker();
-        return;
-      }
-      setMention(next);
-      setActiveIndex(0);
-    };
+    const refreshMention = useCallback(
+      (text: string, cursor: number) => {
+        const next = findResourceMention(text, cursor);
+        if (!next || !references.some((reference) => reference.active)) {
+          dismissMenu();
+          return;
+        }
+        setMention(next);
+        setActiveIndex(0);
+      },
+      [dismissMenu, references],
+    );
 
-    const chooseReference = (reference: CanvasResourceReference) => {
-      if (!mention) return;
-      const cursor = textareaRef.current?.selectionStart ?? value.length;
-      const result = insertResourceMention(value, mention, cursor, reference.label);
-      closePicker();
-      writeValue(result.value, result.caret);
-    };
+    const chooseOption = useCallback(
+      (reference: CanvasResourceReference) => {
+        if (!mention) return;
+        const cursor = inputRef.current?.selectionStart ?? value.length;
+        const replacement = insertResourceMention(
+          value,
+          mention,
+          cursor,
+          reference.label,
+        );
+        dismissMenu();
+        commitText(replacement.value, replacement.caret);
+      },
+      [commitText, dismissMenu, mention, value],
+    );
 
-    const synchronizeMirror = () => {
-      const input = textareaRef.current;
+    const syncMirrorScroll = useCallback(() => {
+      const input = inputRef.current;
       const mirror = mirrorRef.current;
       if (!input || !mirror) return;
       mirror.scrollTop = input.scrollTop;
       mirror.scrollLeft = input.scrollLeft;
-    };
+    }, []);
 
-    const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-      if (isImeComposing(event)) {
-        onKeyDown?.(event);
-        return;
-      }
-
-      const input = textareaRef.current;
-      const collapsed = input && input.selectionStart === input.selectionEnd;
-      if (!mention && collapsed && (event.key === "Backspace" || event.key === "Delete")) {
-        const result = deleteAdjacentResourceMention(
-          value,
-          input.selectionStart,
-          event.key === "Backspace" ? "backward" : "forward",
-          labels,
+    const handleKeyDown = useCallback(
+      (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+        const input = inputRef.current;
+        const collapsed = Boolean(
+          input && input.selectionStart === input.selectionEnd,
         );
-        if (result) {
-          event.preventDefault();
-          writeValue(result.value, result.caret);
-          requestAnimationFrame(reflectSelection);
-          return;
-        }
-      }
+        const deletion =
+          !mention && collapsed && input &&
+          (event.key === "Backspace" || event.key === "Delete")
+            ? deleteAdjacentResourceMention(
+                value,
+                input.selectionStart,
+                event.key === "Backspace" ? "backward" : "forward",
+                labels,
+              )
+            : null;
+        const intent = getPromptChipKeyAction({
+          key: event.key,
+          composing: isImeComposing(event),
+          hasMentionChoices: Boolean(mention && options.length),
+          adjacentToken: Boolean(deletion),
+          plainEnter: isPlainEnterKey(event),
+          canSubmit: Boolean(onSubmit),
+        });
 
-      if (mention && choices.length > 0) {
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          event.preventDefault();
-          const delta = event.key === "ArrowDown" ? 1 : -1;
-          setActiveIndex((current) => (current + delta + choices.length) % choices.length);
-          return;
+        switch (intent) {
+          case "composing":
+          case "refresh":
+            onKeyDown?.(event);
+            return;
+          case "move-forward":
+          case "move-backward": {
+            event.preventDefault();
+            const direction: -1 | 1 = intent === "move-forward" ? 1 : -1;
+            setActiveIndex((current) =>
+              movePromptChoice(current, direction, options.length),
+            );
+            return;
+          }
+          case "choose":
+            event.preventDefault();
+            chooseOption(options[Math.min(activeIndex, options.length - 1)]);
+            return;
+          case "close":
+            event.preventDefault();
+            dismissMenu();
+            return;
+          case "remove-token":
+            if (deletion) {
+              event.preventDefault();
+              commitText(deletion.value, deletion.caret);
+              requestAnimationFrame(() => syncSelectionState());
+              return;
+            }
+            break;
+          case "submit":
+            event.preventDefault();
+            onSubmit?.();
+            return;
         }
-        if (event.key === "Enter") {
-          event.preventDefault();
-          chooseReference(choices[Math.min(activeIndex, choices.length - 1)]);
-          return;
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          closePicker();
-          return;
-        }
-      }
 
-      if (onSubmit && isPlainEnterKey(event)) {
-        event.preventDefault();
-        onSubmit();
-        return;
-      }
-      onKeyDown?.(event);
-    };
+        onKeyDown?.(event);
+      },
+      [
+        activeIndex,
+        chooseOption,
+        commitText,
+        dismissMenu,
+        labels,
+        mention,
+        onKeyDown,
+        onSubmit,
+        options,
+        syncSelectionState,
+        value,
+      ],
+    );
+
+    useEffect(
+      () => () => {
+        if (dismissTimer.current !== null) {
+          window.clearTimeout(dismissTimer.current);
+        }
+      },
+      [],
+    );
 
     const mirrorStyle: CSSProperties = { ...style, color: theme.node.text };
-    const textareaStyle: CSSProperties = {
+    const editorStyle: CSSProperties = {
       ...style,
-      color: drawHighlights ? "transparent" : style?.color,
+      color: showHighlights ? "transparent" : style?.color,
       caretColor: style?.color || theme.node.text,
       cursor: "text",
-      ...(drawHighlights
-        ? { position: "relative", zIndex: 1, background: "transparent", backgroundColor: "transparent" }
+      ...(showHighlights
+        ? {
+            position: "relative",
+            zIndex: 1,
+            background: "transparent",
+            backgroundColor: "transparent",
+          }
         : {}),
     };
 
     return (
       <div className={`relative h-full w-full ${containerClassName || ""}`}>
-        {drawHighlights ? (
-          <MentionHighlight
+        {showHighlights ? (
+          <TextHighlightMirror
             ref={mirrorRef}
             value={value}
             placeholder={nativeProps.placeholder}
@@ -212,56 +284,64 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
 
         <textarea
           {...nativeProps}
-          ref={setTextareaRef}
+          ref={setInputRef}
           value={value}
           className={className}
-          style={textareaStyle}
+          style={editorStyle}
           aria-autocomplete="list"
-          aria-expanded={Boolean(mention && choices.length)}
-          aria-controls={hasPicker ? pickerId : undefined}
-          aria-activedescendant={hasPicker ? `${pickerId}-option-${Math.min(activeIndex, choices.length - 1)}` : undefined}
+          aria-expanded={Boolean(mention && options.length)}
+          aria-controls={showMenu ? menuId : undefined}
+          aria-activedescendant={
+            showMenu
+              ? `${menuId}-option-${Math.min(activeIndex, options.length - 1)}`
+              : undefined
+          }
           onChange={(event) => {
-            const text = event.currentTarget.value;
-            onChange(text);
-            discoverMention(text, event.currentTarget.selectionStart);
+            const input = event.currentTarget;
+            const next = input.value;
+            onChange(next);
+            refreshMention(next, input.selectionStart);
             requestAnimationFrame(() => {
-              synchronizeMirror();
-              reflectSelection();
+              syncMirrorScroll();
+              syncSelectionState(input);
             });
           }}
           onSelect={(event) => {
-            reflectSelection();
+            syncSelectionState(event.currentTarget);
             nativeProps.onSelect?.(event);
           }}
           onKeyUp={(event) => {
-            reflectSelection();
+            syncSelectionState(event.currentTarget);
             nativeProps.onKeyUp?.(event);
           }}
           onPointerUp={(event) => {
-            reflectSelection();
+            syncSelectionState(event.currentTarget);
             nativeProps.onPointerUp?.(event);
           }}
           onKeyDown={handleKeyDown}
           onScroll={(event) => {
-            synchronizeMirror();
+            syncMirrorScroll();
             nativeProps.onScroll?.(event);
           }}
           onBlur={(event) => {
-            setHasRangeSelection(false);
-            window.setTimeout(closePicker, 120);
+            setSelectionIsRange(false);
+            if (dismissTimer.current !== null) {
+              window.clearTimeout(dismissTimer.current);
+            }
+            dismissTimer.current = window.setTimeout(dismissMenu, 120);
             nativeProps.onBlur?.(event);
           }}
         />
 
-        {hasPicker && textareaRef.current && mention ? (
-          <MentionPicker
-            id={pickerId}
-            input={textareaRef.current}
+        {showMenu && inputRef.current && mention ? (
+          <ResourceSuggestionMenu
+            id={menuId}
+            input={inputRef.current}
             caret={mention.start}
-            items={choices}
-            activeIndex={Math.min(activeIndex, choices.length - 1)}
+            items={options}
+            activeIndex={Math.min(activeIndex, options.length - 1)}
             theme={theme}
-            onPick={chooseReference}
+            onPick={chooseOption}
           />
         ) : null}
       </div>
@@ -269,13 +349,16 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Pro
   },
 );
 
-const MentionHighlight = forwardRef<HTMLDivElement, {
-  value: string;
-  placeholder?: string;
-  className?: string;
-  style: CSSProperties;
-  splitText: (value: string) => Array<{ text: string; highlighted: boolean }>;
-}>(function MentionHighlight({ value, placeholder, className, style, splitText }, ref) {
+const TextHighlightMirror = forwardRef<
+  HTMLDivElement,
+  {
+    value: string;
+    placeholder?: string;
+    className?: string;
+    style: CSSProperties;
+    splitText: (value: string) => Array<{ text: string; highlighted: boolean }>;
+  }
+>(function TextHighlightMirror({ value, placeholder, className, style, splitText }, ref) {
   return (
     <div
       ref={ref}
@@ -283,48 +366,67 @@ const MentionHighlight = forwardRef<HTMLDivElement, {
       className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`}
       style={style}
     >
-      {value ? splitText(value).map((part, index) => (
-        <span
-          key={`${index}:${part.text}`}
-          className={part.highlighted ? "rounded bg-sky-500/15 px-0.5 text-sky-500" : undefined}
-        >
-          {part.text}
-        </span>
-      )) : placeholder ? <span className="opacity-45">{placeholder}</span> : null}
+      {value ? (
+        splitText(value).map((part, index) => (
+          <span
+            key={`${index}:${part.text}`}
+            className={part.highlighted ? "rounded bg-sky-500/15 px-0.5 text-sky-500" : undefined}
+          >
+            {part.text}
+          </span>
+        ))
+      ) : placeholder ? (
+        <span className="opacity-45">{placeholder}</span>
+      ) : null}
     </div>
   );
 });
 
-function MentionPicker({ id, input, caret, items, activeIndex, theme, onPick }: PickerProps) {
-  const selectedButton = useRef<HTMLButtonElement>(null);
-  const completed = useRef(false);
+function ResourceSuggestionMenu({
+  id,
+  input,
+  caret,
+  items,
+  activeIndex,
+  theme,
+  onPick,
+}: SuggestionMenuProps) {
+  const activeButton = useRef<HTMLButtonElement>(null);
+  const selected = useRef(false);
 
   useEffect(() => {
-    selectedButton.current?.scrollIntoView({ block: "nearest" });
+    activeButton.current?.scrollIntoView({ block: "nearest" });
   }, [activeIndex, items]);
 
-  const bounds = input.closest(".ant-modal-content")?.getBoundingClientRect() ?? {
+  const menuBounds = input.closest(".ant-modal-content")?.getBoundingClientRect() ?? {
     left: 8,
     top: 8,
     right: window.innerWidth - 8,
     bottom: window.innerHeight - 8,
   };
-  const box = input.getBoundingClientRect();
-  const scale = input.offsetWidth > 0 ? box.width / input.offsetWidth : 1;
-  const computed = window.getComputedStyle(input);
-  const lineHeight = (parseFloat(computed.lineHeight) || parseFloat(computed.fontSize) * 1.4 || 20) * scale;
-  const point = measureCaret(input, caret);
-  const placement = placeResourceMentionMenu({
-    left: box.left + (point.left - input.scrollLeft) * scale,
-    top: box.top + (point.top - input.scrollTop) * scale,
-    lineHeight,
-  }, bounds);
+  const inputBounds = input.getBoundingClientRect();
+  const scale = input.offsetWidth > 0 ? inputBounds.width / input.offsetWidth : 1;
+  const metrics = window.getComputedStyle(input);
+  const lineHeight =
+    (parseFloat(metrics.lineHeight) || parseFloat(metrics.fontSize) * 1.4 || 20) *
+    scale;
+  const anchor = locateCaret(input, caret);
+  const placement = placeResourceMentionMenu(
+    {
+      left: inputBounds.left + (anchor.left - input.scrollLeft) * scale,
+      top: inputBounds.top + (anchor.top - input.scrollTop) * scale,
+      lineHeight,
+    },
+    menuBounds,
+  );
 
-  const stopPointer = (event: ReactPointerEvent | ReactMouseEvent) => event.stopPropagation();
-  const pickOnce = (reference: CanvasResourceReference) => {
-    if (completed.current) return;
-    completed.current = true;
-    onPick(reference);
+  const preventCanvasGesture = (event: ReactPointerEvent | ReactMouseEvent) => {
+    event.stopPropagation();
+  };
+  const chooseOnce = (item: CanvasResourceReference) => {
+    if (selected.current) return;
+    selected.current = true;
+    onPick(item);
   };
 
   return createPortal(
@@ -342,15 +444,15 @@ function MentionPicker({ id, input, caret, items, activeIndex, theme, onPick }: 
         borderColor: theme.toolbar.border,
         color: theme.node.text,
       }}
-      onPointerDown={stopPointer}
-      onMouseDown={stopPointer}
+      onPointerDown={preventCanvasGesture}
+      onMouseDown={preventCanvasGesture}
       onClick={(event) => event.stopPropagation()}
     >
-      {items.map((reference, index) => (
+      {items.map((item, index) => (
         <button
-          key={reference.id}
+          key={item.id}
           id={`${id}-option-${index}`}
-          ref={index === activeIndex ? selectedButton : undefined}
+          ref={index === activeIndex ? activeButton : undefined}
           type="button"
           role="option"
           aria-selected={activeIndex === index}
@@ -362,18 +464,18 @@ function MentionPicker({ id, input, caret, items, activeIndex, theme, onPick }: 
           onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            pickOnce(reference);
+            chooseOnce(item);
           }}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            pickOnce(reference);
+            chooseOnce(item);
           }}
         >
-          <MentionResourceIcon reference={reference} />
+          <ResourceKindIcon reference={item} />
           <span className="min-w-0 flex-1">
-            <span className="block font-medium">{reference.label}</span>
-            <span className="block truncate opacity-65">{reference.text || reference.title}</span>
+            <span className="block font-medium">{item.label}</span>
+            <span className="block truncate opacity-65">{item.text || item.title}</span>
           </span>
         </button>
       ))}
@@ -382,7 +484,7 @@ function MentionPicker({ id, input, caret, items, activeIndex, theme, onPick }: 
   );
 }
 
-function MentionResourceIcon({ reference }: { reference: CanvasResourceReference }) {
+function ResourceKindIcon({ reference }: { reference: CanvasResourceReference }) {
   if (reference.kind === "image" && reference.previewUrl) {
     return <img src={reference.previewUrl} alt="" className="size-9 rounded object-cover" />;
   }
@@ -398,13 +500,12 @@ function MentionResourceIcon({ reference }: { reference: CanvasResourceReference
     );
   }
 
-  const Icon = reference.kind === "audio"
-    ? Music2
-    : reference.kind === "video"
-      ? Video
-      : reference.kind === "image"
-        ? ImageIcon
-        : FileText;
+  const Icon = {
+    audio: Music2,
+    video: Video,
+    image: ImageIcon,
+    text: FileText,
+  }[reference.kind];
   return (
     <span className="grid size-9 shrink-0 place-items-center rounded bg-black/10" aria-hidden="true">
       <Icon className="size-4" />
@@ -412,15 +513,34 @@ function MentionResourceIcon({ reference }: { reference: CanvasResourceReference
   );
 }
 
-const copiedTextStyleKeys = [
-  "boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
-  "fontStyle", "fontVariant", "fontWeight", "fontStretch", "fontSize", "lineHeight",
-  "fontFamily", "textAlign", "textIndent", "letterSpacing", "wordSpacing", "tabSize", "textTransform",
+const textMetrics = [
+  "boxSizing",
+  "width",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "borderTopWidth",
+  "borderRightWidth",
+  "borderBottomWidth",
+  "borderLeftWidth",
+  "fontStyle",
+  "fontVariant",
+  "fontWeight",
+  "fontStretch",
+  "fontSize",
+  "lineHeight",
+  "fontFamily",
+  "textAlign",
+  "textIndent",
+  "letterSpacing",
+  "wordSpacing",
+  "tabSize",
+  "textTransform",
 ] as const;
 
-function measureCaret(input: HTMLTextAreaElement, offset: number) {
-  const computed = window.getComputedStyle(input);
+function locateCaret(input: HTMLTextAreaElement, offset: number) {
+  const metrics = window.getComputedStyle(input);
   const ruler = document.createElement("div");
   Object.assign(ruler.style, {
     position: "absolute",
@@ -430,14 +550,14 @@ function measureCaret(input: HTMLTextAreaElement, offset: number) {
     whiteSpace: "pre-wrap",
     overflowWrap: "break-word",
   });
-  for (const key of copiedTextStyleKeys) ruler.style[key] = computed[key];
+  for (const key of textMetrics) ruler.style[key] = metrics[key];
 
   ruler.textContent = input.value.slice(0, offset);
-  const marker = document.createElement("span");
-  marker.textContent = input.value.slice(offset) || ".";
-  ruler.append(marker);
+  const caretMarker = document.createElement("span");
+  caretMarker.textContent = input.value.slice(offset) || ".";
+  ruler.append(caretMarker);
   document.body.append(ruler);
-  const location = { left: marker.offsetLeft, top: marker.offsetTop };
+  const point = { left: caretMarker.offsetLeft, top: caretMarker.offsetTop };
   ruler.remove();
-  return location;
+  return point;
 }

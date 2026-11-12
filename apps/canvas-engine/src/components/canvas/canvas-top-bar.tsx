@@ -23,6 +23,13 @@ import { useTranslation } from "react-i18next";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { canvasShortcutCatalog } from "@/lib/canvas/canvas-shortcut-catalog";
+import {
+  canvasTopBarMenuGroups,
+  canvasTopBarPanelTabs,
+  type CanvasTopBarCommand,
+  type CanvasTopBarIcon,
+  type CanvasTopBarPanel,
+} from "@/product-engine/canvas-top-bar-model";
 import { useCanvasSidePanelStore } from "@/stores/use-canvas-side-panel-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
@@ -48,13 +55,17 @@ export type CanvasTopBarProps = {
   onToggleAgent: () => void;
 };
 
-type PanelTab = "canvas" | "assets" | "prompts";
-
-const panelTabs: { id: PanelTab; icon: LucideIcon; labelKey: string }[] = [
-  { id: "canvas", icon: LayoutGrid, labelKey: "canvas.sidePanel.canvas" },
-  { id: "assets", icon: ImageIcon, labelKey: "canvas.sidePanel.assets" },
-  { id: "prompts", icon: BookOpen, labelKey: "canvas.sidePanel.prompts" },
-];
+const topBarIcons: Record<CanvasTopBarIcon, LucideIcon> = {
+  home: Home,
+  projects: Images,
+  create: Plus,
+  canvas: LayoutGrid,
+  assets: ImageIcon,
+  prompts: BookOpen,
+  import: Upload,
+  export: Download,
+  shortcuts: Keyboard,
+};
 
 export function CanvasTopBar({
   title,
@@ -86,12 +97,26 @@ export function CanvasTopBar({
 
   const sidePanelOpen = useCanvasSidePanelStore((state) => state.panelOpen);
   const toggleSidePanel = useCanvasSidePanelStore((state) => state.togglePanel);
-  const activeSidePanelTab = useCanvasSidePanelStore((state) => state.activeTab);
+  const activeSidePanelTab = useCanvasSidePanelStore(
+    (state) => state.activeTab,
+  );
   const setActiveSidePanelTab = useCanvasSidePanelStore(
     (state) => state.setActiveTab,
   );
   const openSidePanel = useCanvasSidePanelStore((state) => state.openPanel);
   const shortcuts = canvasShortcutCatalog(t);
+
+  const runMenuCommand: Record<CanvasTopBarCommand, () => void> = {
+    home: onHome,
+    projects: onProjects,
+    create: onCreateProject,
+    "panel-canvas": () => selectPanel("canvas"),
+    "panel-assets": () => selectPanel("assets"),
+    "panel-prompts": () => selectPanel("prompts"),
+    import: onImportImage,
+    export: onExportProject,
+    shortcuts: () => setShortcutsOpen(true),
+  };
 
   useEffect(() => {
     editSessionActive.current = isTitleEditing;
@@ -128,28 +153,24 @@ export function CanvasTopBar({
       document.removeEventListener("pointerdown", finishWhenFocusLeaves, true);
   }, [finishTitleEditing, isTitleEditing]);
 
-  const selectPanel = (tab: PanelTab) => {
+  const selectPanel = (tab: CanvasTopBarPanel) => {
     setActiveSidePanelTab(tab);
     if (!sidePanelOpen) openSidePanel();
   };
 
   const fileAndNavigationMenu = {
-    items: [
-      { key: "home", icon: <Home size={16} />, label: t("canvas.home"), onClick: onHome },
-      { key: "projects", icon: <Images size={16} />, label: t("canvas.projects"), onClick: onProjects },
-      { key: "create", icon: <Plus size={16} />, label: t("canvas.create"), onClick: onCreateProject },
-      { type: "divider" as const },
-      ...panelTabs.map(({ id, icon: Icon, labelKey }) => ({
-        key: `panel-${id}`,
-        icon: <Icon size={16} />,
-        label: t(labelKey),
-        onClick: () => selectPanel(id),
-      })),
-      { type: "divider" as const },
-      { key: "import", icon: <Upload size={16} />, label: t("canvas.importAsset"), onClick: onImportImage },
-      { key: "export", icon: <Download size={16} />, label: t("canvas.exportCurrent"), onClick: onExportProject },
-      { key: "shortcuts", icon: <Keyboard size={16} />, label: t("canvas.shortcuts"), onClick: () => setShortcutsOpen(true) },
-    ],
+    items: canvasTopBarMenuGroups.flatMap((group, groupIndex) => [
+      ...(groupIndex ? [{ type: "divider" as const }] : []),
+      ...group.map(({ id, icon, labelKey, command }) => {
+        const Icon = topBarIcons[icon];
+        return {
+          key: id,
+          icon: <Icon size={16} />,
+          label: t(labelKey),
+          onClick: runMenuCommand[command],
+        };
+      }),
+    ]),
   };
 
   return (
@@ -161,7 +182,11 @@ export function CanvasTopBar({
       >
         <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-2">
           <TopBarAction
-            label={sidePanelOpen ? t("canvas.collapsePanel") : t("canvas.expandPanel")}
+            label={
+              sidePanelOpen
+                ? t("canvas.collapsePanel")
+                : t("canvas.expandPanel")
+            }
             icon={sidePanelOpen ? PanelLeftClose : PanelLeftOpen}
             color={theme.node.text}
             onClick={toggleSidePanel}
@@ -171,9 +196,13 @@ export function CanvasTopBar({
             role="group"
             aria-label={t("canvas.controls.title")}
             className="hidden shrink-0 items-center gap-0.5 rounded-xl border p-1 min-[481px]:flex"
-            style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border }}
+            style={{
+              background: theme.toolbar.panel,
+              borderColor: theme.toolbar.border,
+            }}
           >
-            {panelTabs.map(({ id, icon: Icon, labelKey }) => {
+            {canvasTopBarPanelTabs.map(({ id, icon, labelKey }) => {
+              const Icon = topBarIcons[icon];
               const selected = activeSidePanelTab === id;
               const label = t(labelKey);
               return (
@@ -186,7 +215,9 @@ export function CanvasTopBar({
                     className="grid size-7 shrink-0 place-items-center rounded-lg transition-colors"
                     style={{
                       background: selected ? theme.toolbar.activeBg : undefined,
-                      color: selected ? theme.toolbar.activeText : theme.toolbar.item,
+                      color: selected
+                        ? theme.toolbar.activeText
+                        : theme.toolbar.item,
                     }}
                   >
                     <Icon size={16} aria-hidden="true" />
@@ -218,7 +249,10 @@ export function CanvasTopBar({
                   }
                 }}
                 className="w-full min-w-0 max-w-[360px] border-b bg-transparent px-0 py-1 text-left text-sm font-semibold outline-none"
-                style={{ color: theme.node.text, borderColor: theme.toolbar.activeText }}
+                style={{
+                  color: theme.node.text,
+                  borderColor: theme.toolbar.activeText,
+                }}
               />
             ) : (
               <button
@@ -285,13 +319,19 @@ export function CanvasTopBar({
               aria-pressed={agentOpen}
               className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-sm font-medium transition-colors max-[520px]:size-8 max-[520px]:justify-center max-[520px]:px-0"
               style={{
-                background: agentOpen ? theme.toolbar.activeBg : theme.toolbar.panel,
-                borderColor: agentOpen ? theme.toolbar.activeText : theme.toolbar.border,
+                background: agentOpen
+                  ? theme.toolbar.activeBg
+                  : theme.toolbar.panel,
+                borderColor: agentOpen
+                  ? theme.toolbar.activeText
+                  : theme.toolbar.border,
                 color: agentOpen ? theme.toolbar.activeText : theme.node.text,
               }}
             >
               <Puzzle size={16} aria-hidden="true" />
-              <span className="max-[520px]:sr-only">{t("topNav.openAgent")}</span>
+              <span className="max-[520px]:sr-only">
+                {t("topNav.openAgent")}
+              </span>
             </button>
           </Tooltip>
         </div>
@@ -304,8 +344,8 @@ export function CanvasTopBar({
         footer={null}
         centered
       >
-        <div
-          className="thin-scrollbar max-h-[min(65dvh,640px)] space-y-1 overflow-y-auto border-t pt-3 text-sm"
+        <dl
+          className="thin-scrollbar m-0 max-h-[min(65dvh,640px)] space-y-1 overflow-y-auto border-t pt-3 text-sm"
           style={{ borderColor: theme.node.stroke }}
         >
           {shortcuts.map((shortcut) => (
@@ -315,7 +355,7 @@ export function CanvasTopBar({
               value={shortcut.description}
             />
           ))}
-        </div>
+        </dl>
       </Modal>
     </>
   );
@@ -353,17 +393,23 @@ function TopBarAction({
 function Shortcut({ keys, value }: { keys: string[]; value: string }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_120px] items-center gap-6 rounded-lg px-1 py-1.5">
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-        {keys.map((key, index) => (
-          <span key={`${key}-${index}`} className="flex items-center gap-1.5">
-            {index ? <span className="text-xs opacity-35">+</span> : null}
-            <kbd className="min-w-9 rounded-md border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-center text-xs font-medium leading-none text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100">
-              {key}
-            </kbd>
-          </span>
-        ))}
-      </span>
-      <span className="text-right text-sm opacity-60">{value}</span>
+      <dt className="m-0 flex min-w-0 flex-wrap items-center gap-1.5">
+        <span className="sr-only">{keys.join(" plus ")}</span>
+        <span
+          aria-hidden="true"
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          {keys.map((key, index) => (
+            <span key={`${key}-${index}`} className="flex items-center gap-1.5">
+              {index ? <span className="text-xs opacity-35">+</span> : null}
+              <kbd className="min-w-9 rounded-md border border-stone-300 bg-stone-50 px-2.5 py-1.5 text-center text-xs font-medium leading-none text-stone-700 shadow-sm dark:border-stone-600 dark:bg-stone-800 dark:text-stone-100">
+                {key}
+              </kbd>
+            </span>
+          ))}
+        </span>
+      </dt>
+      <dd className="m-0 text-right text-sm opacity-60">{value}</dd>
     </div>
   );
 }

@@ -7,7 +7,17 @@ import {
   type AgentPermissionMode,
   type AgentReasoningEffort,
 } from "@/lib/agent-preferences";
-import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import {
+  appendRecent,
+  constrainAgentStorePatch,
+  decideAgentConnection,
+  restoreAgentPanelWidth,
+  transitionAgentPanel,
+} from "@/product-engine/agent-panel-state";
+import type {
+  CanvasAgentOp,
+  CanvasAgentSnapshot,
+} from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 
 export type AgentChatRole = "user" | "assistant" | "system" | "tool" | "error";
@@ -23,7 +33,10 @@ export interface AgentAttachment {
   dataUrl: string;
 }
 
-export type AgentMessageAttachment = Pick<AgentAttachment, "id" | "name" | "url"> &
+export type AgentMessageAttachment = Pick<
+  AgentAttachment,
+  "id" | "name" | "url"
+> &
   Partial<Omit<AgentAttachment, "id" | "name" | "url">>;
 
 export type AgentCanvasReference = Pick<
@@ -69,7 +82,10 @@ export interface AgentPendingToolCall {
   input?: { ops?: CanvasAgentOp[]; path?: string } & Record<string, unknown>;
 }
 
-export type { AgentPermissionMode, AgentReasoningEffort } from "@/lib/agent-preferences";
+export type {
+  AgentPermissionMode,
+  AgentReasoningEffort,
+} from "@/lib/agent-preferences";
 
 export interface AgentModel {
   id: string;
@@ -138,7 +154,11 @@ export interface AgentConversationState {
   status: "idle" | "preparing" | "ready" | "warning" | "running" | "failed";
   mcpStatuses: Record<
     string,
-    { status: "starting" | "ready" | "failed" | "cancelled"; error?: string | null; failureReason?: string | null }
+    {
+      status: "starting" | "ready" | "failed" | "cancelled";
+      error?: string | null;
+      failureReason?: string | null;
+    }
   >;
   sourceClientId?: string;
   error?: string;
@@ -233,31 +253,12 @@ const browserPreferences = readBrowserAgentPreferences();
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 let closeRevision = 0;
 
-function keepRecent<T>(items: T[], limit: number) {
-  return items.length > limit ? items.slice(items.length - limit) : items;
-}
-
-function withAppended<T>(items: T[], item: T, limit: number) {
-  return keepRecent([...items, item], limit);
-}
-
-function panelWidthFrom(value: unknown, fallback: number) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-  return Math.max(PANEL_WIDTH.min, Math.min(PANEL_WIDTH.max, value));
-}
-
 function readPanelWidth() {
   if (typeof window === "undefined") return PANEL_WIDTH.default;
 
   try {
     const stored = Number(window.localStorage.getItem(PANEL_WIDTH.storageKey));
-    if (
-      Number.isFinite(stored) &&
-      stored >= PANEL_WIDTH.min &&
-      stored <= PANEL_WIDTH.max
-    ) {
-      return stored;
-    }
+    return restoreAgentPanelWidth(stored, PANEL_WIDTH.default, PANEL_WIDTH);
   } catch {
     // Private browsing or storage policy can make localStorage unavailable.
   }
@@ -325,50 +326,36 @@ function clearPendingClose() {
   closeTimer = null;
 }
 
-function patchWithinLimits(
-  current: AgentState,
-  patch: Partial<AgentState>,
-): Partial<AgentState> {
-  const next = { ...patch };
-
-  if (patch.messages) {
-    next.messages = keepRecent(patch.messages, HISTORY_LIMITS.messages);
-  }
-  if (patch.eventLogs) {
-    next.eventLogs = keepRecent(patch.eventLogs, HISTORY_LIMITS.eventLogs);
-  }
-  if ("width" in patch) {
-    next.width = panelWidthFrom(patch.width, current.width);
-  }
-
-  return next;
-}
-
 export const useAgentStore = create<AgentStore>((set, get) => ({
   ...initialAgentState(),
 
-  setAgentState: (patch) => set((current) => patchWithinLimits(current, patch)),
+  setAgentState: (patch) =>
+    set((current) =>
+      constrainAgentStorePatch(current, patch, {
+        ...HISTORY_LIMITS,
+        panelWidth: PANEL_WIDTH,
+      }),
+    ),
 
   openPanel: () => {
     clearPendingClose();
     closeRevision += 1;
-    set({ panelOpen: true, panelMounted: true, panelClosing: false });
+    set((state) => transitionAgentPanel(state, "open"));
   },
 
   closePanel: () => {
     const panel = get();
-    if (!panel.panelMounted || !panel.panelOpen || panel.panelClosing) return;
+    const closing = transitionAgentPanel(panel, "close");
+    if (closing === panel) return;
 
     clearPendingClose();
     const revision = ++closeRevision;
-    set({ panelOpen: false, panelClosing: true });
+    set(closing);
 
     closeTimer = setTimeout(() => {
       if (revision !== closeRevision) return;
       closeTimer = null;
-      if (get().panelClosing && !get().panelOpen) {
-        set({ panelClosing: false });
-      }
+      set((state) => transitionAgentPanel(state, "finish-close"));
     }, CANVAS_AGENT_PANEL_MOTION_MS);
   },
 
@@ -383,29 +370,22 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     const silent = options?.silent ?? false;
     const endpoint = normalizeAgentEndpoint(get().url);
     const token = get().token.trim();
-
-    if (!endpoint || !token) {
-      set({
-        connectError: silent ? "" : i18n.t("agent.state.connectionRequired"),
-      });
-      return;
-    }
-
-    const persisted = persistBrowserAgentConnection(endpoint, token);
-    const connectError = persisted || silent
-      ? ""
-      : i18n.t("agent.state.storageUnavailable");
-
-    // The mounted agent panel starts its event stream after enabled becomes true.
-    set({
-      url: endpoint,
+    const persisted =
+      endpoint && token
+        ? persistBrowserAgentConnection(endpoint, token)
+        : false;
+    const decision = decideAgentConnection({
+      endpoint,
       token,
-      enabled: true,
-      silentConnect: silent,
-      fragmentBootstrap: false,
-      activity: i18n.t("agent.status.connecting"),
-      connectError,
+      silent,
+      persisted,
+      requiredMessage: i18n.t("agent.state.connectionRequired"),
+      storageUnavailableMessage: i18n.t("agent.state.storageUnavailable"),
+      connectingMessage: i18n.t("agent.status.connecting"),
     });
+
+    // The mounted panel starts its event stream after enabled becomes true.
+    set(decision.patch);
   },
 
   disconnectAgent: (patch = {}) => {
@@ -424,12 +404,12 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   addMessage: (item) =>
     set((state) => ({
-      messages: withAppended(state.messages, item, HISTORY_LIMITS.messages),
+      messages: appendRecent(state.messages, item, HISTORY_LIMITS.messages),
     })),
 
   addEventLog: (item) =>
     set((state) => ({
-      eventLogs: withAppended(state.eventLogs, item, HISTORY_LIMITS.eventLogs),
+      eventLogs: appendRecent(state.eventLogs, item, HISTORY_LIMITS.eventLogs),
     })),
 
   clearEventLogs: () => set({ eventLogs: [] }),

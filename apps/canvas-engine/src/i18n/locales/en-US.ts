@@ -48,7 +48,7 @@ export default {
       aspectRatio: "Aspect ratio",
       transparent: "Transparent background",
       transparentHint:
-        "Generate an image without a background when supported by the model",
+        "Ask the model for transparent pixels when that capability is available",
       count: "Image count",
       images: "{{count}} images",
     },
@@ -124,62 +124,62 @@ export default {
     label: "Image {{index}}",
     separator: ", ",
     promptPrefix:
-      "Reference image labels: {{labels}}. Use these labels to interpret image references in the prompt.\n\n{{prompt}}",
+      "Reference images are labeled as follows: {{labels}}. Match each label in the prompt to its corresponding image before processing.\n\n{{prompt}}",
   },
   modelPlugin: {
     pollTimeout:
-      "Plugin polling timed out. Check the request script or try again later.",
+      "The plugin did not finish polling before the time limit. Review its script or retry later.",
     executionFailed: "Model request script failed: {{message}}",
     noImages: "The model request script did not return any images",
     variables: {
-      prompt: "User prompt with the system prompt already included",
+      prompt: "Complete prompt sent to the model, including the system instructions",
       images:
-        "Reference images as a data URL array, available for image editing and image-to-video",
+        "Decoded reference images as data URLs; may be populated for image editing or image-to-video",
       videos:
-        "Reference videos as a File array you can form.append; empty when none are attached from the canvas or workbench",
+        "Reference video File objects connected to the task; append each with form.append. Empty when no video is attached.",
       audios:
-        "Reference audio as a File array you can form.append; empty when none are attached from the canvas or workbench",
-      messages: "Conversation message array including the system message",
+        "Reference audio File objects connected to the task; append each with form.append. Empty when no audio is attached.",
+      messages: "Messages for the current text conversation; the first entry may contain system instructions",
       params:
-        "Generation parameters: image {size,resolution,quality,count,background}, video {mode,seconds,size,resolution,ratio,generateAudio,watermark} (mode is frames for first/last frame or reference for general references; more than 2 images become reference), audio {voice,format,speed,instructions}",
-      model: "Model name without the provider prefix",
-      baseUrl: "Provider endpoint as entered, without appending /v1",
-      apiKey: "Provider API key; add it to request headers yourself",
-      systemPrompt: "Original system prompt",
+        "Available fields: image size, resolution, quality, count, background; video mode, seconds, size, resolution, ratio, generateAudio, watermark; audio voice, format, speed, instructions. Video mode is frames or reference; more than two images use reference mode.",
+      model: "Selected model identifier without the provider prefix",
+      baseUrl: "The provider's configured API root, with no automatic /v1 suffix",
+      apiKey: "Provider key; raw requests must add it to an authorization header",
+      systemPrompt: "System instructions from the provider settings",
       reasoningEffort:
-        "Text reasoning effort; auto lets the script decide whether to send it",
-      http: "Convenience client: http.post(path, body, {headers,params,responseType}), http.get(path, opts), and http.url(path). Authorization: Bearer apiKey is included by default and can be overridden. Relative paths append /v1 to baseUrl.",
+        "Reasoning level for text models; when set to auto, the script decides whether to send it",
+      http: "Convenience client with http.post, http.get, and http.url. Requests include Bearer apiKey by default; headers can override it. Relative paths resolve beneath baseUrl/v1.",
       request:
-        "Raw request({ method, url, headers, params, data, responseType }) with no default headers. Add authentication yourself. Relative URLs are joined to baseUrl without /v1.",
-      poll: "poll(request, extract, {intervalMs,timeoutMs}) continues until extract returns a truthy value",
-      sleep: "Delay with sleep(ms)",
-      signal: "Cancellation signal that can be passed to http/request",
-      onDelta: "Push streaming text with onDelta(text) for text models",
+        "Low-level request({ method, url, headers, params, data, responseType }) sends headers exactly as provided. Add authentication yourself. Relative URLs join baseUrl without /v1.",
+      poll: "Use poll(request, extract, {intervalMs,timeoutMs}) to check an async task; polling ends when extract returns a result",
+      sleep: "Wait for a duration with sleep(ms)",
+      signal: "Cancellation signal that can be forwarded to http or request",
+      onDelta: "Text models can stream partial output by calling onDelta(text)",
     },
     returns: {
       image:
-        "Text-to-image and image editing use different APIs; distinguish them by whether images is empty. Return an image URL or data URL, an array of them, or [{ dataUrl }] / [{ url }] / [{ b64_json }].",
+        "Choose the text-to-image or image-edit endpoint based on whether images is empty. Return a URL, data URL, or an array of objects containing dataUrl, url, or b64_json.",
       video:
-        "Poll inside the script and return { url }, { blob }, or a video URL string.",
+        "Wait for the remote video task inside the script, then return { url }, { blob }, or a video URL string.",
       audio:
-        "Return a Blob, base64/data URL string, or { b64_json } / { data } / { url }.",
-      text: "Push streaming output with onDelta(text), then return the complete text string.",
+        "Audio output can be a Blob, a base64/data URL string, or an object with b64_json, data, or url.",
+      text: "Send incremental output through onDelta(text) and return the finished text.",
     },
     templates: { openai: "OpenAI format", gemini: "Gemini format" },
     authoring: {
       intro:
         "Write a model request script for Yingxu Studio. Capability: {{capability}}. Target model: {{model}}.",
       shape:
-        "Write an async function whose parameter list names the variables you use, and unpack params into fields such as size, quality, and count. Do not import modules or use Markdown fences. Send the request and return the result inside the function. The runtime injects matching locals, so finish with return await functionName({ the same arguments }).",
+        "Define an async function with each injected value you use in its parameter list. Expand params into readable fields such as size, quality, and count. Omit imports and Markdown fences. Make the request and return its result inside the function, then finish with return await functionName({ the same arguments }).",
       returnTitle: "Return requirements",
       variablesTitle: "Available variables",
       rulesTitle: "Rules",
       rules:
-        "- Write an async function whose parameter list names the variables you use, and unpack params into fields such as size, quality, count, and seconds. Document each field with a /** */ JSDoc comment above the function.\n- Send raw HTTP with request({ method, url, headers, params, data, responseType }). Use http.post / http.get when you want Authorization: Bearer apiKey by default.\n- Relative URLs: request joins them to baseUrl without /v1; http relative paths append /v1 to baseUrl.\n- Async video tasks usually create a job and then poll(request, extract, { intervalMs, timeoutMs }) until extract returns a truthy value.\n- images is a data URL string array. videos and audios are File arrays you can form.append(field, file); they are empty when no references are attached.\n- Do not set Content-Type on FormData; let the browser add the boundary.\n- Return the result from the function, then finish with return await functionName({ the same arguments }). Output only the complete script, with no explanation.",
+        "- Use an async function with explicit parameters for injected values. Expand params into documented fields such as size, quality, count, and seconds.\n- Choose request({ method, url, headers, params, data, responseType }) for full header control; http.post / http.get add Bearer apiKey unless overridden.\n- Relative request URLs join baseUrl directly; relative http paths resolve beneath baseUrl/v1.\n- For asynchronous video APIs, create the job and use poll(request, extract, { intervalMs, timeoutMs }) to retrieve its result.\n- images contains data URLs. videos and audios contain File objects that can be added with form.append; either list is empty without a connected reference.\n- Let the browser set the multipart Content-Type boundary when using FormData.\n- Return a result from the function and invoke it at the end with return await functionName({ the same arguments }). Output the complete script only.",
       examplesTitle:
-        "Complete examples (adapt them to the real API; do not copy them unchanged)",
+        "Working examples (verify each endpoint and field against the provider docs)",
       draftTitle:
-        "Current user draft (revise this; if empty, write from scratch)",
+        "Script currently in the editor (revise it, or start fresh when blank)",
       anyModel: "(the currently selected model)",
     },
   },
@@ -189,44 +189,44 @@ export default {
     baseUrlRequired: "Configure the Base URL first",
     apiKeyRequired: "Configure the API key first",
     authenticationFailed:
-      "Authentication failed. Check the API key, plan permissions, and model permissions.",
+      "The provider rejected authentication. Verify the key, account plan, and access to this model.",
     rateLimited:
-      "The request was rate-limited or the quota is insufficient. Try again later.",
+      "The provider is throttling requests or the account has no quota left. Wait before retrying.",
     notFound:
-      "The endpoint was not found (404). Check the Base URL and selected model.",
+      "No matching endpoint was found (404). Verify the provider URL and model identifier.",
     badGateway:
-      "Gateway error (502). The API service is temporarily unavailable.",
+      "The upstream gateway returned 502. Retry after the provider service recovers.",
     serviceBusy: "Service unavailable (503). Try again later.",
     httpFailed:
-      "Request failed (HTTP {{status}}). Check the Base URL and API key.",
+      "The provider returned HTTP {{status}}. Check the endpoint address and credentials.",
     htmlError: "The service returned an HTML error page ({{preview}})",
     imageTimeout:
-      "The image request timed out. The endpoint did not respond in time; retry later or switch channels.",
+      "No image response arrived before the request deadline. Try again or select another provider.",
     audioModelRequired: "Configure an audio model first",
     audioGenerationFailed: "Audio generation failed",
     scriptNoAudio: "The model request script did not return audio",
     geminiAudioUnsupported:
-      "The Gemini API format does not support audio generation. Use an OpenAI-format provider.",
+      "Audio generation is unavailable through the Gemini request format; select an OpenAI-compatible provider.",
     invalidImageSizeFormat:
       "Unsupported image size. Use auto, 9:16, or 1024x1024.",
     positiveImageRatio:
       "The image ratio must use positive numbers, such as 9:16.",
     imageRatioLimit:
-      "The image aspect ratio cannot exceed 3:1. Adjust the dimensions.",
+      "Choose dimensions whose width-to-height ratio stays at or below 3:1.",
     positiveImageDimensions:
-      "Image dimensions must be positive integers, such as 1024x1024.",
+      "Enter positive whole-number dimensions, for example 1024x1024.",
     imageDimensionStep: "Image width and height must be multiples of 16.",
     imageEdgeLimit: "The longest image edge cannot exceed 3840px.",
     imagePixelLimit:
-      "The total image pixel count must be between 655360 and 8294400.",
+      "The requested image must contain 655,360 to 8,294,400 pixels in total.",
     unknownImageResponse:
-      "The API returned data in an unknown format (fields: {{fields}}). Check model or API compatibility.",
+      "The response used an unrecognized shape (fields: {{fields}}). Confirm this model's response format.",
     noImageReturned:
-      "The API did not return an image. The prompt may have triggered safety review or the model may not support this operation.",
+      "No image was included in the response. Review the prompt and confirm the model supports this request.",
     geminiRejected: "Gemini rejected the request: {{reason}}",
     geminiNoImage: "The Gemini API did not return an image",
     maskModelUnsupported:
-      "This model does not support mask editing. Use another provider.",
+      "Mask-based edits are unavailable for this model. Choose a provider that supports image editing.",
     noContent: "No content returned",
     modelReadFailed: "Failed to load models",
     videoTimeout: "{{provider}}video generation timed out. Try again later.",
@@ -238,16 +238,16 @@ export default {
     videoGenerationFailed: "Video generation failed",
     videoTaskQueryFailed: "Failed to query video task",
     videoPromptRequired:
-      "Enter a video prompt or connect a reference image, video, or audio asset",
+      "Add a video description or connect an image, video, or audio reference",
     referenceImageReadFailed:
-      "Failed to read the reference image. Choose another image or upload it again.",
+      "This reference image could not be loaded. Re-upload it or select a different file.",
     invalidReferenceVideo:
-      "A reference video must be a public URL, asset ID, or locally saved video",
+      "Provide the reference video as a public URL, an asset ID, or a saved local file",
     invalidReferenceAudio:
-      "Reference audio must be a public URL, asset ID, or locally saved audio file",
+      "Provide the reference audio as a public URL, an asset ID, or a saved local file",
     videoModelRequired: "Configure a video model first",
     geminiVideoUnsupported:
-      "The Gemini API format does not support video generation. Use an OpenAI-format provider.",
+      "Video generation is unavailable through the Gemini request format; select an OpenAI-compatible provider.",
     noVideoTask: "The API did not return a video task",
     videoDownloadFailed: "Failed to download video",
     localAssetReadFailed: "Failed to read local asset",
@@ -780,12 +780,12 @@ export default {
       clearDescription:
         "This will delete every node and connection on the current canvas.",
       reversePreset:
-        "Infer a prompt suitable for AI image generation from the reference image.\n\nRequirements:\n1. Output only the prompt, with no explanation.\n2. Cover the subject, composition, style, lighting, color, materials, lens, and atmosphere.\n3. Write a complete prompt that can be used directly with an image model.",
+        "Inspect the reference and write a ready-to-use image prompt. Describe the subject and composition first, then the visual style, lighting, palette, material qualities, lens treatment, and mood. Return the prompt alone, without a heading or commentary.",
       maskPrompt:
-        "{{source}} is the original image. {{mask}} marks the area to edit with a translucent blue overlay on the original image. Only modify the area covered by the blue overlay, keep everything else identical to the original, output a full image with the same size as the original, and do not keep any blue overlay in the result. Edit request: {{prompt}}",
+        "Perform a local repaint of the source image {{source}}. The translucent blue region in {{mask}} is the only area that may change; preserve all pixels outside it. Return a complete image at the source dimensions and remove the mask color from the result. Requested change: {{prompt}}",
       maskNodeTitle: "Mask annotation",
       editTextPrompt:
-        "Revise the text according to the instructions.\n\nOriginal:\n{{source}}\n\nInstructions:\n{{prompt}}",
+        "Rewrite the original to meet the requested change while retaining details that were not targeted.\n\nOriginal:\n{{source}}\n\nRequested change:\n{{prompt}}",
     },
     reverseComposer:
       "Reference image: @[node:{{imageId}}]\nTask: @[node:{{textId}}]",
@@ -835,7 +835,7 @@ export default {
       originalMode: "Original",
       maskTitle: "Local mask edit",
       maskHint:
-        "Mouse wheel to zoom · middle button or Space + left drag to pan · Alt + left/right drag to resize brush · Ctrl/Cmd+Z to undo · Ctrl/Cmd+Shift+Z to redo",
+        "Wheel changes zoom · drag with the middle button or hold Space while dragging to pan · Alt + horizontal drag adjusts brush size · Ctrl/Cmd+Z undoes · Ctrl/Cmd+Shift+Z redoes",
       maskHistoryLimit: "Undo history keeps the latest 100 strokes.",
       brush: "Brush",
       erase: "Erase",
@@ -854,9 +854,9 @@ export default {
       maskGenerate: "Generate now",
       splitTitle: "Split image",
       splitDescription:
-        "Create {{count}} image nodes and arrange them in the original grid to the right of the canvas",
+        "Create {{count}} image nodes from the source grid and place them to the right of the current canvas",
       splitHint:
-        "Mouse wheel to zoom · middle button or Space + left drag to pan · Delete removes the selected line · Ctrl/Cmd+Z to undo · Ctrl/Cmd+Shift+Z to redo",
+        "Wheel changes zoom · drag with the middle button or hold Space while dragging to pan · Delete removes the active split line · Ctrl/Cmd+Z undoes · Ctrl/Cmd+Shift+Z redoes",
       undoSplitTitle: "Undo split adjustment (Ctrl/Cmd+Z)",
       undoSplit: "Undo split adjustment",
       redoSplitTitle: "Redo split adjustment (Ctrl/Cmd+Shift+Z)",
@@ -983,9 +983,9 @@ export default {
       topDown: "{{angle}}-degree top-down view",
       lowAngle: "{{angle}}-degree low-angle view",
       angleLabel:
-        "AI multi-angle: {{horizontal}}, {{pitch}}, camera distance {{distance}}, {{lens}} lens",
+        "AI camera setup: {{horizontal}}, {{pitch}}; distance {{distance}}; {{lens}} lens",
       anglePrompt:
-        "Regenerate a new view of the same subject from the reference image. Preserve the subject, colors, materials, and visual style; do not merely apply perspective distortion. {{angle}}.",
+        "Use the reference to render the same subject from another camera position. Keep its identifying features, palette, materials, and visual language consistent; show the requested viewpoint through a real scene change rather than stretching the source in perspective. {{angle}}.",
     },
     platformGeneration: {
       audioUnavailable:
@@ -1156,7 +1156,7 @@ export default {
     proxy: {
       title: "Local proxy",
       description:
-        "Forward provider requests (models, image, video, text, audio) and WebDAV sync through a proxy running on your machine to avoid browser CORS errors.",
+        "Route model discovery, image/video/text/audio generation, and WebDAV traffic through a proxy on this machine when browser CORS blocks direct requests.",
       startHint:
         "A local forwarding service is not bundled. Start a compatible proxy separately when needed, then enter its address below.",
       address: "Proxy address",
@@ -1359,7 +1359,7 @@ export default {
       add: "Add model",
       fetch: "Fetch model list",
       description:
-        "If the provider does not expose an OpenAI /models endpoint, add model names manually here.",
+        "Add model names here when the provider has no OpenAI-compatible /models listing.",
       fetchedTab: "Fetched models ({{count}})",
       existingTab: "Selected models ({{count}})",
       visibleSelected: "{{selected}} / {{total}} selected in this list",
@@ -1372,19 +1372,19 @@ export default {
     scriptEditor: {
       title: "{{capability}} request script",
       description:
-        "Follow the three steps on the left: read the rules, copy the brief for another AI, then paste the script on the right. Leave it empty to use the default request.",
+        "Review the script constraints, copy the request context for your chosen AI, and save its result in the editor. The built-in request is used when this field is empty.",
       stepRule: "Read the rules",
       stepRuleHint:
-        "Write an async function. Put prompt, images, params, and other locals in the parameter list, and unpack params into size, quality, count, and similar fields. Send the request and return the result, then call the function once.",
+        "Define an async function with parameters for injected values such as prompt, images, and params. Expand params into fields like size, quality, and count. Make the request and return its result, then invoke the function at the end.",
       stepAi: "Let another AI write it",
       stepAiCopy:
         "Copy the variables, return requirements, and writing rules from this page.",
       stepAiAsk:
-        "Paste the brief into ChatGPT, Claude, or any other AI, then attach the API docs you want to call.",
+        "Paste the brief into your preferred AI chat and include the API documentation for the service you plan to call.",
       stepAiPaste:
         "Paste the returned script into the editor on the right and save it.",
       stepAiIncludes:
-        "The copied brief includes the current model, return requirements, all available variables, and writing rules. It does not include the API key.",
+        "The copied context contains the selected model, inputs, response shape, and script constraints. API keys are excluded.",
       stepEdit: "Paste and save",
       editorTitle: "Script editor",
       editorHint:
@@ -1408,7 +1408,7 @@ export default {
     webdav: {
       title: "WebDAV sync",
       description:
-        "Sync canvases, assets, generation history, and local media files. AI API keys are excluded. Requests go through the local proxy when it is on; otherwise the browser connects to WebDAV directly.",
+        "Back up canvases, assets, generation history, and local media to WebDAV. AI API keys are never included. Traffic uses the local proxy when enabled; otherwise the browser connects directly.",
       lastSynced: "Last synced {{time}}",
       neverSynced: "Not synced yet",
       url: "WebDAV URL",
@@ -1426,7 +1426,7 @@ export default {
       preparing: "Preparing to sync",
       failed: "WebDAV sync failed",
       completed:
-        "Sync complete: {{projects}} canvases, {{assets}} assets, {{records}} records, and {{files}} files ({{bytes}}) uploaded",
+        "Sync finished: {{projects}} canvases, {{assets}} assets, and {{records}} records processed; {{files}} files uploaded ({{bytes}})",
       domains: {
         canvas: "Canvases",
         assets: "My Assets",

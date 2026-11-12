@@ -12,7 +12,7 @@ for (let index = 2; index < process.argv.length; index += 2) {
 const upstreamRoot = args.get("--upstream-root");
 if (!upstreamRoot) {
   console.error(
-    "Usage: node scripts/audit-canvas-overlap.mjs --upstream-root <checkout> [--upstream-subdir web/src] [--local-root apps/canvas-engine/src]",
+    "Usage: node scripts/audit-canvas-overlap.mjs --upstream-root <checkout> [--upstream-subdir web/src] [--local-root apps/canvas-engine/src] [--explain-file <relative-source-path>]",
   );
   process.exit(2);
 }
@@ -57,10 +57,94 @@ function normalizedLines(contents) {
     .filter(Boolean);
 }
 
+function normalizedEntries(contents) {
+  return contents
+    .split(/\r?\n/)
+    .map((line, index) => ({
+      line: line.trim().replace(/\s+/g, " "),
+      sourceLine: index + 1,
+    }))
+    .filter((entry) => entry.line);
+}
+
+function findSharedRuns(localContents, upstreamContents, minimumSize = 5) {
+  const localEntries = normalizedEntries(localContents);
+  const upstreamEntries = normalizedEntries(upstreamContents);
+  const upstreamPositions = new Map();
+
+  for (let index = 0; index <= upstreamEntries.length - minimumSize; index += 1) {
+    const key = upstreamEntries
+      .slice(index, index + minimumSize)
+      .map((entry) => entry.line)
+      .join("\n");
+    const positions = upstreamPositions.get(key) ?? [];
+    positions.push(index);
+    upstreamPositions.set(key, positions);
+  }
+
+  const seen = new Set();
+  const runs = [];
+  for (let localStart = 0; localStart <= localEntries.length - minimumSize; localStart += 1) {
+    const key = localEntries
+      .slice(localStart, localStart + minimumSize)
+      .map((entry) => entry.line)
+      .join("\n");
+    for (const matchedUpstreamStart of upstreamPositions.get(key) ?? []) {
+      let localRunStart = localStart;
+      let upstreamRunStart = matchedUpstreamStart;
+      while (
+        localRunStart > 0 &&
+        upstreamRunStart > 0 &&
+        localEntries[localRunStart - 1].line === upstreamEntries[upstreamRunStart - 1].line
+      ) {
+        localRunStart -= 1;
+        upstreamRunStart -= 1;
+      }
+
+      const runKey = `${localRunStart}:${upstreamRunStart}`;
+      if (seen.has(runKey)) continue;
+      seen.add(runKey);
+
+      let length = 0;
+      while (
+        localRunStart + length < localEntries.length &&
+        upstreamRunStart + length < upstreamEntries.length &&
+        localEntries[localRunStart + length].line ===
+          upstreamEntries[upstreamRunStart + length].line
+      ) {
+        length += 1;
+      }
+
+      runs.push({
+        localStartLine: localEntries[localRunStart].sourceLine,
+        localEndLine: localEntries[localRunStart + length - 1].sourceLine,
+        upstreamStartLine: upstreamEntries[upstreamRunStart].sourceLine,
+        upstreamEndLine: upstreamEntries[upstreamRunStart + length - 1].sourceLine,
+        normalizedLineCount: length,
+        openingLines: localEntries
+          .slice(localRunStart, localRunStart + Math.min(length, 8))
+          .map((entry) => entry.line),
+      });
+    }
+  }
+
+  return runs.sort(
+    (left, right) => right.normalizedLineCount - left.normalizedLineCount,
+  );
+}
+
 function countLines(lines) {
   const counts = new Map();
   for (const line of lines) counts.set(line, (counts.get(line) ?? 0) + 1);
   return counts;
+}
+
+function lineWindows(lines, size = 5) {
+  const windows = [];
+  for (let index = 0; index <= lines.length - size; index += 1) {
+    windows.push(lines.slice(index, index + size).join("\n"));
+  }
+  return windows;
 }
 
 function sharedCount(leftCounts, rightCounts) {
@@ -139,6 +223,10 @@ const upstreamLineLists = new Map(
 const upstreamCorpusLines = [...upstreamLineLists.values()].flat();
 const upstreamCorpus = countLines(upstreamCorpusLines);
 const upstreamUniqueLines = new Set(upstreamCorpusLines);
+const upstreamCorpusWindows = countLines(
+  [...upstreamLineLists.values()].flatMap((lines) => lineWindows(lines)),
+);
+const upstreamUniqueWindows = new Set(upstreamCorpusWindows.keys());
 
 let exactMatches = 0;
 let samePathPairs = 0;
@@ -151,13 +239,21 @@ let samePathCurrentUniqueLines = 0;
 let currentLines = 0;
 let crossPathShared = 0;
 const localUniqueLines = new Set();
+let currentWindows = 0;
+let crossPathSharedWindows = 0;
+const localUniqueWindows = new Set();
 const fileResults = [];
 
 for (const localFile of localFiles) {
   const localBytes = readFileSync(localFile);
   const localCounts = countLines(normalizedLines(localBytes.toString("utf8")));
   const localUnique = new Set(localCounts.keys());
+  const localWindowCounts = countLines(
+    lineWindows(normalizedLines(localBytes.toString("utf8"))),
+  );
+  const localUniqueWindowSet = new Set(localWindowCounts.keys());
   for (const line of localUnique) localUniqueLines.add(line);
+  for (const window of localUniqueWindowSet) localUniqueWindows.add(window);
   const localLineCount = [...localCounts.values()].reduce(
     (sum, value) => sum + value,
     0,
@@ -165,6 +261,15 @@ for (const localFile of localFiles) {
   const upstreamFile = upstreamByPath.get(relativePath(localSource, localFile));
   currentLines += localLineCount;
   crossPathShared += sharedCount(localCounts, upstreamCorpus);
+  const localWindowCount = [...localWindowCounts.values()].reduce(
+    (sum, value) => sum + value,
+    0,
+  );
+  currentWindows += localWindowCount;
+  crossPathSharedWindows += sharedCount(
+    localWindowCounts,
+    upstreamCorpusWindows,
+  );
 
   if (!upstreamFile) continue;
   samePathPairs += 1;
@@ -174,7 +279,11 @@ for (const localFile of localFiles) {
   const upstreamCounts = countLines(
     upstreamLineLists.get(relativePath(localSource, localFile)),
   );
+  const upstreamWindows = countLines(
+    lineWindows(upstreamLineLists.get(relativePath(localSource, localFile))),
+  );
   const upstreamUnique = new Set(upstreamCounts.keys());
+  const upstreamUniqueWindowSet = new Set(upstreamWindows.keys());
   const shared = sharedCount(localCounts, upstreamCounts);
   const upstreamLineCount = [...upstreamCounts.values()].reduce(
     (sum, value) => sum + value,
@@ -184,6 +293,10 @@ for (const localFile of localFiles) {
   samePathCurrentLines += localLineCount;
   samePathUnion += localLineCount + upstreamLineCount - shared;
   const uniqueShared = [...localUnique].filter((line) => upstreamUnique.has(line)).length;
+  const sharedWindows = sharedCount(localWindowCounts, upstreamWindows);
+  const uniqueWindowShared = [...localUniqueWindowSet].filter((window) =>
+    upstreamUniqueWindowSet.has(window),
+  ).length;
   samePathUniqueShared += uniqueShared;
   samePathCurrentUniqueLines += localUnique.size;
   samePathUniqueUnion += localUnique.size + upstreamUnique.size - uniqueShared;
@@ -194,6 +307,21 @@ for (const localFile of localFiles) {
     currentCoveragePercent: Number(
       ((shared / Math.max(1, localLineCount)) * 100).toFixed(1),
     ),
+    sharedUniqueLines: uniqueShared,
+    currentUniqueLines: localUnique.size,
+    uniqueCoveragePercent: Number(
+      ((uniqueShared / Math.max(1, localUnique.size)) * 100).toFixed(1),
+    ),
+    sharedFiveLineWindows: sharedWindows,
+    currentFiveLineWindows: localWindowCount,
+    fiveLineWindowCoveragePercent: Number(
+      ((sharedWindows / Math.max(1, localWindowCount)) * 100).toFixed(1),
+    ),
+    sharedUniqueFiveLineWindows: uniqueWindowShared,
+    currentUniqueFiveLineWindows: localUniqueWindowSet.size,
+    uniqueFiveLineWindowCoveragePercent: Number(
+      ((uniqueWindowShared / Math.max(1, localUniqueWindowSet.size)) * 100).toFixed(1),
+    ),
   });
 }
 
@@ -202,6 +330,27 @@ const localCanvasCallbacks = pageCallbacks(
   workspace,
   "apps/canvas-engine/src/pages/canvas/project.tsx",
 );
+
+const explainedRelativePath = args.get("--explain-file");
+let explainedFile = null;
+if (explainedRelativePath) {
+  const localFile = path.resolve(localSource, explainedRelativePath);
+  const upstreamFile = path.resolve(upstreamSource, explainedRelativePath);
+  if (
+    localFile.startsWith(`${localSource}${path.sep}`) &&
+    upstreamFile.startsWith(`${upstreamSource}${path.sep}`)
+  ) {
+    explainedFile = {
+      file: explainedRelativePath,
+      minimumRunLength: 5,
+      longestExactRuns: findSharedRuns(
+        readFileSync(localFile, "utf8"),
+        readFileSync(upstreamFile, "utf8"),
+      ).slice(0, 40),
+    };
+  }
+}
+
 const upstreamCanvasCallbacks = pageCallbacks(
   upstreamRoot,
   path.join(args.get("--upstream-subdir") ?? "web/src", "pages/canvas/project.tsx"),
@@ -256,6 +405,23 @@ console.log(
       allSourceCorpusUniqueLineJaccardPercent: Number(
         ([...localUniqueLines].filter((line) => upstreamUniqueLines.has(line)).length / Math.max(1, new Set([...localUniqueLines, ...upstreamUniqueLines]).size) * 100).toFixed(2),
       ),
+      exactFiveLineWindows: {
+        windowSize: 5,
+        sharedWindows: crossPathSharedWindows,
+        currentWindows,
+        coveragePercent: Number(
+          ((crossPathSharedWindows / Math.max(1, currentWindows)) * 100).toFixed(2),
+        ),
+        sharedUniqueWindows: [...localUniqueWindows].filter((window) =>
+          upstreamUniqueWindows.has(window),
+        ).length,
+        currentUniqueWindows: localUniqueWindows.size,
+        uniqueCoveragePercent: Number(
+          ([...localUniqueWindows].filter((window) => upstreamUniqueWindows.has(window)).length / Math.max(1, localUniqueWindows.size) * 100).toFixed(2),
+        ),
+      },
+      explainedFile,
+      samePathFileResults: fileResults,
       highestSharedLineFiles: fileResults.slice(0, 25),
       highestSharedCanvasPageCallbacks: callbackResults.slice(0, 25),
     },
