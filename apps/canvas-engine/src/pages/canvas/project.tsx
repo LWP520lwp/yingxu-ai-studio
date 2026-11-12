@@ -168,6 +168,12 @@ import { CanvasSidePanel } from "@/components/canvas/canvas-library-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import {
+  applyCanvasImageBatchFailure,
+  applyCanvasImageBatchSuccess,
+  applyCanvasImageOutputPlan,
+  planCanvasImageOutput,
+} from "@/product-engine/generation-output-plan";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { useCanvasHistory } from "@/pages/canvas/hooks/use-canvas-history";
@@ -250,7 +256,6 @@ import {
   type SelectionBox,
   type ViewportTransform,
 } from "@/types/canvas";
-import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
 // Register built-in nodes in the shared registry once when the module loads.
@@ -3585,152 +3590,28 @@ function InfiniteCanvasPage() {
 
           if (mode === "image") {
             const count = getGenerationCount(generationConfig.count);
-            const isConfigNode = sourceNode?.type === CanvasNodeType.Config;
-            const isImageNode = sourceNode?.type === CanvasNodeType.Image;
-            const isEmptyImageNode =
-              isImageNode && !sourceNode?.metadata?.content;
-            const reuseImageNode =
-              isImageNode && (overwriteExisting || isEmptyImageNode);
-            const sourceReference =
-              isImageNode && sourceNode?.metadata?.content && !overwriteExisting
-                ? [
-                    {
-                      id: sourceNode.id,
-                      name: `${sourceNode.title || sourceNode.id}.png`,
-                      type: sourceNode.metadata.mimeType || "image/png",
-                      dataUrl: sourceNode.metadata.content,
-                      storageKey: sourceNode.metadata.storageKey,
-                    },
-                  ]
-                : [];
-            const referenceImages = [
-              ...new Map(
-                [...sourceReference, ...generationContext.referenceImages].map(
-                  (image) => [image.id, image],
-                ),
-              ).values(),
-            ];
-            const generationType = referenceImages.length
-              ? ("edit" as const)
-              : ("generation" as const);
-            const generationMetadata = buildImageGenerationMetadata(
-              generationType,
-              generationConfig,
+            const imagePlan = planCanvasImageOutput({
+              sourceId: nodeId,
+              sourceNode,
+              prompt: effectivePrompt,
+              sourcePrompt: prompt,
+              config: generationConfig,
+              overwriteExisting,
               count,
-              referenceImages,
-            );
-            const parentConfig =
-              NODE_DEFAULT_SIZE[
-                isConfigNode
-                  ? CanvasNodeType.Config
-                  : isImageNode
-                    ? CanvasNodeType.Image
-                    : CanvasNodeType.Text
-              ];
-            const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
-            const parentPosition = sourceNode?.position || { x: 0, y: 0 };
-            const rootId = reuseImageNode ? nodeId : nanoid();
-            const imageIds = Array.from({ length: count }, () => nanoid());
+              references: generationContext.referenceImages,
+              createId: nanoid,
+            });
+            const isConfigNode = imagePlan.isConfigurationSource;
+            const referenceImages = imagePlan.references;
+            const rootId = imagePlan.outputId;
+            const imageIds = imagePlan.imageIds;
+            const outputConnection = imagePlan.connection;
             pendingChildIds = [rootId];
-            const rootNode: CanvasNodeData = {
-              id: rootId,
-              type: CanvasNodeType.Image,
-              title: effectivePrompt.slice(0, 32) || "Generated Image",
-              position: {
-                x: reuseImageNode
-                  ? parentPosition.x
-                  : parentPosition.x + parentConfig.width + 96,
-                y:
-                  parentPosition.y +
-                  parentConfig.height / 2 -
-                  imageConfig.height / 2,
-              },
-              width: reuseImageNode
-                ? sourceNode?.width || imageConfig.width
-                : imageConfig.width,
-              height: reuseImageNode
-                ? sourceNode?.height || imageConfig.height
-                : imageConfig.height,
-              metadata: {
-                prompt: effectivePrompt,
-                status: NODE_STATUS_LOADING,
-                images: imageIds.map((id) => ({
-                  id,
-                  status: NODE_STATUS_LOADING,
-                  content: "",
-                  naturalWidth: 0,
-                  naturalHeight: 0,
-                  bytes: 0,
-                  mimeType: "",
-                })),
-                primaryImageId: undefined,
-                ...generationMetadata,
-              },
-            };
-
-            setNodes((prev) => [
-              ...prev.map((node) =>
-                node.id === nodeId
-                  ? isConfigNode
-                    ? {
-                        ...node,
-                        metadata: {
-                          ...node.metadata,
-                          status: NODE_STATUS_LOADING,
-                          errorDetails: undefined,
-                        },
-                      }
-                    : reuseImageNode
-                      ? {
-                          ...node,
-                          position: rootNode.position,
-                          width: rootNode.width,
-                          height: rootNode.height,
-                          title: rootNode.title,
-                          metadata: {
-                            ...node.metadata,
-                            ...rootNode.metadata,
-                            content: undefined,
-                            storageKey: undefined,
-                            naturalWidth: undefined,
-                            naturalHeight: undefined,
-                            bytes: undefined,
-                            mimeType: undefined,
-                            errorDetails: undefined,
-                          },
-                        }
-                      : isImageNode
-                        ? {
-                            ...node,
-                            metadata: {
-                              ...node.metadata,
-                              status: NODE_STATUS_SUCCESS,
-                              errorDetails: undefined,
-                            },
-                          }
-                        : {
-                            ...node,
-                            type: CanvasNodeType.Text,
-                            title: prompt.slice(0, 32) || "Prompt",
-                            width: parentConfig.width,
-                            height: parentConfig.height,
-                            metadata: {
-                              ...node.metadata,
-                              content: prompt,
-                              prompt,
-                              status: NODE_STATUS_SUCCESS,
-                              fontSize: 14,
-                              errorDetails: undefined,
-                            },
-                          }
-                  : node,
-              ),
-              ...(reuseImageNode ? [] : [rootNode]),
-            ]);
-            if (!reuseImageNode)
+            setNodes((prev) => applyCanvasImageOutputPlan(prev, imagePlan));
+            if (outputConnection)
               setConnections((prev) => [
                 ...prev,
-                { id: nanoid(), fromNodeId: nodeId, toNodeId: rootId },
+                outputConnection,
               ]);
             setSelectedNodeIds(new Set([nodeId]));
             setSelectedConnectionId(null);
@@ -3754,12 +3635,6 @@ function InfiniteCanvasPage() {
                 isCancelled: isGenerationCanceled,
               },
               onImage: (imageId, uploaded) => {
-                const imageSize = fitNodeSize(
-                  uploaded.width,
-                  uploaded.height,
-                  imageConfig.width,
-                  imageConfig.height,
-                );
                 const item: CanvasNodeImage = {
                   id: imageId,
                   status: NODE_STATUS_SUCCESS,
@@ -3771,41 +3646,7 @@ function InfiniteCanvasPage() {
                   mimeType: uploaded.mimeType,
                 };
                 setNodesForGeneration(rootId, controller, (prev) =>
-                  prev.map((node) => {
-                    if (node.id !== rootId) return node;
-                    const images =
-                      node.metadata?.images?.map((image) =>
-                        image.id === imageId ? item : image,
-                      ) || [];
-                    if (node.metadata?.primaryImageId)
-                      return {
-                        ...node,
-                        metadata: { ...node.metadata, images },
-                      };
-                    const center = {
-                      x: node.position.x + node.width / 2,
-                      y: node.position.y + node.height / 2,
-                    };
-                    return {
-                      ...node,
-                      position: {
-                        x: center.x - imageSize.width / 2,
-                        y: center.y - imageSize.height / 2,
-                      },
-                      ...imageSize,
-                      metadata: {
-                        ...node.metadata,
-                        content: item.content,
-                        storageKey: item.storageKey,
-                        naturalWidth: item.naturalWidth,
-                        naturalHeight: item.naturalHeight,
-                        bytes: item.bytes,
-                        mimeType: item.mimeType,
-                        images,
-                        primaryImageId: imageId,
-                      },
-                    };
-                  }),
+                  applyCanvasImageBatchSuccess(prev, rootId, item),
                 );
                 if (isConfigNode)
                   setNodesForGeneration(nodeId, controller, (prev) =>
@@ -3830,24 +3671,11 @@ function InfiniteCanvasPage() {
                     : t("canvas.projectPage.generationFailed");
                 if (!firstError) firstError = errorDetails;
                 setNodesForGeneration(rootId, controller, (prev) =>
-                  prev.map((node) =>
-                    node.id === rootId
-                      ? {
-                          ...node,
-                          metadata: {
-                            ...node.metadata,
-                            images: node.metadata?.images?.map((image) =>
-                              image.id === imageId
-                                ? {
-                                    ...image,
-                                    status: NODE_STATUS_ERROR,
-                                    errorDetails,
-                                  }
-                                : image,
-                            ),
-                          },
-                        }
-                      : node,
+                  applyCanvasImageBatchFailure(
+                    prev,
+                    rootId,
+                    imageId,
+                    errorDetails,
                   ),
                 );
               },
