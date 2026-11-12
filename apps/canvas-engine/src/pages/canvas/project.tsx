@@ -124,7 +124,7 @@ import {
   CanvasNodeInfoModal,
 } from "@/components/canvas/canvas-node-hover-toolbar";
 import { CanvasSelectionToolbar } from "@/components/canvas/canvas-selection-toolbar";
-import { CanvasViewport } from "@/product-engine/CanvasViewport";
+import { AtlasCanvasViewport as CanvasViewport } from "@/atlas-engine/surface/AtlasCanvasViewport";
 import { Minimap } from "@/components/canvas/canvas-mini-map";
 import { ProductNodeCard as CanvasNode } from "@/product-engine/NodeCard";
 import { runNodeGenerationFlow } from "@/product-engine/node-generation-flow";
