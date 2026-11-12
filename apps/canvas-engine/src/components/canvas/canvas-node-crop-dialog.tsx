@@ -4,11 +4,12 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Button, Modal, Segmented, Tooltip } from "antd";
-import { Check, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Button, Modal, Segmented } from "antd";
+import { Check, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { useImageEditorViewport } from "@/components/canvas/use-image-editor-viewport";
+import { ImageEditorViewportControls } from "@/components/canvas/image-editor-viewport-controls";
 import {
   CROP_RESIZE_HANDLES,
   DEFAULT_CROP_RECT,
@@ -20,10 +21,9 @@ import {
   resizeCrop,
   resolveCropAspectRatio,
   type CanvasImageCropRect,
-  type CropImageSize,
   type CropResizeHandle,
 } from "@/lib/canvas/crop-selection";
-import { readImageMeta } from "@/lib/image-utils";
+import { ImageEditorSurface, useImageEditorSource } from "./image-editor-surface";
 
 export type { CanvasImageCropRect } from "@/lib/canvas/crop-selection";
 
@@ -46,7 +46,7 @@ export function CanvasNodeCropDialog({
   const [crop, setCrop] = useState(DEFAULT_CROP_RECT);
   const [ratioPreset, setRatioPreset] = useState("free");
   const [fixedRatio, setFixedRatio] = useState<number | null>(null);
-  const [image, setImage] = useState<CropImageSize | null>(null);
+  const { image, imageReadError } = useImageEditorSource(dataUrl, open);
   const dragAbortRef = useRef<AbortController | null>(null);
   const viewport = useImageEditorViewport(image, open);
   const stageRef = viewport.stageRef;
@@ -62,22 +62,6 @@ export function CanvasNodeCropDialog({
     setCrop(DEFAULT_CROP_RECT);
     setRatioPreset("free");
     setFixedRatio(null);
-  }, [dataUrl, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    let current = true;
-    setImage(null);
-    void readImageMeta(dataUrl)
-      .then((size) => {
-        if (current) setImage(size);
-      })
-      .catch(() => {
-        if (current) setImage(null);
-      });
-    return () => {
-      current = false;
-    };
   }, [dataUrl, open]);
 
   useEffect(() => {
@@ -169,28 +153,12 @@ export function CanvasNodeCropDialog({
       maskTransitionName=""
     >
       <div className="space-y-4">
-        <div
-          ref={viewport.viewportRef}
-          {...viewport.panHandlers}
-          className={`relative h-[min(62vh,620px)] min-h-[340px] rounded-lg bg-black/5 ${viewport.scrollClassName} ${viewport.isPanning ? "cursor-grabbing" : viewport.spacePressed ? "cursor-grab" : ""}`}
-        >
-          <div className="relative" style={viewport.contentStyle}>
-            <div
-              ref={stageRef}
-              className="absolute isolate overflow-hidden rounded-lg bg-black select-none [backface-visibility:hidden] [contain:layout_paint] [transform:translateZ(0)]"
-              style={viewport.stageStyle}
-            >
-              <div
-                className="absolute left-0 top-0 [backface-visibility:hidden]"
-                style={viewport.mediaStyle}
-              >
-                <img
-                  src={dataUrl}
-                  alt=""
-                  className="block h-full w-full object-contain opacity-90"
-                  draggable={false}
-                />
-              </div>
+        {imageReadError ? (
+          <p className="text-sm text-red-600" role="alert">
+            {t("canvas.editors.imageReadError")}
+          </p>
+        ) : null}
+        <ImageEditorSurface source={dataUrl} viewport={viewport} className="h-[min(62vh,620px)] min-h-[340px]">
               <CropMask crop={crop} />
               <div
                 role="group"
@@ -219,41 +187,18 @@ export function CanvasNodeCropDialog({
                   />
                 ))}
               </div>
-            </div>
-          </div>
-        </div>
+        </ImageEditorSurface>
 
-        <div className="flex items-center justify-center gap-1">
-          <Tooltip title={t("canvas.editors.zoomOut")}>
-            <Button
-              type="text"
-              icon={<ZoomOut className="size-4" />}
-              disabled={!viewport.canZoomOut}
-              aria-label={t("canvas.editors.zoomOut")}
-              onClick={viewport.zoomOut}
-            />
-          </Tooltip>
-          <button
-            type="button"
-            className="min-w-14 text-center text-xs font-semibold tabular-nums opacity-70"
-            onClick={viewport.resetZoom}
-            aria-label={t("canvas.editors.reset")}
-          >
-            {Math.round(viewport.zoom * 100)}%
-          </button>
-          <Tooltip title={t("canvas.editors.zoomIn")}>
-            <Button
-              type="text"
-              icon={<ZoomIn className="size-4" />}
-              disabled={!viewport.canZoomIn}
-              aria-label={t("canvas.editors.zoomIn")}
-              onClick={viewport.zoomIn}
-            />
-          </Tooltip>
-          <span className="ml-2 text-xs opacity-55">
-            {t("canvas.editors.cropHint")}
-          </span>
-        </div>
+        <ImageEditorViewportControls
+          className="justify-center"
+          zoom={viewport.zoom}
+          canZoomIn={viewport.canZoomIn}
+          canZoomOut={viewport.canZoomOut}
+          onZoomIn={viewport.zoomIn}
+          onZoomOut={viewport.zoomOut}
+          onResetZoom={viewport.resetZoom}
+          hint={t("canvas.editors.cropHint")}
+        />
 
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2">
           <div className="flex flex-wrap items-center gap-3 text-sm opacity-80">
@@ -303,6 +248,7 @@ export function CanvasNodeCropDialog({
           <Button
             type="primary"
             icon={<Check className="size-4" />}
+            disabled={!image || imageReadError}
             onClick={() => onConfirm(crop)}
           >
             {t("canvas.editors.confirmCrop")}
@@ -315,34 +261,18 @@ export function CanvasNodeCropDialog({
 
 function CropMask({ crop }: { crop: CanvasImageCropRect }) {
   return (
-    <>
-      <div
-        className="absolute inset-x-0 top-0 bg-black/55"
-        style={{ height: `${crop.y * 100}%` }}
+    <svg
+      className="pointer-events-none absolute inset-0 size-full"
+      viewBox="0 0 1 1"
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      <path
+        d={`M0 0H1V1H0Z M${crop.x} ${crop.y}h${crop.width}v${crop.height}h-${crop.width}Z`}
+        fill="rgba(0, 0, 0, .55)"
+        fillRule="evenodd"
       />
-      <div
-        className="absolute inset-x-0 bottom-0 bg-black/55"
-        style={{ height: `${(1 - crop.y - crop.height) * 100}%` }}
-      />
-      <div
-        className="absolute bg-black/55"
-        style={{
-          left: 0,
-          top: `${crop.y * 100}%`,
-          width: `${crop.x * 100}%`,
-          height: `${crop.height * 100}%`,
-        }}
-      />
-      <div
-        className="absolute bg-black/55"
-        style={{
-          right: 0,
-          top: `${crop.y * 100}%`,
-          width: `${(1 - crop.x - crop.width) * 100}%`,
-          height: `${crop.height * 100}%`,
-        }}
-      />
-    </>
+    </svg>
   );
 }
 

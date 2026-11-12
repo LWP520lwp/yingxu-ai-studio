@@ -72,4 +72,18 @@ describe("canvas node prompt panel configuration", () => {
       audioInstructions: "warm narration",
     });
   });
+
+  it("keeps explicit per-node video switches when they differ from globals", () => {
+    const configured = buildNodeConfig(
+      { ...defaultConfig, videoGenerateAudio: "true", videoWatermark: "true" },
+      node(CanvasNodeType.Video, {
+        generateAudio: "false",
+        watermark: "false",
+      }),
+      "video",
+    );
+
+    expect(configured.videoGenerateAudio).toBe("false");
+    expect(configured.videoWatermark).toBe("false");
+  });
 });

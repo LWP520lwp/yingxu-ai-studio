@@ -1,16 +1,7 @@
 import { getCurrentStorageDatabaseName } from "@/lib/localforage-storage";
 
-export type IndexedDbStoreUsage = {
-  name: string;
-  records: number;
-  bytes: number;
-};
-export type IndexedDbDatabaseUsage = {
-  name: string;
-  version: number;
-  bytes: number;
-  stores: IndexedDbStoreUsage[];
-};
+export type IndexedDbStoreUsage = { name: string; records: number; bytes: number };
+export type IndexedDbDatabaseUsage = { name: string; version: number; bytes: number; stores: IndexedDbStoreUsage[] };
 export type LocalStorageUsage = {
   usage: number;
   quota: number | null;
@@ -19,28 +10,19 @@ export type LocalStorageUsage = {
 };
 
 export async function readLocalStorageUsage(): Promise<LocalStorageUsage> {
-  const [estimate, databaseName] = await Promise.all([
-    readStorageEstimate(),
-    getCurrentStorageDatabaseName(),
-  ]);
-  const databases = await readDatabaseUsage(databaseName)
-    .then((database) => [database])
-    .catch(() => []);
-  const contentBytes = databases.reduce(
-    (total, database) => total + database.bytes,
-    0,
-  );
+  const [estimate, name] = await Promise.all([browserEstimate(), getCurrentStorageDatabaseName()]);
+  const databases = await readExistingDatabase(name).then((item) => [item]).catch(() => []);
+  const contentBytes = databases.reduce((sum, database) => sum + database.bytes, 0);
   return {
-    usage: estimate?.usage ?? contentBytes,
-    quota: estimate?.quota ?? null,
+    usage: finiteNonNegative(estimate?.usage) ?? contentBytes,
+    quota: finiteNonNegative(estimate?.quota) ?? null,
     contentBytes,
     databases,
   };
 }
 
-async function readStorageEstimate() {
-  if (typeof navigator === "undefined" || !navigator.storage?.estimate)
-    return null;
+async function browserEstimate() {
+  if (typeof navigator === "undefined" || !navigator.storage?.estimate) return null;
   try {
     return await navigator.storage.estimate();
   } catch {
@@ -48,44 +30,66 @@ async function readStorageEstimate() {
   }
 }
 
-function readDatabaseUsage(name: string) {
-  return new Promise<IndexedDbDatabaseUsage>((resolve, reject) => {
+async function readExistingDatabase(name: string): Promise<IndexedDbDatabaseUsage> {
+  if (typeof indexedDB === "undefined") throw new Error("IndexedDB is unavailable");
+  if (typeof indexedDB.databases === "function") {
+    const databases = await indexedDB.databases();
+    if (!databases.some((database) => database.name === name)) return emptyDatabase(name);
+  }
+  const database = await openDatabase(name);
+  try {
+    const stores = Array.from(database.objectStoreNames);
+    if (stores.length === 0) return { ...emptyDatabase(name), version: database.version };
+
+    const transaction = database.transaction(stores, "readonly");
+    const usage = await Promise.all(stores.map((storeName) => countStore(transaction.objectStore(storeName))));
+    usage.sort((left, right) => right.bytes - left.bytes || left.name.localeCompare(right.name));
+    return {
+      name,
+      version: database.version,
+      bytes: usage.reduce((sum, store) => sum + store.bytes, 0),
+      stores: usage,
+    };
+  } finally {
+    database.close();
+  }
+}
+
+function openDatabase(name: string) {
+  return new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(name);
-    request.onerror = () => reject(request.error);
+    let wasCreated = false;
+    request.onupgradeneeded = (event) => {
+      if ((event as IDBVersionChangeEvent).oldVersion !== 0) return;
+      wasCreated = true;
+      request.transaction?.abort();
+    };
     request.onsuccess = () => {
-      const database = request.result;
-      const names = Array.from(database.objectStoreNames);
-      if (!names.length) {
-        database.close();
-        resolve({ name, version: database.version, bytes: 0, stores: [] });
+      if (wasCreated) {
+        request.result.close();
+        void removeDatabase(name);
+        reject(new Error("Database did not exist"));
         return;
       }
-      const transaction = database.transaction(names, "readonly");
-      Promise.all(
-        names.map((storeName) =>
-          readStoreUsage(transaction.objectStore(storeName)),
-        ),
-      )
-        .then((stores) =>
-          resolve({
-            name,
-            version: database.version,
-            bytes: stores.reduce((total, store) => total + store.bytes, 0),
-            stores: stores.sort((a, b) => b.bytes - a.bytes),
-          }),
-        )
-        .catch(reject)
-        .finally(() => database.close());
+      resolve(request.result);
     };
+    request.onerror = () => reject(request.error ?? new Error("Database could not be opened"));
   });
 }
 
-function readStoreUsage(store: IDBObjectStore) {
-  return new Promise<IndexedDbStoreUsage>((resolve, reject) => {
+function removeDatabase(name: string) {
+  return new Promise<void>((resolve) => {
+    const request = indexedDB.deleteDatabase(name);
+    request.onsuccess = request.onerror = request.onblocked = () => resolve();
+  });
+}
+
+function countStore(store: IDBObjectStore): Promise<IndexedDbStoreUsage> {
+  return new Promise((resolve, reject) => {
     let records = 0;
     let bytes = 0;
     const request = store.openCursor();
-    request.onerror = () => reject(request.error);
+    request.onerror = () => reject(request.error ?? new Error("Storage scan failed"));
     request.onsuccess = () => {
       const cursor = request.result;
       if (!cursor) {
@@ -93,17 +97,28 @@ function readStoreUsage(store: IDBObjectStore) {
         return;
       }
       records += 1;
-      bytes += valueBytes(cursor.value);
+      bytes += estimateValueBytes(cursor.value);
       cursor.continue();
     };
   });
 }
 
-function valueBytes(value: unknown) {
-  if (value instanceof Blob) return value.size;
+function estimateValueBytes(value: unknown): number {
+  if (typeof Blob !== "undefined" && value instanceof Blob) return value.size;
   if (value instanceof ArrayBuffer) return value.byteLength;
   if (ArrayBuffer.isView(value)) return value.byteLength;
-  return new TextEncoder().encode(
-    typeof value === "string" ? value : JSON.stringify(value),
-  ).byteLength;
+  try {
+    const encoded = typeof value === "string" ? value : JSON.stringify(value);
+    return new TextEncoder().encode(encoded ?? "").byteLength;
+  } catch {
+    return 0;
+  }
+}
+
+function emptyDatabase(name: string): IndexedDbDatabaseUsage {
+  return { name, version: 0, bytes: 0, stores: [] };
+}
+
+function finiteNonNegative(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }

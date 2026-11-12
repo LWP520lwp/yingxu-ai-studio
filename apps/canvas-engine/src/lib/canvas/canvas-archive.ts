@@ -1,4 +1,5 @@
 import { validateWorkbenchDocument } from "@/lib/canvas/workbench-document";
+import { LEGACY_CANVAS_FILE_ID } from "@/lib/legacy-data-compatibility";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { CanvasExportAsset, CanvasProjectExportItem } from "@/types/canvas-export";
 
@@ -22,7 +23,7 @@ function validateManifest(value: unknown): CanvasProjectExportItem[] {
     if (!record(value) || !Array.isArray(value.projects) || value.projects.length === 0 || value.projects.length > MAX_PROJECTS) {
         throw new Error("备份清单格式不正确或项目数量超出限制");
     }
-    const supported = value.app === "yingxu-atlas" && value.version === 4 || value.app === "infinite-canvas" && value.version === 3;
+    const supported = value.app === "yingxu-atlas" && value.version === 4 || value.app === LEGACY_CANVAS_FILE_ID && value.version === 3;
     if (!supported) throw new Error("不支持此画布备份格式");
 
     const projectIds = new Set<string>();

@@ -140,13 +140,6 @@ export function selectableModelsByCapability(
     : config.models;
 }
 
-/** Provider scripts execute only on the host, never inside the editor. */
-export function resolveModelScript(config: AiConfig, value: string) {
-  void config;
-  void value;
-  return "";
-}
-
 export function platformConfig(config: AiConfig): AiConfig {
   return applyPlatformCatalog(config, getPlatformInit()?.models);
 }

@@ -8,8 +8,9 @@ import type { CanvasNodeData, CanvasNodeText } from "@/types/canvas";
 import { CanvasResourceMentionTextarea } from "../canvas-resource-mention-textarea";
 import { BatchFrame } from "./batch-frame";
 import type { NodeContentRendererProps } from "./contracts";
-import { expandedBatchCardPosition, primaryTextSlot } from "./slot-view-model";
+import { primaryTextSlot } from "./slot-view-model";
 import { TextSlotStatus } from "./status-renderers";
+import { BatchItemFrame } from "./batch-item-frame";
 
 const selectionBlue = "#2f80ff";
 
@@ -20,11 +21,7 @@ export function TextNodeContent({
   textareaRef,
   mentionReferences,
   batchExpanded,
-  onContentChange,
-  onStopEditing,
-  onRetry,
-  onToggleBatch,
-  onSetBatchPrimary,
+  commands,
 }: NodeContentRendererProps) {
   const { t } = useTranslation();
   const fontSize = node.metadata?.fontSize || 14;
@@ -54,8 +51,8 @@ export function TextNodeContent({
                 node={node}
                 text={text}
                 index={index}
-                onSetPrimary={() => onSetBatchPrimary?.(text.id)}
-                onRetry={onRetry ? () => onRetry(node) : undefined}
+                onSetPrimary={() => commands.setPrimaryText?.(text.id)}
+                onRetry={commands.retryGeneration}
               />
             ))
         : null}
@@ -68,10 +65,10 @@ export function TextNodeContent({
             value={content}
             references={mentionReferences}
             highlightLabels={false}
-            onChange={(value) => onContentChange(node.id, value)}
-            onBlur={onStopEditing}
+            onChange={commands.updateText}
+            onBlur={commands.stopTextEditing}
             onKeyDown={(event) => {
-              if (event.key === "Escape") onStopEditing();
+              if (event.key === "Escape") commands.stopTextEditing();
             }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDown={(event) => event.stopPropagation()}
@@ -88,7 +85,7 @@ export function TextNodeContent({
         ) : primaryText ? (
           <TextSlotStatus
             text={primaryText}
-            onRetry={onRetry ? () => onRetry(node) : undefined}
+            onRetry={commands.retryGeneration}
           />
         ) : (
           <div
@@ -113,9 +110,9 @@ export function TextNodeContent({
               ? t("canvas.node.textBatchExpanded")
               : t("canvas.node.textBatchCollapsed")
           }
-          onClick={(event) => {
+            onClick={(event) => {
             event.stopPropagation();
-            onToggleBatch?.();
+              commands.toggleTextBatch?.();
           }}
           onMouseDown={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
@@ -148,33 +145,8 @@ function ExpandedTextCard({
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const { t } = useTranslation();
   const count = node.metadata?.texts?.length || 0;
-  const { x, y } = expandedBatchCardPosition(
-    index,
-    count,
-    node.width,
-    node.height,
-  );
-
   return (
-    <div
-      className="absolute z-20 overflow-hidden rounded-3xl border shadow-[0_18px_50px_rgba(28,25,23,.14)]"
-      style={
-        {
-          left: x,
-          top: y,
-          width: node.width,
-          height: node.height,
-          background: theme.node.panel,
-          borderColor: theme.node.stroke,
-          "--batch-from-x": `${-x}px`,
-          "--batch-from-y": `${-y}px`,
-          "--batch-from-rotate": `${4 + index * 2}deg`,
-          animation: `canvas-batch-child-in 320ms ${index * 35}ms cubic-bezier(.2,.85,.18,1) both`,
-        } as React.CSSProperties
-      }
-      onMouseDown={(event) => event.stopPropagation()}
-      onPointerDown={(event) => event.stopPropagation()}
-    >
+    <BatchItemFrame node={node} index={index} count={count} theme={theme}>
       {text.content ? (
         <>
           <div
@@ -204,6 +176,6 @@ function ExpandedTextCard({
       ) : (
         <TextSlotStatus text={text} onRetry={onRetry} />
       )}
-    </div>
+    </BatchItemFrame>
   );
 }

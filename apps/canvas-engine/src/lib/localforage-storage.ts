@@ -1,108 +1,121 @@
 import localforage from "localforage";
 import type { StateStorage } from "zustand/middleware";
 
-let storageScope: string | null = null;
-let resolveScope: (scope: string) => void;
-const scopeReady = new Promise<string>((resolve) => {
-  resolveScope = resolve;
-});
-const instances = new Map<
-  string,
-  ReturnType<typeof localforage.createInstance>
->();
+type StorageInstance = ReturnType<typeof localforage.createInstance>;
 
-/** Each embedded editor has one immutable owner/project scope. */
+class ProjectStorageScope {
+  readonly key: string;
+  private readonly databases = new Map<string, StorageInstance>();
+
+  constructor(userId: string, projectId: string) {
+    this.key = `${encodeURIComponent(userId)}:${encodeURIComponent(projectId)}`;
+  }
+
+  get databaseName() {
+    return `yingxu-atlas-canvas:${this.key}`;
+  }
+
+  get fallbackPrefix() {
+    return `yingxu:atlas-canvas:${this.key}:`;
+  }
+
+  async store(name: string) {
+    let database = this.databases.get(name);
+    if (!database) {
+      database = localforage.createInstance({
+        name: this.databaseName,
+        storeName: name,
+      });
+      this.databases.set(name, database);
+    }
+    return database;
+  }
+}
+
+let configuredScope: ProjectStorageScope | undefined;
+let resolveConfiguredScope!: (scope: ProjectStorageScope) => void;
+const scopeReady = new Promise<ProjectStorageScope>((resolve) => {
+  resolveConfiguredScope = resolve;
+});
+
+function requireProjectScope(userId: string, projectId: string) {
+  if (!userId.trim() || !projectId.trim()) {
+    throw new Error("画布存储缺少用户或项目标识");
+  }
+  return new ProjectStorageScope(userId, projectId);
+}
+
+/** A mounted editor stays bound to one account/project database. */
 export function configureStorageScope(userId: string, projectId: string) {
-  if (!userId || !projectId) throw new Error("画布存储缺少用户或项目标识");
-  const scope = `${encodeURIComponent(userId)}:${encodeURIComponent(projectId)}`;
-  if (storageScope && storageScope !== scope)
+  const next = requireProjectScope(userId, projectId);
+  if (configuredScope && configuredScope.key !== next.key) {
     throw new Error("切换项目时需要重新打开画布");
-  storageScope = scope;
-  resolveScope(scope);
+  }
+  if (!configuredScope) {
+    configuredScope = next;
+    resolveConfiguredScope(next);
+  }
 }
 
 export async function getCurrentStorageDatabaseName() {
-  return `yingxu-atlas-canvas:${await scopeReady}`;
-}
-
-async function scopedInstance(storeName: string) {
-  const scope = await scopeReady;
-  const key = `${scope}:${storeName}`;
-  if (!instances.has(key))
-    instances.set(
-      key,
-      localforage.createInstance({
-        name: await getCurrentStorageDatabaseName(),
-        storeName,
-      }),
-    );
-  return instances.get(key)!;
+  return (await scopeReady).databaseName;
 }
 
 export function createScopedStorage(storeName: string) {
+  const store = async () => (await scopeReady).store(storeName);
   return {
-    async getItem<T>(key: string) {
-      return (await scopedInstance(storeName)).getItem<T>(key);
-    },
-    async setItem<T>(key: string, value: T) {
-      return (await scopedInstance(storeName)).setItem(key, value);
-    },
-    async removeItem(key: string) {
-      return (await scopedInstance(storeName)).removeItem(key);
-    },
-    async clear() {
-      return (await scopedInstance(storeName)).clear();
-    },
-    async iterate<T, U>(
+    getItem: async <T>(key: string) => (await store()).getItem<T>(key),
+    setItem: async <T>(key: string, value: T) =>
+      (await store()).setItem(key, value),
+    removeItem: async (key: string) => (await store()).removeItem(key),
+    clear: async () => (await store()).clear(),
+    iterate: async <T, U>(
       iterator: (value: T, key: string, iterationNumber: number) => U,
-    ) {
-      return (await scopedInstance(storeName)).iterate(iterator);
-    },
+    ) => (await store()).iterate(iterator),
   };
 }
 
-const appState = createScopedStorage("app_state");
-async function fallbackKey(name: string) {
-  return `yingxu:atlas-canvas:${await scopeReady}:${name}`;
+const persistedState = createScopedStorage("app_state");
+
+async function fallbackStorageKey(name: string) {
+  const scope = await scopeReady;
+  return `${scope.fallbackPrefix}${name}`;
 }
 
 export const localForageStorage: StateStorage = {
   getItem: async (name) => {
     if (typeof window === "undefined") return null;
     try {
-      return (await appState.getItem<string>(name)) || null;
+      return (await persistedState.getItem<string>(name)) ?? null;
     } catch {
-      return window.localStorage.getItem(await fallbackKey(name));
+      return window.localStorage.getItem(await fallbackStorageKey(name));
     }
   },
   setItem: async (name, value) => {
     if (typeof window === "undefined") return;
     try {
-      await appState.setItem(name, value);
+      await persistedState.setItem(name, value);
     } catch {
-      window.localStorage.setItem(await fallbackKey(name), value);
+      window.localStorage.setItem(await fallbackStorageKey(name), value);
     }
   },
   removeItem: async (name) => {
     if (typeof window === "undefined") return;
     try {
-      await appState.removeItem(name);
+      await persistedState.removeItem(name);
     } catch {
-      window.localStorage.removeItem(await fallbackKey(name));
+      window.localStorage.removeItem(await fallbackStorageKey(name));
     }
   },
 };
 
-/**
- * Gives a persisted store a product-owned key while reading one legacy key
- * once. New writes always use the product key, so old installations migrate
- * without losing drafts or preferences.
- */
+/** Reads a legacy key once while directing all later mutations to the new key. */
 export function createMigratingStorage(legacyKey: string): StateStorage {
   return {
-    getItem: async (name) =>
-      (await localForageStorage.getItem(name)) ??
-      (await localForageStorage.getItem(legacyKey)),
+    getItem: async (name) => {
+      const current = await localForageStorage.getItem(name);
+      return current ?? localForageStorage.getItem(legacyKey);
+    },
     setItem: (name, value) => localForageStorage.setItem(name, value),
     removeItem: (name) => localForageStorage.removeItem(name),
   };

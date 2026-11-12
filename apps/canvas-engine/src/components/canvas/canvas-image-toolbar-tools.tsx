@@ -12,12 +12,13 @@ import {
   Sparkles,
   Upload,
   ZoomIn,
+  type LucideIcon,
 } from "lucide-react";
 
 import i18n from "@/i18n";
-import {
-  type ImageNodeActionToolId,
-  type ImageQuickToolId,
+import type {
+  ImageNodeActionToolId,
+  ImageQuickToolId,
 } from "@/lib/canvas/image-quick-tools";
 import type { CanvasNodeData } from "@/types/canvas";
 
@@ -68,126 +69,154 @@ export type ImageToolbarAction = {
   onClick: () => void;
 };
 
-export const imageToolDefinitions = [
-  {
+type ToolBlueprint = Omit<ImageToolDefinition, "icon"> & {
+  glyph: LucideIcon;
+};
+
+function makeIcon(glyph: LucideIcon): ReactNode {
+  const Icon = glyph;
+  return <Icon className="size-4" aria-hidden="true" focusable="false" />;
+}
+
+function makeTool({ glyph, ...definition }: ToolBlueprint): ImageToolDefinition {
+  return { ...definition, icon: makeIcon(glyph) };
+}
+
+const promptActions: ImageToolDefinition[] = [
+  makeTool({
     id: "copyPrompt",
     defaultVisible: true,
     labelKey: "canvas.imageTools.copyPrompt",
     titleKey: "canvas.imageTools.copyPromptTitle",
-    icon: <Copy className="size-4" />,
+    glyph: Copy,
     handler: "onCopyPrompt",
-  },
-  {
+  }),
+  makeTool({
     id: "reversePrompt",
     defaultVisible: true,
     labelKey: "canvas.imageTools.reversePrompt",
     titleKey: "canvas.imageTools.reversePromptTitle",
-    icon: <FileText className="size-4" />,
+    glyph: FileText,
     handler: "onReversePrompt",
-  },
-  {
+  }),
+];
+
+const sourceActions: ImageToolDefinition[] = [
+  makeTool({
     id: "replace",
     defaultVisible: true,
     labelKey: "canvas.imageTools.replace",
     titleKey: "canvas.imageTools.replace",
-    icon: <Upload className="size-4" />,
+    glyph: Upload,
     handler: "onUpload",
-  },
-  {
-    id: "resize",
-    defaultVisible: false,
-    labelKey: "canvas.imageTools.locked",
-    titleKey: "canvas.imageTools.freeTitle",
-    icon: <Lock className="size-4" />,
-    handler: "onToggleFreeResize",
-    labelKeyForNode: (node: CanvasNodeData) =>
-      node.metadata?.freeResize
-        ? "canvas.imageTools.free"
-        : "canvas.imageTools.locked",
-    titleKeyForNode: (node: CanvasNodeData) =>
-      node.metadata?.freeResize
-        ? "canvas.imageTools.lockTitle"
-        : "canvas.imageTools.freeTitle",
-    iconForNode: (node: CanvasNodeData) =>
-      node.metadata?.freeResize ? (
-        <LockOpen className="size-4" />
-      ) : (
-        <Lock className="size-4" />
-      ),
-    active: (node: CanvasNodeData) => Boolean(node.metadata?.freeResize),
-  },
-  {
+  }),
+];
+
+const resizeAction = makeTool({
+  id: "resize",
+  defaultVisible: false,
+  labelKey: "canvas.imageTools.locked",
+  titleKey: "canvas.imageTools.freeTitle",
+  glyph: Lock,
+  handler: "onToggleFreeResize",
+  labelKeyForNode: (node) =>
+    node.metadata?.freeResize
+      ? "canvas.imageTools.free"
+      : "canvas.imageTools.locked",
+  titleKeyForNode: (node) =>
+    node.metadata?.freeResize
+      ? "canvas.imageTools.lockTitle"
+      : "canvas.imageTools.freeTitle",
+  iconForNode: (node) => makeIcon(node.metadata?.freeResize ? LockOpen : Lock),
+  active: (node) => Boolean(node.metadata?.freeResize),
+});
+
+const editingActions: ImageToolDefinition[] = [
+  resizeAction,
+  makeTool({
     id: "maskEdit",
     defaultVisible: true,
     labelKey: "canvas.imageTools.mask",
     titleKey: "canvas.imageTools.maskTitle",
-    icon: <Brush className="size-4" />,
+    glyph: Brush,
     handler: "onMaskEdit",
-  },
-  {
+  }),
+  makeTool({
     id: "crop",
     defaultVisible: true,
     labelKey: "canvas.imageTools.crop",
     titleKey: "canvas.imageTools.cropTitle",
-    icon: <Scissors className="size-4" />,
+    glyph: Scissors,
     handler: "onCrop",
-  },
-  {
+  }),
+  makeTool({
     id: "split",
     defaultVisible: true,
     labelKey: "canvas.imageTools.split",
     titleKey: "canvas.imageTools.splitTitle",
-    icon: <Grid2x2 className="size-4" />,
+    glyph: Grid2x2,
     handler: "onSplit",
-  },
-  {
+  }),
+  makeTool({
     id: "upscale",
     defaultVisible: true,
     labelKey: "canvas.imageTools.upscale",
     titleKey: "canvas.imageTools.upscaleTitle",
-    icon: <ZoomIn className="size-4" />,
+    glyph: ZoomIn,
     handler: "onUpscale",
-  },
-  {
+  }),
+  makeTool({
     id: "superResolve",
     defaultVisible: false,
     labelKey: "canvas.imageTools.superResolve",
     titleKey: "canvas.imageTools.superResolveTitle",
-    icon: <Sparkles className="size-4" />,
+    glyph: Sparkles,
     handler: "onSuperResolve",
-  },
-  {
+  }),
+];
+
+const framingActions: ImageToolDefinition[] = [
+  makeTool({
     id: "angle",
     defaultVisible: false,
     labelKey: "canvas.imageTools.angle",
     titleKey: "canvas.imageTools.angleTitle",
-    icon: <Camera className="size-4" />,
+    glyph: Camera,
     handler: "onAngle",
-  },
-  {
+  }),
+  makeTool({
     id: "view",
     defaultVisible: true,
     labelKey: "canvas.imageTools.view",
     titleKey: "canvas.imageTools.viewTitle",
-    icon: <Maximize2 className="size-4" />,
+    glyph: Maximize2,
     handler: "onViewImage",
-  },
-] satisfies readonly ImageToolDefinition[];
+  }),
+];
+
+export const imageToolDefinitions: ImageToolDefinition[] = [
+  ...promptActions,
+  ...sourceActions,
+  ...editingActions,
+  ...framingActions,
+];
 
 export function buildImageToolbarTools(
   node: CanvasNodeData,
   handlers: ImageToolHandlers,
 ): ImageToolbarAction[] {
-  return imageToolDefinitions.map((tool) => {
-    const labelKey = tool.labelKeyForNode?.(node) ?? tool.labelKey;
-    const titleKey = tool.titleKeyForNode?.(node) ?? tool.titleKey;
+  return imageToolDefinitions.map((definition) => {
+    const labelKey = definition.labelKeyForNode?.(node) ?? definition.labelKey;
+    const titleKey = definition.titleKeyForNode?.(node) ?? definition.titleKey;
+    const actionHandler = handlers[definition.handler];
+
     return {
-      id: tool.id,
+      id: definition.id,
       label: i18n.t(labelKey),
       title: i18n.t(titleKey),
-      icon: tool.iconForNode?.(node) ?? tool.icon,
-      active: tool.active?.(node),
-      onClick: () => handlers[tool.handler](node),
+      icon: definition.iconForNode?.(node) ?? definition.icon,
+      active: definition.active?.(node),
+      onClick: () => actionHandler(node),
     };
   });
 }

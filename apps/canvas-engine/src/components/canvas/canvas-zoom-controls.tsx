@@ -1,10 +1,11 @@
 import { useState } from "react";
+import { Modal, Tooltip } from "antd";
 import { Compass, Focus, HelpCircle, Minus, Plus } from "lucide-react";
-import { Modal } from "antd";
 import { useTranslation } from "react-i18next";
 
+import { canvasShortcutCatalog } from "@/lib/canvas/canvas-shortcut-catalog";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { clampScale } from "@/lib/canvas/canvas-geometry";
+import { clampScale, VIEWPORT_LIMITS } from "@/lib/canvas/canvas-geometry";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 type CanvasZoomControlsProps = {
@@ -22,118 +23,129 @@ export function CanvasZoomControls({
   isMiniMapOpen,
   onToggleMiniMap,
 }: CanvasZoomControlsProps) {
-  const [help, setHelp] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const { t } = useTranslation();
-  const theme = canvasThemes[useThemeStore((state) => state.theme)];
+  const colorTheme = useThemeStore((state) => state.theme);
+  const theme = canvasThemes[colorTheme];
   const zoom = clampScale(scale);
+  const zoomPercent = Math.round(zoom * 100);
+  const shortcuts = canvasShortcutCatalog(t);
   const actions = [
     {
+      id: "minimap",
       label: t(isMiniMapOpen ? "canvas.miniMapClose" : "canvas.miniMapOpen"),
-      icon: <Compass className="size-4" />,
-      run: onToggleMiniMap,
+      icon: <Compass className="size-4" aria-hidden="true" />,
       active: isMiniMapOpen,
+      run: onToggleMiniMap,
     },
     {
+      id: "reset",
       label: t("canvas.resetView"),
-      icon: <Focus className="size-4" />,
+      icon: <Focus className="size-4" aria-hidden="true" />,
+      active: false,
       run: onReset,
     },
     {
-      label: "缩小画布",
-      icon: <Minus className="size-3.5" />,
+      id: "zoom-out",
+      label: t("settingsPanels.common.zoomOut"),
+      icon: <Minus className="size-3.5" aria-hidden="true" />,
+      active: false,
       run: () => onScaleChange(clampScale(zoom / 1.2)),
     },
+    {
+      id: "zoom-in",
+      label: t("settingsPanels.common.zoomIn"),
+      icon: <Plus className="size-3.5" aria-hidden="true" />,
+      active: false,
+      run: () => onScaleChange(clampScale(zoom * 1.2)),
+    },
   ];
-  const shortcuts = [
-    ["拖动空白", "平移画布"],
-    ["Shift + 拖动空白", t("canvas.shortcut.boxSelect")],
-    ["滚轮 / 触控板", t("canvas.shortcut.zoom")],
-    ["Ctrl / Cmd + C / V", t("canvas.shortcut.copyPasteNodes")],
-    ["Ctrl / Cmd + G", t("canvas.shortcut.group")],
-    ["Ctrl / Cmd + Shift + G", t("canvas.shortcut.ungroup")],
-    ["Ctrl / Cmd + Z", t("canvas.undo")],
-    ["Ctrl / Cmd + Shift + Z", t("canvas.redo")],
-    ["Delete / Backspace", t("canvas.shortcut.delete")],
-  ];
+
   return (
     <>
       <nav
-        aria-label="画布视图控制"
-        className="absolute bottom-5 left-5 z-50 flex h-12 items-center gap-1 rounded-xl border p-1.5 shadow-lg"
+        aria-label={t("canvas.viewControls", { defaultValue: "画布视图控制" })}
+        className="absolute bottom-5 left-5 z-50 flex h-12 max-w-[calc(100vw-24px)] items-center gap-1 rounded-lg border p-1.5 shadow-lg"
         style={{
           background: theme.toolbar.panel,
           borderColor: theme.toolbar.border,
           color: theme.toolbar.item,
         }}
-        onMouseDown={(event) => event.stopPropagation()}
         onPointerDown={(event) => event.stopPropagation()}
       >
         {actions.map((action) => (
-          <button
-            key={action.label}
-            type="button"
-            aria-label={action.label}
-            aria-pressed={action.active}
-            title={action.label}
-            className="grid size-7 place-items-center rounded-md hover:brightness-125"
-            style={{
-              background: action.active ? theme.toolbar.activeBg : undefined,
-              color: action.active ? theme.toolbar.activeText : undefined,
-            }}
-            onClick={action.run}
-          >
-            {action.icon}
-          </button>
+          <Tooltip key={action.id} title={action.label}>
+            <button
+              type="button"
+              aria-label={action.label}
+              aria-pressed={action.id === "minimap" ? action.active : undefined}
+              className="grid size-8 shrink-0 place-items-center rounded-md outline-none transition hover:brightness-125 focus-visible:ring-2"
+              style={{
+                background: action.active ? theme.toolbar.activeBg : undefined,
+                color: action.active ? theme.toolbar.activeText : undefined,
+              }}
+              onClick={action.run}
+            >
+              {action.icon}
+            </button>
+          </Tooltip>
         ))}
         <input
           type="range"
-          min={5}
-          max={500}
+          min={VIEWPORT_LIMITS.minScale * 100}
+          max={VIEWPORT_LIMITS.maxScale * 100}
           step={1}
-          value={Math.round(zoom * 100)}
-          className="w-16"
-          style={{ accentColor: theme.node.activeStroke }}
+          value={zoomPercent}
+          className="mx-1 w-16 accent-current sm:w-24"
+          style={{ color: theme.node.activeStroke }}
           onChange={(event) =>
             onScaleChange(clampScale(Number(event.target.value) / 100))
           }
           aria-label={t("canvas.zoom")}
+          aria-valuetext={`${zoomPercent}%`}
         />
-        <button
-          type="button"
-          aria-label="放大画布"
-          title="放大画布"
-          className="grid size-7 place-items-center rounded-md hover:brightness-125"
-          onClick={() => onScaleChange(clampScale(zoom * 1.2))}
+        <output
+          className="min-w-10 shrink-0 text-right text-[11px] tabular-nums"
+          aria-live="polite"
         >
-          <Plus className="size-3.5" />
-        </button>
-        <output className="min-w-9 text-right text-[11px] tabular-nums">
-          {Math.round(zoom * 100)}%
+          {zoomPercent}%
         </output>
-        <button
-          type="button"
-          aria-label={t("canvas.shortcuts")}
-          title={t("canvas.shortcuts")}
-          className="grid size-7 place-items-center rounded-md hover:brightness-125"
-          onClick={() => setHelp(true)}
-        >
-          <HelpCircle className="size-4" />
-        </button>
+        <Tooltip title={t("canvas.shortcuts")}>
+          <button
+            type="button"
+            aria-label={t("canvas.shortcuts")}
+            className="grid size-8 shrink-0 place-items-center rounded-md outline-none transition hover:brightness-125 focus-visible:ring-2"
+            onClick={() => setHelpOpen(true)}
+          >
+            <HelpCircle className="size-4" aria-hidden="true" />
+          </button>
+        </Tooltip>
       </nav>
       <Modal
         title={t("canvas.shortcuts")}
-        open={help}
-        onCancel={() => setHelp(false)}
+        open={helpOpen}
+        onCancel={() => setHelpOpen(false)}
         footer={null}
         centered
+        width="min(560px, calc(100vw - 24px))"
       >
-        <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-6 gap-y-3 py-3 text-sm">
-          {shortcuts.map(([key, label]) => (
-            <div key={key} className="contents">
-              <dt>
-                <kbd className="rounded border px-2 py-1 text-xs">{key}</kbd>
+        <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-x-4 gap-y-3 py-3 text-sm">
+          {shortcuts.map(({ id, keys, description }) => (
+            <div key={id} className="contents">
+              <dt className="flex flex-wrap gap-1">
+                {keys.map((key, index) => (
+                  <kbd
+                    key={`${key}-${index}`}
+                    className="rounded border px-1.5 py-1 text-[11px]"
+                    style={{ borderColor: theme.node.stroke }}
+                  >
+                    {key}
+                  </kbd>
+                ))}
               </dt>
-              <dd className="text-right opacity-70">{label}</dd>
+              <dd className="m-0 self-center text-right opacity-70">
+                {description}
+              </dd>
             </div>
           ))}
         </dl>

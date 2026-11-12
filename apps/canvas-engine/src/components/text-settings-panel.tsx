@@ -1,4 +1,3 @@
-import { Segmented } from "antd";
 import { useTranslation } from "react-i18next";
 
 import i18n from "@/i18n";
@@ -37,25 +36,41 @@ export function TextSettingsPanel({
         <h2 className="text-base font-semibold">
           {t("settingsPanels.text.title")}
         </h2>
-        <div className="space-y-2">
-          <h3
+        <fieldset className="space-y-2">
+          <legend
             className="text-sm font-medium"
             style={{ color: theme.node.muted }}
           >
             {t("settingsPanels.text.reasoning")}
-          </h3>
-          <Segmented
-            block
-            value={effort}
-            options={REASONING_EFFORTS.map((value) => ({
-              value,
-              label: t(`settingsPanels.common.${value}`),
-            }))}
-            onChange={(value) =>
-              onConfigChange("reasoningEffort", value as ReasoningEffort)
-            }
-          />
-        </div>
+          </legend>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {REASONING_EFFORTS.map((value) => {
+              const selected = effort === value;
+              return (
+                <label
+                  key={value}
+                  className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm transition-colors focus-within:ring-2 focus-within:ring-ring/50"
+                  style={{
+                    borderColor: selected
+                      ? theme.node.activeStroke
+                      : theme.node.stroke,
+                    background: selected ? theme.node.fill : "transparent",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="reasoning-effort"
+                    value={value}
+                    checked={selected}
+                    onChange={() => onConfigChange("reasoningEffort", value)}
+                    className="accent-current"
+                  />
+                  <span>{t(`settingsPanels.common.${value}`)}</span>
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
       </section>
     </ImageSettingsTheme>
   );

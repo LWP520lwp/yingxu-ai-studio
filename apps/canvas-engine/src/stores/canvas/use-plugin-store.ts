@@ -1,49 +1,50 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { localForageStorage } from "@/lib/localforage-storage";
+import { createMigratingStorage } from "@/lib/localforage-storage";
+import { LEGACY_STORAGE_KEYS } from "@/lib/legacy-data-compatibility";
+import {
+  removePluginInstallation,
+  restorePluginInstallations,
+  setPluginInstallationEnabled,
+  upsertPluginInstallation,
+  type InstalledPlugin,
+  type PluginInstallInput,
+} from "@/lib/plugin-install-catalog";
 
-export type InstalledPlugin = {
-    id: string;
-    name: string;
-    version: string;
-    description?: string;
-    url: string; // Installation source used for updates.
-    source: string; // Cached plugin source for offline use and pinned versions.
-    enabled: boolean;
-    local?: boolean; // Local plugin discovered in web/public/plugins; disabled by default and refetched from its URL when enabled.
-    official?: boolean; // Installed from the official registry and grouped accordingly in the manager.
-    installedAt: string;
-};
+export type { InstalledPlugin } from "@/lib/plugin-install-catalog";
+
+const STORE_KEY = "yingxu-atlas:plugin_store:v2";
 
 type PluginStore = {
-    plugins: InstalledPlugin[];
-    upsert: (plugin: Omit<InstalledPlugin, "installedAt"> & { installedAt?: string }) => void;
-    setEnabled: (id: string, enabled: boolean) => void;
-    remove: (id: string) => void;
+  plugins: InstalledPlugin[];
+  upsert: (plugin: PluginInstallInput) => void;
+  setEnabled: (id: string, enabled: boolean) => void;
+  remove: (id: string) => void;
 };
 
 export const usePluginStore = create<PluginStore>()(
-    persist(
-        (set) => ({
-            plugins: [],
-            upsert: (plugin) =>
-                set((state) => {
-                    const installedAt = plugin.installedAt || new Date().toISOString();
-                    const exists = state.plugins.some((item) => item.id === plugin.id);
-                    const next = { ...plugin, installedAt };
-                    return { plugins: exists ? state.plugins.map((item) => (item.id === plugin.id ? next : item)) : [next, ...state.plugins] };
-                }),
-            setEnabled: (id, enabled) => set((state) => ({ plugins: state.plugins.map((item) => (item.id === id ? { ...item, enabled } : item)) })),
-            remove: (id) => set((state) => ({ plugins: state.plugins.filter((item) => item.id !== id) })),
-        }),
-        {
-            name: "yingxu-atlas:plugin_store:v2",
-            storage: createJSONStorage(() => ({
-                getItem: async (name: string) => (await localForageStorage.getItem(name)) ?? (await localForageStorage.getItem("infinite-canvas:plugin_store")),
-                setItem: (name: string, value: string) => localForageStorage.setItem(name, value),
-                removeItem: (name: string) => localForageStorage.removeItem(name),
-            })),
-        },
-    ),
+  persist(
+    (set) => ({
+      plugins: [],
+      upsert: (plugin) => set((state) => ({
+        plugins: upsertPluginInstallation(state.plugins, plugin),
+      })),
+      setEnabled: (id, enabled) => set((state) => ({
+        plugins: setPluginInstallationEnabled(state.plugins, id, enabled),
+      })),
+      remove: (id) => set((state) => ({
+        plugins: removePluginInstallation(state.plugins, id),
+      })),
+    }),
+    {
+      name: STORE_KEY,
+      storage: createJSONStorage(() => createMigratingStorage(LEGACY_STORAGE_KEYS.plugins)),
+      partialize: ({ plugins }) => ({ plugins }),
+      merge: (saved, current) => ({
+        ...current,
+        plugins: restorePluginInstallations((saved as Partial<PluginStore> | null)?.plugins),
+      }),
+    },
+  ),
 );

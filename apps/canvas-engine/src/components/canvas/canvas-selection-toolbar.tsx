@@ -8,9 +8,9 @@ import { nodeBounds } from "@/lib/canvas/canvas-node-geometry";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasNodeData, ViewportTransform } from "@/types/canvas";
 
-const SELECTION_PAD = 14;
-const VIEWPORT_GUTTER = 12;
-const TOOLBAR_CLEARANCE = 8;
+const BOUNDS_PADDING = 14;
+const EDGE_INSET = 12;
+const ACTION_GAP = 8;
 
 export type SelectionActionId = "merge" | "group" | "ungroup";
 
@@ -39,14 +39,14 @@ export function placeSelectionToolbar({
   toolbar: { width: number; height: number };
   canvas: { width: number; height: number };
 }) {
-  const horizontalGutter = Math.min(VIEWPORT_GUTTER, canvas.width / 2);
+  const horizontalGutter = Math.min(EDGE_INSET, canvas.width / 2);
   const maxWidth = Math.max(0, canvas.width - horizontalGutter * 2);
   const width = Math.min(Math.max(0, toolbar.width), maxWidth);
   const minTop = Math.min(
     76,
-    Math.max(VIEWPORT_GUTTER, canvas.height - toolbar.height - VIEWPORT_GUTTER),
+    Math.max(EDGE_INSET, canvas.height - toolbar.height - EDGE_INSET),
   );
-  const bottomInset = canvas.height > 200 ? 96 : VIEWPORT_GUTTER;
+  const bottomInset = canvas.height > 200 ? 96 : EDGE_INSET;
   const maxTop = Math.max(minTop, canvas.height - toolbar.height - bottomInset);
   const centeredLeft = selection.left + selection.width / 2 - width / 2;
 
@@ -57,7 +57,7 @@ export function placeSelectionToolbar({
     ),
     top: Math.max(
       minTop,
-      Math.min(selection.top - toolbar.height - TOOLBAR_CLEARANCE, maxTop),
+      Math.min(selection.top - toolbar.height - ACTION_GAP, maxTop),
     ),
     width,
     maxWidth,
@@ -152,10 +152,10 @@ export function CanvasSelectionToolbar({
   if (nodes.length < 2) return null;
 
   const bounds = nodeBounds(nodes);
-  const left = viewport.x + bounds.left * viewport.k - SELECTION_PAD;
-  const top = viewport.y + bounds.top * viewport.k - SELECTION_PAD;
-  const width = (bounds.right - bounds.left) * viewport.k + SELECTION_PAD * 2;
-  const height = (bounds.bottom - bounds.top) * viewport.k + SELECTION_PAD * 2;
+  const left = viewport.x + bounds.left * viewport.k - BOUNDS_PADDING;
+  const top = viewport.y + bounds.top * viewport.k - BOUNDS_PADDING;
+  const width = (bounds.right - bounds.left) * viewport.k + BOUNDS_PADDING * 2;
+  const height = (bounds.bottom - bounds.top) * viewport.k + BOUNDS_PADDING * 2;
   const showActions = showToolbar && actions.length > 0;
   const placement = placeSelectionToolbar({
     selection: { left, top, width },
@@ -165,26 +165,16 @@ export function CanvasSelectionToolbar({
 
   return (
     <>
-      <svg
-        className="pointer-events-none absolute z-[65] overflow-visible"
-        style={{ left, top, width, height }}
+      <div
+        className="pointer-events-none absolute z-[65] rounded-xl border border-dashed"
+        style={{
+          left, top, width, height,
+          background: theme.canvas.selectionFill,
+          borderColor: theme.canvas.selectionStroke,
+          boxShadow: `inset 0 0 0 1px ${theme.canvas.selectionFill}`,
+        }}
         aria-hidden="true"
-      >
-        <rect
-          x={1}
-          y={1}
-          width={Math.max(width - 2, 0)}
-          height={Math.max(height - 2, 0)}
-          rx={16}
-          ry={16}
-          fill={theme.canvas.selectionFill}
-          stroke={theme.canvas.selectionStroke}
-          strokeOpacity={0.55}
-          strokeWidth={1.5}
-          strokeDasharray="7 5"
-          strokeLinecap="round"
-        />
-      </svg>
+      />
       {showActions ? (
         <div
           ref={toolbarRef}
@@ -228,14 +218,15 @@ function SelectionAction({
   const Icon = action.icon;
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const background = hovered || focused ? hoverColor : "transparent";
-
   return (
     <Tooltip title={action.title} placement="top" mouseEnterDelay={0.2}>
       <button
         type="button"
-        className="flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-2.5 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-1"
-        style={{ color, background }}
+        className="flex h-9 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-2.5 text-sm transition-colors hover:brightness-95 focus-visible:outline-2 focus-visible:outline-offset-1"
+        style={{
+          color,
+          background: hovered || focused ? hoverColor : "transparent",
+        }}
         onClick={action.onClick}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}

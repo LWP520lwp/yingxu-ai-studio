@@ -689,3 +689,127 @@
     border-color: CanvasText;
   }
 }
+
+.ff-config-workspace {
+  display: grid;
+  grid-template-columns: 204px minmax(0, 1fr);
+  gap: 20px;
+  min-height: 420px;
+  padding-top: 18px;
+}
+
+.ff-config-workspace__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ff-config-workspace__nav button {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease;
+}
+
+.ff-config-workspace__nav button:hover {
+  background: var(--ff-config-surface);
+}
+
+.ff-config-workspace__nav button.is-active {
+  border-color: color-mix(in srgb, var(--ff-config-accent) 24%, transparent);
+  background: var(--ff-config-accent-soft);
+}
+
+.ff-config-workspace__nav button > svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.ff-config-workspace__nav strong,
+.ff-config-workspace__nav small {
+  display: block;
+}
+
+.ff-config-workspace__nav strong {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.ff-config-workspace__nav small {
+  margin-top: 3px;
+  color: var(--ff-config-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.ff-config-workspace__content {
+  min-width: 0;
+  padding-left: 22px;
+  border-left: 1px solid var(--ff-config-line);
+  animation: ff-config-panel-in 150ms ease-out;
+}
+
+@keyframes ff-config-panel-in {
+  from {
+    opacity: 0.72;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@container (max-width: 680px) {
+  .ff-config-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    min-height: 320px;
+  }
+
+  .ff-config-workspace__nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--ff-config-line);
+  }
+
+  .ff-config-workspace__nav button {
+    align-items: center;
+    gap: 6px;
+    padding: 8px 9px;
+  }
+
+  .ff-config-workspace__nav button > svg {
+    margin-top: 0;
+  }
+
+  .ff-config-workspace__nav small {
+    display: none;
+  }
+
+  .ff-config-workspace__content {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-config-workspace__nav button,
+  .ff-config-workspace__content {
+    animation: none;
+    transition: none;
+  }
+}

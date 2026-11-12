@@ -10,24 +10,31 @@ export type AiTextMessage = {
 };
 type RequestOptions = { signal?: AbortSignal };
 
-/** Generation is authenticated by the host workbench session; no provider key enters this frame. */
+/** Provider credentials and generation requests are handled by the authenticated host. */
 export function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
     return generatePlatformImages(config, prompt, [], options);
 }
 
 export function requestEdit(config: AiConfig, prompt: string, references: ReferenceImage[], options?: RequestOptions) {
-    return generatePlatformImages(config, buildImageReferencePromptText(prompt, references), references, options);
+    const contextualPrompt = buildImageReferencePromptText(prompt, references);
+    return generatePlatformImages(config, contextualPrompt, references, options);
 }
 
-export async function requestImageQuestion(_config: AiConfig, _messages: AiTextMessage[], _onDelta: (text: string) => void, _options?: RequestOptions): Promise<string> {
-    return unsupportedGeneration("text");
+export async function requestImageQuestion(
+    _config: AiConfig,
+    _messages: AiTextMessage[],
+    _onDelta: (text: string) => void,
+    _options?: RequestOptions,
+): Promise<string> {
+    return await unsupportedGeneration("text");
 }
 
-export async function fetchImageModels(_config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">) {
-    const init = await waitForPlatformInit();
-    return [...new Set([...init.models.image, ...init.models.video].map((model) => model.id))];
+export async function fetchImageModels(_config: Pick<AiConfig, "baseUrl" | "apiKey" | "apiFormat">): Promise<string[]> {
+    const { models } = await waitForPlatformInit();
+    const ids = [...models.image, ...models.video].map(({ id }) => id);
+    return [...new Set(ids)];
 }
 
-export function fetchChannelModels(_channel: ModelChannel) {
+export function fetchChannelModels(_channel: ModelChannel): Promise<string[]> {
     return fetchImageModels({ baseUrl: "", apiKey: "", apiFormat: "openai" });
 }

@@ -14,6 +14,7 @@ import {
   type PersistedAssetValue,
 } from "@/lib/asset-library-model";
 import { localForageStorage } from "@/lib/localforage-storage";
+import { LEGACY_STORAGE_KEYS } from "@/lib/legacy-data-compatibility";
 import {
   cleanupUnusedImages,
   ensureImagePreview,
@@ -22,43 +23,8 @@ import {
   uploadImage,
 } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
-
-export type AssetKind = "text" | "image" | "video";
-export type TextAsset = AssetBase<"text"> & { data: { content: string } };
-export type ImageAsset = AssetBase<"image"> & {
-  data: {
-    dataUrl: string;
-    storageKey?: string;
-    width: number;
-    height: number;
-    bytes: number;
-    mimeType: string;
-  };
-};
-export type VideoAsset = AssetBase<"video"> & {
-  data: {
-    url: string;
-    storageKey?: string;
-    width: number;
-    height: number;
-    bytes: number;
-    mimeType: string;
-  };
-};
-export type Asset = TextAsset | ImageAsset | VideoAsset;
-
-type AssetBase<T extends AssetKind> = {
-  id: string;
-  kind: T;
-  title: string;
-  coverUrl: string;
-  tags: string[];
-  source?: string;
-  note?: string;
-  createdAt: string;
-  updatedAt: string;
-  metadata?: Record<string, unknown>;
-};
+import type { Asset } from "@/types/asset";
+export type { Asset, AssetKind, ImageAsset, TextAsset, VideoAsset } from "@/types/asset";
 
 type AssetStore = {
   hydrated: boolean;
@@ -82,14 +48,40 @@ export function assetCoverUrl(asset: Asset) {
 }
 
 const ASSET_STORE_KEY = "yingxu-atlas:asset_store:v2";
-const LEGACY_ASSET_STORE_KEY = "infinite-canvas:asset_store";
 const HYDRATION_CONCURRENCY = 4;
+let cleanupQueued = false;
+let pendingCleanupExtras: unknown[] = [];
+
+function queueUnusedAssetCleanup(readAssets: () => Asset[], extra?: unknown) {
+  if (extra !== undefined) pendingCleanupExtras.push(extra);
+  if (cleanupQueued) return;
+  cleanupQueued = true;
+  globalThis.setTimeout(() => {
+    cleanupQueued = false;
+    const extras = pendingCleanupExtras.splice(0);
+    void (async () => {
+      const { useCanvasStore } =
+        await import("@/stores/canvas/use-canvas-store");
+      const usedData = {
+        assets: readAssets(),
+        projects: useCanvasStore.getState().projects,
+        extra: extras,
+      };
+      await Promise.all([
+        cleanupUnusedImages(usedData),
+        cleanupUnusedMedia(usedData),
+      ]);
+    })().catch((error) => {
+      console.warn("Asset media cleanup failed", error);
+    });
+  }, 0);
+}
 
 const assetStorage: PersistStorage<AssetStore> = {
   getItem: async (name) => {
     const current = await readStorageValue(name);
     const persisted =
-      current ?? (await readStorageValue(LEGACY_ASSET_STORE_KEY));
+      current ?? (await readStorageValue(LEGACY_STORAGE_KEYS.assets));
     if (!persisted) return null;
 
     const assets = normalizeAssetCollection(persisted.state.assets);
@@ -216,28 +208,12 @@ export const useAssetStore = create<AssetStore>()(
           removed = assets !== state.assets;
           return removed ? { assets } : state;
         });
-        if (removed) get().cleanupImages({ assets: get().assets });
+        if (removed) queueUnusedAssetCleanup(() => get().assets);
       },
       replaceAssets: (assets) =>
         set({ assets: normalizeAssetCollection(assets) }),
       cleanupImages: (extra) => {
-        globalThis.setTimeout(() => {
-          void (async () => {
-            const { useCanvasStore } =
-              await import("@/stores/canvas/use-canvas-store");
-            const usedData = {
-              assets: get().assets,
-              projects: useCanvasStore.getState().projects,
-              extra,
-            };
-            await Promise.all([
-              cleanupUnusedImages(usedData),
-              cleanupUnusedMedia(usedData),
-            ]);
-          })().catch((error) => {
-            console.warn("Asset media cleanup failed", error);
-          });
-        }, 0);
+        queueUnusedAssetCleanup(() => get().assets, extra);
       },
     }),
     {

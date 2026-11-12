@@ -3,7 +3,11 @@ import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import type { CanvasNodeImage, CanvasNodeText } from "@/types/canvas";
+import type {
+  CanvasNodeImage,
+  CanvasNodeStatus,
+  CanvasNodeText,
+} from "@/types/canvas";
 
 import type { NodeContentRendererProps } from "./contracts";
 import { contentSlotState } from "./slot-view-model";
@@ -35,7 +39,9 @@ export function ErrorNodeContent({
   node,
   theme,
   onRetry,
-}: Pick<NodeContentRendererProps, "node" | "theme" | "onRetry">) {
+}: Pick<NodeContentRendererProps, "node" | "theme"> & {
+  onRetry?: () => void;
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex max-w-[260px] flex-col items-center gap-3 px-5 text-center">
@@ -53,7 +59,7 @@ export function ErrorNodeContent({
           }}
           onClick={(event) => {
             event.stopPropagation();
-            onRetry(node);
+            onRetry();
           }}
           onMouseDown={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
@@ -92,9 +98,40 @@ export function TextSlotStatus({
   text: CanvasNodeText;
   onRetry?: () => void;
 }) {
+  return (
+    <SlotStatus
+      status={text.status}
+      content={text.content}
+      errorDetails={text.errorDetails}
+      onRetry={onRetry}
+    />
+  );
+}
+
+export function ImageSlotStatus({ image }: { image?: CanvasNodeImage }) {
+  return (
+    <SlotStatus
+      status={image?.status}
+      content={image?.content}
+      errorDetails={image?.errorDetails}
+    />
+  );
+}
+
+function SlotStatus({
+  status,
+  content,
+  errorDetails,
+  onRetry,
+}: {
+  status?: CanvasNodeStatus;
+  content?: string;
+  errorDetails?: string;
+  onRetry?: () => void;
+}) {
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const { t } = useTranslation();
-  const state = contentSlotState(text.status, text.content);
+  const state = contentSlotState(status, content);
   const failed = state === "error";
   const loading = state === "loading";
   return (
@@ -107,7 +144,7 @@ export function TextSlotStatus({
     >
       {failed ? (
         <span className="text-xs leading-5">
-          {text.errorDetails || t("canvas.node.failed")}
+          {errorDetails || t("canvas.node.failed")}
         </span>
       ) : loading ? (
         <div
@@ -144,45 +181,6 @@ export function TextSlotStatus({
           <RefreshCw className="size-3.5" />
           {t("canvas.node.retry")}
         </button>
-      ) : null}
-    </div>
-  );
-}
-
-export function ImageSlotStatus({ image }: { image?: CanvasNodeImage }) {
-  const theme = canvasThemes[useThemeStore((state) => state.theme)];
-  const { t } = useTranslation();
-  const state = contentSlotState(image?.status, image?.content);
-  const failed = state === "error";
-  const loading = state === "loading";
-  return (
-    <div
-      className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center"
-      style={{
-        background: theme.node.fill,
-        color: failed ? theme.node.text : theme.node.activeStroke,
-      }}
-    >
-      {failed ? (
-        <span className="text-xs leading-5">
-          {image?.errorDetails || t("canvas.node.failed")}
-        </span>
-      ) : loading ? (
-        <div
-          className="size-10 animate-spin rounded-full border-2"
-          style={{
-            borderColor: theme.node.stroke,
-            borderTopColor: theme.node.activeStroke,
-          }}
-        />
-      ) : null}
-      {loading ? (
-        <span className="text-[10px] tracking-[0.2em]">
-          {t("canvas.node.generating")}
-        </span>
-      ) : null}
-      {!failed && !loading ? (
-        <span className="text-xs">{t("apiErrors.noContent")}</span>
       ) : null}
     </div>
   );

@@ -53,7 +53,7 @@ export function NodeContent(props: NodeContentRendererProps) {
         <ErrorNodeContent
           node={props.node}
           theme={props.theme}
-          onRetry={props.onRetry}
+          onRetry={props.commands.retryGeneration}
         />
       );
     case "builtin": {

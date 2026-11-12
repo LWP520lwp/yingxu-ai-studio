@@ -1,25 +1,5 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
-import {
-  Button,
-  Card,
-  Checkbox,
-  Form,
-  Modal,
-  Space,
-  Switch,
-  Tag,
-  Tooltip,
-  Typography,
-  theme as antdTheme,
-} from "antd";
+import { useMemo, useRef, type CSSProperties, type ReactNode } from "react";
+import { Button, Checkbox, Modal, Switch, Tooltip, theme as antdTheme } from "antd";
 import { Ellipsis, Image as ImageIcon, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -27,11 +7,8 @@ import {
   getImageQuickToolSelectionChanges,
   type ImageQuickToolId,
 } from "@/lib/canvas/image-quick-tools";
-import {
-  measurePreviewScroll,
-  previewScrollbarThumbWidth,
-  type PreviewScrollMetrics,
-} from "@/lib/canvas/image-toolbar-settings";
+import { previewScrollbarThumbWidth } from "@/lib/canvas/image-toolbar-settings";
+import { useElementScrollMetrics } from "@/hooks/use-element-scroll-metrics";
 
 export type ImageToolbarSettingsTool = {
   id: ImageQuickToolId;
@@ -42,16 +19,25 @@ export type ImageToolbarSettingsTool = {
   danger?: boolean;
 };
 
-type PreviewTool =
-  | ImageToolbarSettingsTool
-  | {
-      id: "more";
-      title: string;
-      label: string;
-      icon: ReactNode;
-      active?: boolean;
-      danger?: boolean;
-    };
+type PreviewItem = ImageToolbarSettingsTool | {
+  id: "more";
+  title: string;
+  label: string;
+  icon: ReactNode;
+  active?: boolean;
+  danger?: boolean;
+};
+
+type ImageToolSettingsModalProps = {
+  open: boolean;
+  tools: ImageToolbarSettingsTool[];
+  selectedIds: ImageQuickToolId[];
+  showLabels: boolean;
+  onToggle: (id: ImageQuickToolId, visible: boolean) => void;
+  onShowLabelsChange: (value: boolean) => void;
+  onCancel: () => void;
+  onSave: () => void;
+};
 
 export function ImageToolSettingsModal({
   open,
@@ -62,105 +48,54 @@ export function ImageToolSettingsModal({
   onShowLabelsChange,
   onCancel,
   onSave,
-}: {
-  open: boolean;
-  tools: ImageToolbarSettingsTool[];
-  selectedIds: ImageQuickToolId[];
-  showLabels: boolean;
-  onToggle: (id: ImageQuickToolId, visible: boolean) => void;
-  onShowLabelsChange: (value: boolean) => void;
-  onCancel: () => void;
-  onSave: () => void;
-}) {
+}: ImageToolSettingsModalProps) {
   const { t } = useTranslation();
   const { token } = antdTheme.useToken();
-  const previewToolbarRef = useRef<HTMLDivElement>(null);
-  const scrollbarTrackRef = useRef<HTMLInputElement>(null);
-  const [previewScroll, setPreviewScroll] = useState<PreviewScrollMetrics>(() =>
-    measurePreviewScroll(0, 1, 1),
-  );
+  const rangeRef = useRef<HTMLInputElement>(null);
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const selectedTools = tools.filter((tool) => selected.has(tool.id));
-  const previewTools: PreviewTool[] = [
-    ...selectedTools,
-    {
-      id: "more",
-      title: t("canvas.imageTools.configure"),
-      label: t("canvas.imageTools.more"),
-      icon: <Ellipsis className="size-4" />,
-      active: true,
-    },
-  ];
-
-  const syncPreviewScroll = useCallback(() => {
-    const toolbar = previewToolbarRef.current;
-    if (!toolbar) return;
-    setPreviewScroll(
-      measurePreviewScroll(
-        toolbar.scrollLeft,
-        toolbar.scrollWidth,
-        toolbar.clientWidth,
-      ),
-    );
-  }, []);
-
-  const setPreviewScrollLeft = useCallback(
-    (left: number) => {
-      const toolbar = previewToolbarRef.current;
-      if (!toolbar) return;
-      toolbar.scrollLeft = left;
-      syncPreviewScroll();
-    },
-    [syncPreviewScroll],
+  const visibleTools = useMemo(
+    () => tools.filter(({ id }) => selected.has(id)),
+    [selected, tools],
+  );
+  const previewItems = useMemo<PreviewItem[]>(
+    () => [
+      ...visibleTools,
+      {
+        id: "more",
+        title: t("canvas.imageTools.configure"),
+        label: t("canvas.imageTools.more"),
+        icon: <Ellipsis className="size-4" />,
+        active: true,
+      },
+    ],
+    [t, visibleTools],
   );
 
-  const updateSelectedTools = (values: ImageQuickToolId[]) => {
-    const changes = getImageQuickToolSelectionChanges(
-      tools.map((tool) => tool.id),
+  const {
+    elementRef,
+    metrics,
+    measure,
+    scrollTo,
+  } = useElementScrollMetrics(
+    open,
+    `${selectedIds.join("\u0000")}:${showLabels}:${previewItems.length}`,
+  );
+
+  const onSelectionChange = (values: Array<string | number>) => {
+    const changed = getImageQuickToolSelectionChanges(
+      tools.map(({ id }) => id),
       selectedIds,
       values as ImageQuickToolId[],
     );
-    changes.forEach(({ id, visible }) => onToggle(id, visible));
+    for (const change of changed) onToggle(change.id, change.visible);
   };
 
-  useEffect(() => {
-    if (!open) return;
-    const toolbar = previewToolbarRef.current;
-    const sync = () => syncPreviewScroll();
-    const frames: number[] = [];
-    const firstFrame = window.requestAnimationFrame(() => {
-      sync();
-      frames.push(window.requestAnimationFrame(sync));
-    });
-    frames.push(firstFrame);
-    const timer = window.setTimeout(sync, 120);
-    const resizeObserver =
-      typeof ResizeObserver !== "undefined" && toolbar
-        ? new ResizeObserver(sync)
-        : null;
-    if (resizeObserver && toolbar) {
-      resizeObserver.observe(toolbar);
-      toolbar.childNodes.forEach((child) => {
-        if (child instanceof Element) resizeObserver.observe(child);
-      });
-    }
-    sync();
-    window.addEventListener("resize", syncPreviewScroll);
-    return () => {
-      frames.forEach((frame) => window.cancelAnimationFrame(frame));
-      window.clearTimeout(timer);
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", syncPreviewScroll);
-    };
-  }, [open, selectedIds, showLabels, previewTools.length, syncPreviewScroll]);
-
-  const scrollbarWidth =
-    scrollbarTrackRef.current?.clientWidth || previewScroll.viewport;
-  const thumbWidth = previewScrollbarThumbWidth(
-    scrollbarWidth,
-    previewScroll.viewport,
-    previewScroll.content,
-    previewScroll.max > 0,
+  const sliderMax = Math.max(metrics.max, 1);
+  const thumb = previewScrollbarThumbWidth(
+    rangeRef.current?.clientWidth || metrics.viewport,
+    metrics.viewport,
+    metrics.content,
+    metrics.max > 0,
   );
 
   return (
@@ -169,150 +104,198 @@ export function ImageToolSettingsModal({
       open={open}
       centered
       width={760}
-      onCancel={onCancel}
       destroyOnHidden
+      onCancel={onCancel}
       footer={
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-2 text-sm">
             <span>{t("canvas.imageTools.showLabels")}</span>
-            <Switch checked={showLabels} onChange={onShowLabelsChange} />
+            <Switch
+              checked={showLabels}
+              onChange={onShowLabelsChange}
+              aria-label={t("canvas.imageTools.showLabels")}
+            />
           </div>
-          <Space>
+          <div className="ml-auto flex items-center gap-2">
             <Button onClick={onCancel}>{t("common.cancel")}</Button>
-            <Button type="primary" onClick={onSave}>
-              {t("common.save")}
-            </Button>
-          </Space>
+            <Button type="primary" onClick={onSave}>{t("common.save")}</Button>
+          </div>
         </div>
       }
     >
-      <Typography.Paragraph type="secondary" className="!mb-4">
-        {t("canvas.imageTools.description")}
-      </Typography.Paragraph>
-
-      <Card
-        size="small"
-        title={
-          <Space size={6}>
-            <Settings2 className="size-4" />
-            {t("canvas.imageTools.preview")}
-          </Space>
-        }
-        className="mb-4"
-      >
-        <div
-          className="relative flex min-h-[300px] w-full justify-center pt-20 pb-9"
-          aria-label={t("canvas.imageTools.preview")}
-        >
-          <div
-            ref={previewToolbarRef}
-            className="hide-scrollbar absolute left-2 right-2 top-3 z-10 flex h-12 items-center overflow-x-auto rounded-[18px] border px-1 text-[13px]"
-            style={{
-              background: token.colorBgElevated,
-              borderColor: token.colorBorderSecondary,
-              boxShadow: token.boxShadowSecondary,
-              color: token.colorText,
-            }}
-            onScroll={syncPreviewScroll}
-          >
-            {previewTools.map((tool) => (
-              <PreviewToolbarItem
-                key={tool.id}
-                tool={tool}
-                showLabels={showLabels}
-              />
-            ))}
-          </div>
-          <div
-            className="flex h-48 w-full max-w-[360px] flex-col items-center justify-center rounded-xl border"
-            style={{
-              background: token.colorFillAlter,
-              borderColor: token.colorBorderSecondary,
-              color: token.colorTextSecondary,
-            }}
-          >
-            <ImageIcon className="mb-2 size-8" />
-            <Typography.Text type="secondary">
-              {t("canvas.imageTools.imageNode")}
-            </Typography.Text>
-          </div>
-          <input
-            ref={scrollbarTrackRef}
-            type="range"
-            min={0}
-            max={Math.max(previewScroll.max, 1)}
-            value={Math.min(previewScroll.left, Math.max(previewScroll.max, 1))}
-            disabled={previewScroll.max <= 0}
-            className="absolute bottom-4 left-10 right-10 h-2.5 cursor-pointer appearance-none bg-transparent disabled:cursor-default [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:w-[var(--preview-scrollbar-thumb-width)] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-[#8d9498] [&::-moz-range-track]:h-2.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-[#bdc4c8] [&::-webkit-slider-runnable-track]:h-2.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[#bdc4c8] [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-[var(--preview-scrollbar-thumb-width)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#8d9498]"
-            onChange={(event) =>
-              setPreviewScrollLeft(Number(event.target.value))
-            }
-            aria-label={t("canvas.imageTools.preview")}
-            title={t("canvas.imageTools.preview")}
-            style={
-              {
-                "--preview-scrollbar-thumb-width": `${thumbWidth}px`,
-              } as CSSProperties
-            }
-          />
+      <div className="mb-5 flex flex-wrap items-start gap-x-6 gap-y-2">
+        <div className="flex shrink-0 items-center gap-2 text-sm font-semibold">
+          <Settings2 className="size-4" aria-hidden="true" />
+          <span>{t("canvas.imageTools.preview")}</span>
         </div>
-      </Card>
+        <p className="m-0 min-w-0 flex-1 text-sm text-secondary">
+          {t("canvas.imageTools.description")}
+        </p>
+      </div>
 
-      <Form layout="vertical" className="!mb-0">
-        <Form.Item
-          className="!mb-4"
-          label={
-            <Space size={8}>
-              <span>{t("canvas.imageTools.quickTools")}</span>
-              <Tag className="m-0">
-                {selectedTools.length}/{tools.length}
-              </Tag>
-            </Space>
-          }
+      <ToolbarPreview
+        items={previewItems}
+        showLabels={showLabels}
+        scrollRef={elementRef}
+        rangeRef={rangeRef}
+        left={metrics.left}
+        max={sliderMax}
+        maxScroll={metrics.max}
+        thumbWidth={thumb}
+        onScroll={measure}
+        onScrollChange={(value) => scrollTo(Number(value))}
+        label={t("canvas.imageTools.preview")}
+        imageLabel={t("canvas.imageTools.imageNode")}
+        background={token.colorFillAlter}
+        elevatedBackground={token.colorBgElevated}
+        border={token.colorBorderSecondary}
+        muted={token.colorTextSecondary}
+        text={token.colorText}
+        shadow={token.boxShadowSecondary}
+      />
+
+      <section className="mt-6" aria-labelledby="image-quick-tools-title">
+        <header className="mb-3 flex items-baseline justify-between gap-3">
+          <h3 id="image-quick-tools-title" className="m-0 text-sm font-semibold">
+            {t("canvas.imageTools.quickTools")}
+          </h3>
+          <output className="text-xs text-secondary" aria-live="polite">
+            {visibleTools.length}/{tools.length}
+          </output>
+        </header>
+
+        <Checkbox.Group
+          value={selectedIds}
+          onChange={onSelectionChange}
+          aria-label={t("canvas.imageTools.quickTools")}
+          className="grid w-full gap-2 md:grid-cols-3"
         >
-          <Checkbox.Group
-            value={selectedIds}
-            className="grid w-full gap-3 md:grid-cols-3"
-            onChange={(values) =>
-              updateSelectedTools(values as ImageQuickToolId[])
-            }
-          >
-            {tools.map((tool) => (
-              <Checkbox key={tool.id} value={tool.id} className="m-0">
-                <span className="inline-flex items-center gap-2">
-                  {tool.icon}
-                  {tool.label}
+          {tools.map((tool) => (
+            <div
+              key={tool.id}
+              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm"
+              style={{ borderColor: token.colorBorderSecondary }}
+            >
+              <Checkbox value={tool.id} className="m-0">
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  <span className="shrink-0" aria-hidden="true">{tool.icon}</span>
+                  <span className="truncate">{tool.label}</span>
                 </span>
               </Checkbox>
-            ))}
-          </Checkbox.Group>
-        </Form.Item>
-      </Form>
+            </div>
+          ))}
+        </Checkbox.Group>
+      </section>
     </Modal>
   );
 }
 
-function PreviewToolbarItem({
-  tool,
+function ToolbarPreview({
+  items,
   showLabels,
+  scrollRef,
+  rangeRef,
+  left,
+  max,
+  maxScroll,
+  thumbWidth,
+  onScroll,
+  onScrollChange,
+  label,
+  imageLabel,
+  background,
+  elevatedBackground,
+  border,
+  muted,
+  text,
+  shadow,
 }: {
-  tool: PreviewTool;
+  items: PreviewItem[];
   showLabels: boolean;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  rangeRef: React.RefObject<HTMLInputElement | null>;
+  left: number;
+  max: number;
+  maxScroll: number;
+  thumbWidth: number;
+  onScroll: () => void;
+  onScrollChange: (value: number) => void;
+  label: string;
+  imageLabel: string;
+  background: string;
+  elevatedBackground: string;
+  border: string;
+  muted: string;
+  text: string;
+  shadow: string;
 }) {
   return (
-    <Tooltip title={tool.title}>
-      <span
-        className="flex h-12 shrink-0 items-center px-1.5"
-        style={{ color: tool.danger ? "#ef4444" : undefined }}
+    <section
+      className="relative flex min-h-[300px] items-center justify-center overflow-hidden rounded-lg border px-3 pb-11 pt-20"
+      aria-label={label}
+      style={{ background, borderColor: border }}
+    >
+      <div className="absolute inset-x-3 top-3 flex items-center gap-2 text-xs font-medium" style={{ color: muted }}>
+        <span>{label}</span>
+        <span className="h-px flex-1" style={{ background: border }} />
+      </div>
+
+      <div
+        ref={scrollRef}
+        role="group"
+        aria-label={label}
+        onScroll={onScroll}
+        className="hide-scrollbar absolute inset-x-3 top-10 z-10 flex h-12 items-center overflow-x-auto rounded-md border px-1 text-[13px]"
+        style={{
+          background: elevatedBackground,
+          borderColor: border,
+          boxShadow: shadow,
+          color: text,
+        }}
       >
-        <span
-          className={`flex h-9 items-center rounded-lg px-2 ${showLabels ? "gap-2" : "justify-center"}`}
-        >
-          {tool.icon}
-          {showLabels ? (
-            <span className="whitespace-nowrap">{tool.label}</span>
-          ) : null}
-        </span>
+        {items.map((item) => (
+          <ToolbarPreviewItem key={item.id} item={item} showLabels={showLabels} />
+        ))}
+      </div>
+
+      <div className="flex h-44 w-full max-w-[360px] flex-col items-center justify-center text-center">
+        <ImageIcon className="mb-2 size-8 opacity-60" aria-hidden="true" />
+        <span className="text-sm" style={{ color: muted }}>{imageLabel}</span>
+      </div>
+
+      <input
+        ref={rangeRef}
+        type="range"
+        min={0}
+        max={max}
+        value={Math.min(left, max)}
+        disabled={maxScroll <= 0}
+        onChange={(event) => onScrollChange(Number(event.target.value))}
+        aria-label={label}
+        aria-valuetext={`${Math.round(left)} / ${Math.round(maxScroll)}`}
+        title={label}
+        className="absolute bottom-4 left-10 right-10 h-2.5 cursor-pointer appearance-none bg-transparent disabled:cursor-default [&::-moz-range-thumb]:h-2.5 [&::-moz-range-thumb]:w-[var(--preview-thumb-width)] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-[#8d9498] [&::-moz-range-track]:h-2.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-[#bdc4c8] [&::-webkit-slider-runnable-track]:h-2.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-[#bdc4c8] [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-[var(--preview-thumb-width)] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#8d9498]"
+        style={{ "--preview-thumb-width": `${thumbWidth}px` } as CSSProperties}
+      />
+    </section>
+  );
+}
+
+function ToolbarPreviewItem({ item, showLabels }: { item: PreviewItem; showLabels: boolean }) {
+  const { token } = antdTheme.useToken();
+  return (
+    <Tooltip title={item.title}>
+      <span
+        role="img"
+        aria-label={showLabels ? item.title : `${item.title}: ${item.label}`}
+        className={`mx-0.5 flex h-9 shrink-0 items-center rounded-md border border-transparent px-2 ${showLabels ? "gap-2" : "justify-center"}`}
+        style={{
+          color: item.danger ? token.colorError : undefined,
+          ...(item.active ? { borderColor: token.colorPrimary } : {}),
+        }}
+      >
+        <span aria-hidden="true">{item.icon}</span>
+        {showLabels ? <span className="whitespace-nowrap">{item.label}</span> : null}
       </span>
     </Tooltip>
   );

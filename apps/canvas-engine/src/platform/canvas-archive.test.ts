@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readCanvasArchive } from "@/lib/canvas/canvas-archive";
+import { LEGACY_CANVAS_FILE_ID } from "@/lib/legacy-data-compatibility";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { CanvasExportAsset } from "@/types/canvas-export";
 
@@ -27,7 +28,7 @@ describe("canvas project archive reader", () => {
     });
 
     it("continues to import existing v3 backups", async () => {
-        const [restored] = await readCanvasArchive(makeZip({ app: "infinite-canvas", version: 3, projects: [{ project: project(), files: [] }] }));
+        const [restored] = await readCanvasArchive(makeZip({ app: LEGACY_CANVAS_FILE_ID, version: 3, projects: [{ project: project(), files: [] }] }));
         expect(restored.project.id).toBe("project-one");
     });
 

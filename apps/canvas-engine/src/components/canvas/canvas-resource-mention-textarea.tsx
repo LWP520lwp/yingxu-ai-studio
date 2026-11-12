@@ -1,8 +1,9 @@
-import { forwardRef, useMemo, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
-  MouseEvent,
-  PointerEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
   TextareaHTMLAttributes,
 } from "react";
 import { createPortal } from "react-dom";
@@ -10,7 +11,6 @@ import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { isImeComposing, isPlainEnterKey } from "@/lib/keyboard-event";
-import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import {
   activeResourceMentionLabels,
@@ -22,11 +22,9 @@ import {
   searchResourceMentions,
   type ResourceMention,
 } from "@/lib/canvas/resource-mentions";
+import { useThemeStore } from "@/stores/use-theme-store";
 
-type Props = Omit<
-  TextareaHTMLAttributes<HTMLTextAreaElement>,
-  "onChange" | "value"
-> & {
+type Props = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> & {
   value: string;
   references: CanvasResourceReference[];
   onChange: (value: string) => void;
@@ -35,320 +33,306 @@ type Props = Omit<
   highlightLabels?: boolean;
 };
 
-export const CanvasResourceMentionTextarea = forwardRef<
-  HTMLTextAreaElement,
-  Props
->(function CanvasResourceMentionTextarea(
-  {
-    value,
-    references,
-    onChange,
-    onSubmit,
-    onKeyDown,
-    className,
-    containerClassName,
-    style,
-    highlightLabels = true,
-    ...props
-  },
-  forwardedRef,
-) {
-  const theme = canvasThemes[useThemeStore((state) => state.theme)];
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
-  const [mention, setMention] = useState<ResourceMention | null>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [hasSelection, setHasSelection] = useState(false);
-  const candidates = useMemo(() => {
-    if (!mention) return [];
-    return searchResourceMentions(references, mention.query);
-  }, [mention, references]);
-  const activeLabels = useMemo(
-    () => (highlightLabels ? activeResourceMentionLabels(references) : []),
-    [highlightLabels, references],
-  );
-  const splitMentionText = useMemo(
-    () => createResourceMentionTextSplitter(activeLabels),
-    [activeLabels],
-  );
+type Theme = (typeof canvasThemes)[keyof typeof canvasThemes];
+type PickerProps = {
+  id: string;
+  input: HTMLTextAreaElement;
+  caret: number;
+  items: CanvasResourceReference[];
+  activeIndex: number;
+  theme: Theme;
+  onPick: (reference: CanvasResourceReference) => void;
+};
 
-  const updateValue = (next: string, selectionStart?: number) => {
-    onChange(next);
-    if (typeof selectionStart !== "number") return;
-    requestAnimationFrame(() => {
-      textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(selectionStart, selectionStart);
-    });
-  };
+export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
+  function CanvasResourceMentionTextarea(
+    {
+      value,
+      references,
+      onChange,
+      onSubmit,
+      onKeyDown,
+      className,
+      containerClassName,
+      style,
+      highlightLabels = true,
+      ...nativeProps
+    },
+    forwardedRef,
+  ) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const pickerId = `resource-picker-${useId().replace(/:/g, "")}`;
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const mirrorRef = useRef<HTMLDivElement | null>(null);
+    const [mention, setMention] = useState<ResourceMention | null>(null);
+    const [activeIndex, setActiveIndex] = useState(0);
+    const [hasRangeSelection, setHasRangeSelection] = useState(false);
 
-  const closeMention = () => {
-    setMention(null);
-    setActiveIndex(0);
-  };
-
-  const syncMention = (nextValue: string, cursor: number) => {
-    const nextMention = findResourceMention(nextValue, cursor);
-    if (!nextMention || !references.some((item) => item.active)) {
-      closeMention();
-      return;
-    }
-    setMention(nextMention);
-    setActiveIndex(0);
-  };
-
-  const insertReference = (reference: CanvasResourceReference) => {
-    if (!mention) return;
-    const textarea = textareaRef.current;
-    const end = textarea?.selectionStart ?? value.length;
-    const result = insertResourceMention(value, mention, end, reference.label);
-    closeMention();
-    updateValue(result.value, result.caret);
-  };
-
-  const syncOverlayScroll = () => {
-    if (!overlayRef.current || !textareaRef.current) return;
-    overlayRef.current.scrollTop = textareaRef.current.scrollTop;
-    overlayRef.current.scrollLeft = textareaRef.current.scrollLeft;
-  };
-
-  const updateSelectionState = () => {
-    const textarea = textareaRef.current;
-    setHasSelection(
-      Boolean(textarea && textarea.selectionStart !== textarea.selectionEnd),
+    const choices = useMemo(
+      () => mention ? searchResourceMentions(references, mention.query) : [],
+      [mention, references],
     );
-  };
+    const labels = useMemo(
+      () => highlightLabels ? activeResourceMentionLabels(references) : [],
+      [highlightLabels, references],
+    );
+    const splitText = useMemo(() => createResourceMentionTextSplitter(labels), [labels]);
+    const drawHighlights = labels.length > 0 && !hasRangeSelection;
+    const hasPicker = Boolean(mention && choices.length && textareaRef.current);
 
-  const showOverlay = Boolean(activeLabels.length && !hasSelection);
-  const mergedStyle = {
-    ...(style || {}),
-    color: showOverlay ? "transparent" : style?.color,
-    caretColor: style?.color || theme.node.text,
-    cursor: "text",
-    // The highlight layer covers the textarea when showOverlay is active, so keep the textarea above it to preserve the native caret.
-    ...(showOverlay
-      ? {
-          position: "relative",
-          zIndex: 1,
-          background: "transparent",
-          backgroundColor: "transparent",
+    const setTextareaRef = useCallback((element: HTMLTextAreaElement | null) => {
+      textareaRef.current = element;
+      if (typeof forwardedRef === "function") forwardedRef(element);
+      else if (forwardedRef) forwardedRef.current = element;
+    }, [forwardedRef]);
+
+    const closePicker = () => {
+      setMention(null);
+      setActiveIndex(0);
+    };
+
+    const reflectSelection = () => {
+      const element = textareaRef.current;
+      setHasRangeSelection(Boolean(element && element.selectionStart !== element.selectionEnd));
+    };
+
+    const restoreCaret = (position: number) => {
+      requestAnimationFrame(() => {
+        const element = textareaRef.current;
+        if (!element) return;
+        element.focus();
+        element.setSelectionRange(position, position);
+      });
+    };
+
+    const writeValue = (next: string, caret?: number) => {
+      onChange(next);
+      if (caret !== undefined) restoreCaret(caret);
+    };
+
+    const discoverMention = (text: string, cursor: number) => {
+      const next = findResourceMention(text, cursor);
+      if (!next || !references.some((reference) => reference.active)) {
+        closePicker();
+        return;
+      }
+      setMention(next);
+      setActiveIndex(0);
+    };
+
+    const chooseReference = (reference: CanvasResourceReference) => {
+      if (!mention) return;
+      const cursor = textareaRef.current?.selectionStart ?? value.length;
+      const result = insertResourceMention(value, mention, cursor, reference.label);
+      closePicker();
+      writeValue(result.value, result.caret);
+    };
+
+    const synchronizeMirror = () => {
+      const input = textareaRef.current;
+      const mirror = mirrorRef.current;
+      if (!input || !mirror) return;
+      mirror.scrollTop = input.scrollTop;
+      mirror.scrollLeft = input.scrollLeft;
+    };
+
+    const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (isImeComposing(event)) {
+        onKeyDown?.(event);
+        return;
+      }
+
+      const input = textareaRef.current;
+      const collapsed = input && input.selectionStart === input.selectionEnd;
+      if (!mention && collapsed && (event.key === "Backspace" || event.key === "Delete")) {
+        const result = deleteAdjacentResourceMention(
+          value,
+          input.selectionStart,
+          event.key === "Backspace" ? "backward" : "forward",
+          labels,
+        );
+        if (result) {
+          event.preventDefault();
+          writeValue(result.value, result.caret);
+          requestAnimationFrame(reflectSelection);
+          return;
         }
-      : {}),
-  } as CSSProperties;
-  const menu =
-    mention && candidates.length && textareaRef.current ? (
-      <MentionMenu
-        textarea={textareaRef.current}
-        caretIndex={mention.start}
-        references={candidates}
-        activeIndex={Math.min(activeIndex, candidates.length - 1)}
-        theme={theme}
-        onSelect={insertReference}
-      />
-    ) : null;
+      }
 
-  return (
-    <div className={`relative h-full w-full ${containerClassName || ""}`}>
-      {showOverlay ? (
-        <div
-          ref={overlayRef}
-          className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`}
-          style={{ ...style, color: theme.node.text }}
-        >
-          <MentionHighlightText
-            value={value || props.placeholder?.toString() || ""}
-            splitText={splitMentionText}
-            placeholder={!value}
+      if (mention && choices.length > 0) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const delta = event.key === "ArrowDown" ? 1 : -1;
+          setActiveIndex((current) => (current + delta + choices.length) % choices.length);
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          chooseReference(choices[Math.min(activeIndex, choices.length - 1)]);
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closePicker();
+          return;
+        }
+      }
+
+      if (onSubmit && isPlainEnterKey(event)) {
+        event.preventDefault();
+        onSubmit();
+        return;
+      }
+      onKeyDown?.(event);
+    };
+
+    const mirrorStyle: CSSProperties = { ...style, color: theme.node.text };
+    const textareaStyle: CSSProperties = {
+      ...style,
+      color: drawHighlights ? "transparent" : style?.color,
+      caretColor: style?.color || theme.node.text,
+      cursor: "text",
+      ...(drawHighlights
+        ? { position: "relative", zIndex: 1, background: "transparent", backgroundColor: "transparent" }
+        : {}),
+    };
+
+    return (
+      <div className={`relative h-full w-full ${containerClassName || ""}`}>
+        {drawHighlights ? (
+          <MentionHighlight
+            ref={mirrorRef}
+            value={value}
+            placeholder={nativeProps.placeholder}
+            className={className}
+            style={mirrorStyle}
+            splitText={splitText}
           />
-        </div>
-      ) : null}
-      <textarea
-        {...props}
-        ref={(node) => {
-          textareaRef.current = node;
-          if (typeof forwardedRef === "function") forwardedRef(node);
-          else if (forwardedRef) forwardedRef.current = node;
-        }}
-        value={value}
-        className={className}
-        style={mergedStyle}
-        onChange={(event) => {
-          const next = event.target.value;
-          onChange(next);
-          syncMention(next, event.target.selectionStart);
-          requestAnimationFrame(() => {
-            syncOverlayScroll();
-            updateSelectionState();
-          });
-        }}
-        onSelect={(event) => {
-          updateSelectionState();
-          props.onSelect?.(event);
-        }}
-        onKeyUp={(event) => {
-          updateSelectionState();
-          props.onKeyUp?.(event);
-        }}
-        onPointerUp={(event) => {
-          updateSelectionState();
-          props.onPointerUp?.(event);
-        }}
-        onKeyDown={(event) => {
-          if (isImeComposing(event)) {
-            onKeyDown?.(event);
-            return;
-          }
-          if (
-            (event.key === "Backspace" || event.key === "Delete") &&
-            !mention
-          ) {
-            const el = textareaRef.current;
-            if (el && el.selectionStart === el.selectionEnd) {
-              const result = deleteAdjacentResourceMention(
-                value,
-                el.selectionStart,
-                event.key === "Backspace" ? "backward" : "forward",
-                activeLabels,
-              );
-              if (result) {
-                event.preventDefault();
-                updateValue(result.value, result.caret);
-                requestAnimationFrame(updateSelectionState);
-                return;
-              }
-            }
-          }
-          if (mention && candidates.length) {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setActiveIndex((index) => (index + 1) % candidates.length);
-              return;
-            }
-            if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setActiveIndex(
-                (index) => (index - 1 + candidates.length) % candidates.length,
-              );
-              return;
-            }
-            if (event.key === "Enter") {
-              event.preventDefault();
-              insertReference(
-                candidates[Math.min(activeIndex, candidates.length - 1)],
-              );
-              return;
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              closeMention();
-              return;
-            }
-          }
-          if (isPlainEnterKey(event) && onSubmit) {
-            event.preventDefault();
-            onSubmit();
-            return;
-          }
-          onKeyDown?.(event);
-        }}
-        onScroll={(event) => {
-          syncOverlayScroll();
-          props.onScroll?.(event);
-        }}
-        onBlur={(event) => {
-          setHasSelection(false);
-          window.setTimeout(closeMention, 120);
-          props.onBlur?.(event);
-        }}
-      />
-      {menu}
+        ) : null}
+
+        <textarea
+          {...nativeProps}
+          ref={setTextareaRef}
+          value={value}
+          className={className}
+          style={textareaStyle}
+          aria-autocomplete="list"
+          aria-expanded={Boolean(mention && choices.length)}
+          aria-controls={hasPicker ? pickerId : undefined}
+          aria-activedescendant={hasPicker ? `${pickerId}-option-${Math.min(activeIndex, choices.length - 1)}` : undefined}
+          onChange={(event) => {
+            const text = event.currentTarget.value;
+            onChange(text);
+            discoverMention(text, event.currentTarget.selectionStart);
+            requestAnimationFrame(() => {
+              synchronizeMirror();
+              reflectSelection();
+            });
+          }}
+          onSelect={(event) => {
+            reflectSelection();
+            nativeProps.onSelect?.(event);
+          }}
+          onKeyUp={(event) => {
+            reflectSelection();
+            nativeProps.onKeyUp?.(event);
+          }}
+          onPointerUp={(event) => {
+            reflectSelection();
+            nativeProps.onPointerUp?.(event);
+          }}
+          onKeyDown={handleKeyDown}
+          onScroll={(event) => {
+            synchronizeMirror();
+            nativeProps.onScroll?.(event);
+          }}
+          onBlur={(event) => {
+            setHasRangeSelection(false);
+            window.setTimeout(closePicker, 120);
+            nativeProps.onBlur?.(event);
+          }}
+        />
+
+        {hasPicker && textareaRef.current && mention ? (
+          <MentionPicker
+            id={pickerId}
+            input={textareaRef.current}
+            caret={mention.start}
+            items={choices}
+            activeIndex={Math.min(activeIndex, choices.length - 1)}
+            theme={theme}
+            onPick={chooseReference}
+          />
+        ) : null}
+      </div>
+    );
+  },
+);
+
+const MentionHighlight = forwardRef<HTMLDivElement, {
+  value: string;
+  placeholder?: string;
+  className?: string;
+  style: CSSProperties;
+  splitText: (value: string) => Array<{ text: string; highlighted: boolean }>;
+}>(function MentionHighlight({ value, placeholder, className, style, splitText }, ref) {
+  return (
+    <div
+      ref={ref}
+      aria-hidden="true"
+      className={`${className || ""} pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words`}
+      style={style}
+    >
+      {value ? splitText(value).map((part, index) => (
+        <span
+          key={`${index}:${part.text}`}
+          className={part.highlighted ? "rounded bg-sky-500/15 px-0.5 text-sky-500" : undefined}
+        >
+          {part.text}
+        </span>
+      )) : placeholder ? <span className="opacity-45">{placeholder}</span> : null}
     </div>
   );
 });
 
-function MentionHighlightText({
-  value,
-  splitText,
-  placeholder,
-}: {
-  value: string;
-  splitText: (value: string) => { text: string; highlighted: boolean }[];
-  placeholder: boolean;
-}) {
-  if (placeholder) return <span className="opacity-45">{value}</span>;
-  return (
-    <>
-      {splitText(value).map((part, index) =>
-        part.highlighted ? (
-          <span
-            key={`${part.text}-${index}`}
-            className="rounded-md bg-[#2f80ff]/16 px-1 py-0.5 font-medium text-[#2f80ff] ring-1 ring-[#2f80ff]/24"
-          >
-            {part.text}
-          </span>
-        ) : (
-          <span key={`${part.text}-${index}`}>{part.text}</span>
-        ),
-      )}
-    </>
-  );
-}
+function MentionPicker({ id, input, caret, items, activeIndex, theme, onPick }: PickerProps) {
+  const selectedButton = useRef<HTMLButtonElement>(null);
+  const completed = useRef(false);
 
-function MentionMenu({
-  textarea,
-  caretIndex,
-  references,
-  activeIndex,
-  theme,
-  onSelect,
-}: {
-  textarea: HTMLTextAreaElement;
-  caretIndex: number;
-  references: CanvasResourceReference[];
-  activeIndex: number;
-  theme: (typeof canvasThemes)[keyof typeof canvasThemes];
-  onSelect: (reference: CanvasResourceReference) => void;
-}) {
-  const selectedRef = useRef(false);
-  const rect = textarea.getBoundingClientRect();
-  const boundary = textarea
-    .closest(".ant-modal-content")
-    ?.getBoundingClientRect() || {
+  useEffect(() => {
+    selectedButton.current?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, items]);
+
+  const bounds = input.closest(".ant-modal-content")?.getBoundingClientRect() ?? {
     left: 8,
     top: 8,
     right: window.innerWidth - 8,
     bottom: window.innerHeight - 8,
   };
-  const gap = 6;
-  // Anchor the menu to the pixel position of the @ caret instead of the textarea edge.
-  // The canvas may be scaled: rect uses scaled coordinates while mirror measurements use layout coordinates, so apply the scale.
-  const scale = textarea.offsetWidth ? rect.width / textarea.offsetWidth : 1;
-  const computed = window.getComputedStyle(textarea);
-  const lineHeight =
-    (parseFloat(computed.lineHeight) ||
-      parseFloat(computed.fontSize) * 1.4 ||
-      20) * scale;
-  const caret = getCaretPoint(textarea, caretIndex);
-  const caretLeft = rect.left + (caret.left - textarea.scrollLeft) * scale;
-  const caretTop = rect.top + (caret.top - textarea.scrollTop) * scale;
-  const placement = placeResourceMentionMenu(
-    { left: caretLeft, top: caretTop, lineHeight },
-    boundary,
-    { gap },
-  );
+  const box = input.getBoundingClientRect();
+  const scale = input.offsetWidth > 0 ? box.width / input.offsetWidth : 1;
+  const computed = window.getComputedStyle(input);
+  const lineHeight = (parseFloat(computed.lineHeight) || parseFloat(computed.fontSize) * 1.4 || 20) * scale;
+  const point = measureCaret(input, caret);
+  const placement = placeResourceMentionMenu({
+    left: box.left + (point.left - input.scrollLeft) * scale,
+    top: box.top + (point.top - input.scrollTop) * scale,
+    lineHeight,
+  }, bounds);
 
-  const stopCanvasInteraction = (event: PointerEvent | MouseEvent) => {
-    event.stopPropagation();
-  };
-  const selectReference = (reference: CanvasResourceReference) => {
-    if (selectedRef.current) return;
-    selectedRef.current = true;
-    onSelect(reference);
+  const stopPointer = (event: ReactPointerEvent | ReactMouseEvent) => event.stopPropagation();
+  const pickOnce = (reference: CanvasResourceReference) => {
+    if (completed.current) return;
+    completed.current = true;
+    onPick(reference);
   };
 
   return createPortal(
     <div
+      id={id}
       data-canvas-resource-mention-menu="true"
-      className="fixed z-[120] overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md"
+      role="listbox"
+      className="fixed z-[120] overflow-y-auto rounded-md border p-1 shadow-xl"
       style={{
         left: placement.left,
         top: placement.top,
@@ -358,43 +342,38 @@ function MentionMenu({
         borderColor: theme.toolbar.border,
         color: theme.node.text,
       }}
-      role="listbox"
-      onPointerDown={stopCanvasInteraction}
-      onMouseDown={stopCanvasInteraction}
+      onPointerDown={stopPointer}
+      onMouseDown={stopPointer}
       onClick={(event) => event.stopPropagation()}
     >
-      {references.map((reference, index) => (
+      {items.map((reference, index) => (
         <button
           key={reference.id}
+          id={`${id}-option-${index}`}
+          ref={index === activeIndex ? selectedButton : undefined}
           type="button"
           role="option"
-          aria-selected={index === activeIndex}
-          className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition"
+          aria-selected={activeIndex === index}
+          className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left text-xs"
           style={{
-            background:
-              index === activeIndex ? theme.toolbar.activeBg : "transparent",
-            color:
-              index === activeIndex
-                ? theme.toolbar.activeText
-                : theme.node.text,
+            background: activeIndex === index ? theme.toolbar.activeBg : "transparent",
+            color: activeIndex === index ? theme.toolbar.activeText : theme.node.text,
           }}
           onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            selectReference(reference);
+            pickOnce(reference);
           }}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            selectReference(reference);
+            pickOnce(reference);
           }}
         >
-          <ReferencePreview reference={reference} />
+          <MentionResourceIcon reference={reference} />
           <span className="min-w-0 flex-1">
             <span className="block font-medium">{reference.label}</span>
-            <span className="block truncate opacity-65">
-              {reference.text || reference.title}
-            </span>
+            <span className="block truncate opacity-65">{reference.text || reference.title}</span>
           </span>
         </button>
       ))}
@@ -403,87 +382,62 @@ function MentionMenu({
   );
 }
 
-function ReferencePreview({
-  reference,
-}: {
-  reference: CanvasResourceReference;
-}) {
-  if (reference.kind === "image" && reference.previewUrl)
-    return (
-      <img
-        src={reference.previewUrl}
-        alt=""
-        className="size-9 rounded-md object-cover"
-      />
-    );
-  if (reference.kind === "video" && reference.previewUrl)
+function MentionResourceIcon({ reference }: { reference: CanvasResourceReference }) {
+  if (reference.kind === "image" && reference.previewUrl) {
+    return <img src={reference.previewUrl} alt="" className="size-9 rounded object-cover" />;
+  }
+  if (reference.kind === "video" && reference.previewUrl) {
     return (
       <video
         src={reference.previewUrl}
-        className="size-9 rounded-md bg-black object-cover"
+        className="size-9 rounded bg-black object-cover"
         muted
         preload="metadata"
+        aria-hidden="true"
       />
     );
-  const Icon =
-    reference.kind === "audio"
-      ? Music2
-      : reference.kind === "video"
-        ? Video
-        : reference.kind === "image"
-          ? ImageIcon
-          : FileText;
+  }
+
+  const Icon = reference.kind === "audio"
+    ? Music2
+    : reference.kind === "video"
+      ? Video
+      : reference.kind === "image"
+        ? ImageIcon
+        : FileText;
   return (
-    <span className="grid size-9 shrink-0 place-items-center rounded-md bg-black/10">
+    <span className="grid size-9 shrink-0 place-items-center rounded bg-black/10" aria-hidden="true">
       <Icon className="size-4" />
     </span>
   );
 }
 
-// Mirror the textarea layout in a div to measure the caret at index in unscaled layout coordinates.
-const MIRROR_STYLE_PROPS = [
-  "boxSizing",
-  "width",
-  "paddingTop",
-  "paddingRight",
-  "paddingBottom",
-  "paddingLeft",
-  "borderTopWidth",
-  "borderRightWidth",
-  "borderBottomWidth",
-  "borderLeftWidth",
-  "fontStyle",
-  "fontVariant",
-  "fontWeight",
-  "fontStretch",
-  "fontSize",
-  "lineHeight",
-  "fontFamily",
-  "textAlign",
-  "textIndent",
-  "letterSpacing",
-  "wordSpacing",
-  "tabSize",
-  "textTransform",
+const copiedTextStyleKeys = [
+  "boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+  "fontStyle", "fontVariant", "fontWeight", "fontStretch", "fontSize", "lineHeight",
+  "fontFamily", "textAlign", "textIndent", "letterSpacing", "wordSpacing", "tabSize", "textTransform",
 ] as const;
 
-function getCaretPoint(textarea: HTMLTextAreaElement, index: number) {
-  const computed = window.getComputedStyle(textarea);
-  const mirror = document.createElement("div");
-  const style = mirror.style;
-  style.position = "absolute";
-  style.top = "0";
-  style.left = "-9999px";
-  style.visibility = "hidden";
-  style.whiteSpace = "pre-wrap";
-  style.overflowWrap = "break-word";
-  for (const prop of MIRROR_STYLE_PROPS) style[prop] = computed[prop];
-  mirror.textContent = textarea.value.slice(0, index);
+function measureCaret(input: HTMLTextAreaElement, offset: number) {
+  const computed = window.getComputedStyle(input);
+  const ruler = document.createElement("div");
+  Object.assign(ruler.style, {
+    position: "absolute",
+    top: "0",
+    left: "-10000px",
+    visibility: "hidden",
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+  });
+  for (const key of copiedTextStyleKeys) ruler.style[key] = computed[key];
+
+  ruler.textContent = input.value.slice(0, offset);
   const marker = document.createElement("span");
-  marker.textContent = textarea.value.slice(index) || ".";
-  mirror.appendChild(marker);
-  document.body.appendChild(mirror);
-  const point = { left: marker.offsetLeft, top: marker.offsetTop };
-  document.body.removeChild(mirror);
-  return point;
+  marker.textContent = input.value.slice(offset) || ".";
+  ruler.append(marker);
+  document.body.append(ruler);
+  const location = { left: marker.offsetLeft, top: marker.offsetTop };
+  ruler.remove();
+  return location;
 }

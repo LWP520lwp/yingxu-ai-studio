@@ -1,5 +1,39 @@
-import type { AiConfig, ChannelCredentialsImportResult } from "./types";
 import type { ChannelFactory } from "./channel-models";
+import type { AiConfig, ChannelCredentialsImportResult } from "./types";
+
+type Endpoint = {
+  address: string;
+  identity: string;
+  suggestedName: string;
+};
+
+function endpointFrom(value: string): Endpoint | null {
+  try {
+    const url = new URL(value.trim());
+    if (
+      !(url.protocol === "https:" || url.protocol === "http:") ||
+      !url.hostname
+    ) {
+      return null;
+    }
+    url.hash = "";
+    const address = url.toString().replace(/\/+$/, "");
+    return {
+      address,
+      identity: address.replace(/\/v1$/i, ""),
+      suggestedName: url.hostname.replace(/^(?:www|api)\./i, ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function endpointIdentity(value: string) {
+  return (
+    endpointFrom(value)?.identity ||
+    value.trim().replace(/\/+$/, "").replace(/\/v1$/i, "")
+  );
+}
 
 export function importChannelCredentials(
   config: AiConfig,
@@ -7,39 +41,41 @@ export function importChannelCredentials(
   createModelChannel: ChannelFactory,
   unnamedChannel: string,
 ): ChannelCredentialsImportResult & { config: AiConfig } {
-  const rawBaseUrl = input.baseUrl?.trim() || "";
-  if (!rawBaseUrl) return { status: "missing-base-url", config };
-  if (!isHttpBaseUrl(rawBaseUrl)) return { status: "invalid-base-url", config };
+  const rawAddress = input.baseUrl?.trim() || "";
+  if (!rawAddress) return { status: "missing-base-url", config };
 
-  const baseUrl = normalizeImportedBaseUrl(rawBaseUrl);
+  const endpoint = endpointFrom(rawAddress);
+  if (!endpoint) return { status: "invalid-base-url", config };
+
   const apiKey = input.apiKey?.trim() || "";
-  const matchingIndex = config.channels.findIndex(
-    (channel) =>
-      normalizedBaseUrlKey(channel.baseUrl) === normalizedBaseUrlKey(baseUrl),
+  const existingIndex = config.channels.findIndex(
+    (channel) => endpointIdentity(channel.baseUrl) === endpoint.identity,
   );
 
-  if (matchingIndex >= 0) {
-    const existing = config.channels[matchingIndex];
+  if (existingIndex !== -1) {
+    const current = config.channels[existingIndex];
     if (
-      existing.baseUrl === baseUrl &&
-      (!apiKey || existing.apiKey === apiKey)
+      current.baseUrl === endpoint.address &&
+      (!apiKey || current.apiKey === apiKey)
     ) {
-      return { status: "updated", channelName: existing.name, config };
+      return { status: "updated", channelName: current.name, config };
     }
-    const updated = { ...existing, baseUrl, ...(apiKey ? { apiKey } : {}) };
-    const channels = config.channels.map((channel, index) =>
-      index === matchingIndex ? updated : channel,
-    );
+    const channels = config.channels.slice();
+    channels[existingIndex] = {
+      ...current,
+      baseUrl: endpoint.address,
+      ...(apiKey ? { apiKey } : {}),
+    };
     return {
       status: "updated",
-      channelName: existing.name,
+      channelName: current.name,
       config: { ...config, channels },
     };
   }
 
   const channel = createModelChannel({
-    name: importedChannelName(baseUrl, unnamedChannel),
-    baseUrl,
+    name: endpoint.suggestedName || unnamedChannel,
+    baseUrl: endpoint.address,
     apiKey,
     apiFormat: "openai",
     models: [],
@@ -49,39 +85,4 @@ export function importChannelCredentials(
     channelName: channel.name,
     config: { ...config, channels: [...config.channels, channel] },
   };
-}
-
-function isHttpBaseUrl(baseUrl: string) {
-  try {
-    const url = new URL(baseUrl);
-    return (
-      (url.protocol === "http:" || url.protocol === "https:") &&
-      Boolean(url.hostname)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function normalizedBaseUrlKey(baseUrl: string) {
-  try {
-    return stripTrailingApiVersion(normalizeImportedBaseUrl(baseUrl));
-  } catch {
-    return stripTrailingApiVersion(baseUrl.trim().replace(/\/+$/, ""));
-  }
-}
-
-function normalizeImportedBaseUrl(baseUrl: string) {
-  const url = new URL(baseUrl.trim());
-  url.hash = "";
-  return url.toString().replace(/\/+$/, "");
-}
-
-function stripTrailingApiVersion(baseUrl: string) {
-  return baseUrl.replace(/\/v1$/i, "");
-}
-
-function importedChannelName(baseUrl: string, unnamedChannel: string) {
-  const hostname = new URL(baseUrl).hostname;
-  return hostname.replace(/^(?:www|api)\./i, "") || unnamedChannel;
 }

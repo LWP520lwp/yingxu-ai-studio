@@ -28,7 +28,13 @@ export function validatePromptSourceDraft(
 
 export function isHttpUrl(value: string): boolean {
   try {
-    return ["http:", "https:"].includes(new URL(value).protocol);
+    const address = new URL(value.trim());
+    return (
+      ["http:", "https:"].includes(address.protocol) &&
+      Boolean(address.hostname) &&
+      !address.username &&
+      !address.password
+    );
   } catch {
     return false;
   }
@@ -127,6 +133,7 @@ export function PromptSourceEditorDrawer({
             onChange={(event) => updateDraft({ url: event.target.value })}
             placeholder="https://example.com/prompts.json"
             inputMode="url"
+            autoComplete="url"
           />
         </FormField>
         <FormField
@@ -139,6 +146,7 @@ export function PromptSourceEditorDrawer({
             onChange={(event) => updateDraft({ homepage: event.target.value })}
             placeholder="https://example.com"
             inputMode="url"
+            autoComplete="url"
           />
         </FormField>
         <div className="flex items-center justify-between border-y border-stone-200 py-3 dark:border-stone-800">

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SkillDefinition } from "../../../web/src/SkillMarket";
-import { changeVideoSkillSelection, recoverLegacyVideoSkill, unwrapSkillTemplate, videoSkillInstructionPatch, videoSkillSelection } from "./video-skill-state";
+import { changeVideoSkillSelection, recoverLegacyVideoSkill, unwrapSkillTemplate, videoSkillInstruction, videoSkillInstructionPatch, videoSkillSelection } from "./video-skill-state";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 vi.mock("@/i18n", () => ({ default: { t: (key: string) => key } }));
 vi.mock("@/services/image-storage", () => ({ ensureImagePreview: vi.fn(), resolveImageUrl: vi.fn(), uploadImage: vi.fn() }));
@@ -63,6 +63,10 @@ describe("canvas video Skill state and legacy migration", () => {
         expect(unwrapSkillTemplate("[{{text}}]", "[{{text}}]")).toBe("{{text}}");
         expect(unwrapSkillTemplate("A{{text}}B", "A文本B extra")).toBeNull();
         expect(unwrapSkillTemplate("{{text}}", "卫星运动")).toBe("卫星运动");
+    });
+
+    it("preserves the composer value when prompt metadata is absent", () => {
+        expect(videoSkillInstruction({ composerContent: "只从这里恢复" })).toBe("只从这里恢复");
     });
     it("keeps uncertain user-edited text intact and requires an explicit decision", () => {
         const prompt = "一颗卫星围绕地球运动，用连续镜头展示轨道关系，比例用示意表达。";

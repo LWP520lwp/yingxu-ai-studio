@@ -10,6 +10,7 @@ import CanvasProjectPage from "../pages/canvas/project";
 import { notifyPlatformStatus, type PlatformInit } from "./rpc";
 import { useDocumentSyncState } from "./document";
 import { openPlatformAction, platformActionForPath } from "./navigation";
+import { decodeHostCommand, FlushRequestLedger } from "./host-command-controller";
 
 type DocumentSession = { flush: () => Promise<boolean>; retry: () => Promise<boolean>; dispose: () => void; projectId: string };
 function SyncStatus({ session }: { session: DocumentSession }) {
@@ -44,17 +45,13 @@ export function mountCanvas(init: PlatformInit, session: DocumentSession) {
         })().finally(() => { flushing = null; });
         return flushing;
     };
-    const flushRequests = new Map<string, Promise<boolean>>();
+    const flushRequests = new FlushRequestLedger();
     const receiveCommand = (event: MessageEvent) => {
-        if (event.source !== parent || event.origin !== window.location.origin || event.data?.type !== "frameflow:command" || event.data.scopeId !== init.scopeId) return;
-        const { command, id } = event.data;
-        if (command === "save" || command === "flush") {
-            const requestId = typeof id === "string" && id.length <= 128 ? id : null;
-            const request = requestId && flushRequests.get(requestId) || flush();
-            if (requestId) {
-                flushRequests.set(requestId, request);
-                if (flushRequests.size > 100) flushRequests.delete(flushRequests.keys().next().value!);
-            }
+        const command = decodeHostCommand(event, { parent, origin: window.location.origin, scopeId: init.scopeId });
+        if (!command) return;
+        if (command.command === "flush") {
+            const requestId = command.requestId;
+            const request = flushRequests.run(requestId, flush);
             void request.then((saved) => {
                 if (!active || !requestId) return;
                 parent.postMessage({ type: "frameflow:command-response", scopeId: init.scopeId, id: requestId, command: "flush", ok: saved,
@@ -66,12 +63,12 @@ export function mountCanvas(init: PlatformInit, session: DocumentSession) {
                 parent.postMessage({ type: "frameflow:command-response", scopeId: init.scopeId, id: requestId, command: "flush", ok: false, result: { saved: false }, error: { message } }, window.location.origin);
             });
         }
-        if (command === "export") void import("../lib/canvas/canvas-export").then(async ({ exportCanvasProjects }) => {
+        if (command.command === "export") void import("../lib/canvas/canvas-export").then(async ({ exportCanvasProjects }) => {
             const { useCanvasStore } = await import("../stores/canvas/use-canvas-store");
             const project = useCanvasStore.getState().openProject(init.project.id);
             if (project) await exportCanvasProjects([project], project.title);
-        });
-        if (command === "upload") document.querySelector<HTMLInputElement>('input[type="file"]')?.click();
+        }).catch((error) => notifyPlatformStatus(error instanceof Error ? error.message : "导出失败，请重试"));
+        if (command.command === "upload") document.querySelector<HTMLInputElement>('input[type="file"]')?.click();
     };
     window.addEventListener("message", receiveCommand);
     window.addEventListener("pagehide", () => {

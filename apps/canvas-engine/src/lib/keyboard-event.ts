@@ -1,34 +1,29 @@
-type NativeKeyboardEventLike = {
+type KeyboardState = {
   isComposing?: boolean;
   keyCode?: number;
   which?: number;
 };
 
-type KeyboardEventLike = NativeKeyboardEventLike & {
+type KeyboardInput = KeyboardState & {
   key?: string;
   shiftKey?: boolean;
   ctrlKey?: boolean;
   metaKey?: boolean;
-  nativeEvent?: NativeKeyboardEventLike;
+  nativeEvent?: KeyboardState;
 };
 
-export function isImeComposing(event: KeyboardEventLike) {
-  return Boolean(
-    event.isComposing ||
-    event.nativeEvent?.isComposing ||
-    event.keyCode === 229 ||
-    event.which === 229 ||
-    event.nativeEvent?.keyCode === 229 ||
-    event.nativeEvent?.which === 229,
-  );
+function composing(state?: KeyboardState) {
+  return Boolean(state?.isComposing || state?.keyCode === 229 || state?.which === 229);
 }
 
-export function isPlainEnterKey(event: KeyboardEventLike) {
-  return (
-    event.key === "Enter" &&
-    !event.shiftKey &&
-    !event.ctrlKey &&
-    !event.metaKey &&
-    !isImeComposing(event)
-  );
+export function isImeComposing(event: KeyboardInput) {
+  return composing(event) || composing(event.nativeEvent);
+}
+
+export function isPlainEnterKey(event: KeyboardInput) {
+  return event.key === "Enter"
+    && !event.shiftKey
+    && !event.ctrlKey
+    && !event.metaKey
+    && !isImeComposing(event);
 }

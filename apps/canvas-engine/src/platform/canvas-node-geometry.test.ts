@@ -8,10 +8,8 @@ import {
     findContainingGroupId,
     findGroupDropTarget,
     focusViewportForNode,
-    getConnectionTargetAnchor,
     getGroupWrapRect,
     nodeBounds,
-    normalizeConnection,
     snapNodesIntoGroup,
 } from "@/lib/canvas/canvas-node-geometry";
 import {
@@ -262,58 +260,6 @@ describe("canvas node geometry", () => {
         expect(byId(result.nodes, "direct").metadata?.groupId).toBeUndefined();
         expect(result.connections).toEqual([links[1], links[2]]);
         expect(result.selectedIds).toEqual(["inner", "direct"]);
-    });
-
-    it("normalizes config inputs and allows explicitly opposing ordinary edges", () => {
-        const source = node("source", 0, 0);
-        const target = node("target", 150, 0);
-        const config = node("config", 300, 0, { type: CanvasNodeType.Config });
-        const groupNode = group("group", 0, 0, 100, 100);
-        const nodes = [source, target, config, groupNode];
-
-        expect(
-            normalizeConnection("source", "config", nodes, "source"),
-        ).toEqual({ fromNodeId: "source", toNodeId: "config" });
-        expect(
-            normalizeConnection("config", "target", nodes, "target"),
-        ).toEqual({ fromNodeId: "target", toNodeId: "config" });
-        expect(
-            normalizeConnection("config", "target", nodes, "source"),
-        ).toEqual({ fromNodeId: "config", toNodeId: "target" });
-        expect(
-            normalizeConnection("config", "config", nodes, "target"),
-        ).toBeNull();
-        expect(
-            normalizeConnection("target", "group", nodes, "source"),
-        ).toBeNull();
-        expect(
-            normalizeConnection("source", "source", nodes, "source"),
-        ).toBeNull();
-        expect(
-            normalizeConnection("missing", "source", nodes, "source"),
-        ).toBeNull();
-        expect(
-            normalizeConnection("source", "target", nodes, "source"),
-        ).toEqual({ fromNodeId: "source", toNodeId: "target" });
-        expect(
-            normalizeConnection("target", "source", nodes, "source"),
-        ).toEqual({ fromNodeId: "target", toNodeId: "source" });
-    });
-
-    it("returns the opposing candidate anchor for either drag handle", () => {
-        const item = node("item", 20, 10, { width: 120, height: 80 });
-        expect(
-            getConnectionTargetAnchor(item, {
-                nodeId: "other",
-                handleType: "source",
-            }),
-        ).toEqual({ x: 20, y: 50 });
-        expect(
-            getConnectionTargetAnchor(item, {
-                nodeId: "other",
-                handleType: "target",
-            }),
-        ).toEqual({ x: 140, y: 50 });
     });
 
     it("keeps focused view transforms finite and scale bounded for tiny viewports and malformed dimensions", () => {

@@ -107,6 +107,33 @@ describe("prompt source service", () => {
     ]);
   });
 
+  it("bounds refresh fan-out and keeps source result order", async () => {
+    mocks.sources = Array.from({ length: 11 }, (_, index) =>
+      source({ id: `source-${index}`, name: `Source ${index}` }),
+    );
+    let active = 0;
+    let maxActive = 0;
+    mocks.runPromptSource.mockImplementation(async (item: PromptSource) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active -= 1;
+      return [prompt(item.id, item.name)];
+    });
+
+    const result = await refreshAllSources();
+
+    expect(maxActive).toBeLessThanOrEqual(4);
+    expect(result.results.map(({ sourceId }) => sourceId)).toEqual(
+      mocks.sources.map(({ id }) => id),
+    );
+    expect(result).toMatchObject({
+      total: 11,
+      successCount: 11,
+      failureCount: 0,
+    });
+  });
+
   it("keeps a newer URL result when an older request finishes later", async () => {
     const pending = new Map<string, (items: RawPrompt[]) => void>();
     mocks.runPromptSource.mockImplementation(

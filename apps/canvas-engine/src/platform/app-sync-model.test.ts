@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { decodeSyncManifest } from "@/lib/sync/manifest-codec";
+import { LEGACY_CANVAS_FILE_ID } from "@/lib/legacy-data-compatibility";
 import { mergeByTimestamp, mergeCanvasSyncData } from "@/lib/sync/merge-policy";
 import {
   collectMediaStorageKeys,
@@ -27,7 +28,7 @@ const project = (id: string, updatedAt: string): CanvasProject => ({
 
 function manifest(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
-    app: "infinite-canvas",
+    app: LEGACY_CANVAS_FILE_ID,
     version: 1,
     domain: "canvas",
     exportedAt: fixedNow,

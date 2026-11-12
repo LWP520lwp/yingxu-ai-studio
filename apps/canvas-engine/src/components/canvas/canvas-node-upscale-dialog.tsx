@@ -3,7 +3,7 @@ import { Button, Modal, Segmented } from "antd";
 import { ImagePlus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { readImageMeta } from "@/lib/image-utils";
+import { useImageEditorSource } from "./image-editor-surface";
 import {
   DEFAULT_IMAGE_UPSCALE_PARAMS,
   IMAGE_UPSCALE_ALGORITHMS,
@@ -28,8 +28,6 @@ type CanvasNodeUpscaleDialogProps = {
   onConfirm: (params: CanvasImageUpscaleParams) => void;
 };
 
-type ImageSize = { width: number; height: number };
-
 export function CanvasNodeUpscaleDialog({
   dataUrl,
   open,
@@ -40,7 +38,7 @@ export function CanvasNodeUpscaleDialog({
   const [params, setParams] = useState<CanvasImageUpscaleParams>(
     DEFAULT_IMAGE_UPSCALE_PARAMS,
   );
-  const [image, setImage] = useState<ImageSize | null>(null);
+  const { image, imageReadError } = useImageEditorSource(dataUrl, open);
 
   const upscaleState = useMemo(
     () => deriveImageUpscaleState(image, params.targetLongEdge),
@@ -50,20 +48,6 @@ export function CanvasNodeUpscaleDialog({
   useEffect(() => {
     if (!open) return;
     setParams(DEFAULT_IMAGE_UPSCALE_PARAMS);
-    setImage(null);
-  }, [dataUrl, open]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    let current = true;
-    void readImageMeta(dataUrl).then(({ width, height }) => {
-      if (current) setImage({ width, height });
-    });
-
-    return () => {
-      current = false;
-    };
   }, [dataUrl, open]);
 
   useEffect(() => {
@@ -113,6 +97,11 @@ export function CanvasNodeUpscaleDialog({
           <h2 className="text-xl font-semibold">
             {t("canvas.editors.upscaleTitle")}
           </h2>
+          {imageReadError ? (
+            <p className="mt-2 text-sm text-red-600" role="alert">
+              {t("canvas.editors.imageReadError")}
+            </p>
+          ) : null}
         </header>
 
         <div className="grid gap-6 md:grid-cols-[minmax(260px,1fr)_360px]">
@@ -220,6 +209,8 @@ export function CanvasNodeUpscaleDialog({
             size="large"
             icon={<ImagePlus className="size-4" />}
             disabled={
+              !image ||
+              imageReadError ||
               !upscaleState.canUpscale ||
               params.targetLongEdge > MAX_UPSCALE_LONG_EDGE
             }

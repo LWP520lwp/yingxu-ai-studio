@@ -9,21 +9,16 @@ const MUSE_MEDIA_SCRIPT = `() => {
   const seen = new Set();
   const add = (element, kind) => {
     if (!element) return;
+    const bounds = element.getBoundingClientRect();
+    if (bounds.width < 96 || bounds.height < 64 || element.closest('[aria-hidden="true"]')) return;
     const url = element.currentSrc || element.src || "";
     if (!url || seen.has(kind + url)) return;
+    if (/avatar|emoji|logo|icon/i.test(element.alt || "")) return;
     seen.add(kind + url);
     out.push({ kind, url });
   };
-  document.querySelectorAll('[data-testid^="hatch-chat-attachment-presentation-"]').forEach((attachment) => {
-    const video = attachment.querySelector("video");
-    if (video) add(video, "video");
-    else attachment.querySelectorAll("img").forEach((image) => add(image, "image"));
-  });
-  document.querySelectorAll('div[class*="hatch-agent-bubble-bg"] video').forEach((video) => add(video, "video"));
-  document.querySelectorAll('div[class*="hatch-agent-bubble-bg"] img').forEach((image) => {
-    const url = image.currentSrc || image.src || "";
-    if (url && !/avatar|emoji/i.test(url)) add(image, "image");
-  });
+  document.querySelectorAll("video").forEach((video) => add(video, "video"));
+  document.querySelectorAll("img").forEach((image) => add(image, "image"));
   return out;
 }`;
 
@@ -228,12 +223,12 @@ export class BrowserPool {
         if (!(await file.count())) throw new WorkerError(501, "REFERENCE_UPLOAD_UNAVAILABLE", "当前 Muse 页面未验证参考图输入控件，已在发送任务前停止");
         await file.setInputFiles(input.referenceImages.map((image) => ({ name: image.name, mimeType: image.mimeType, buffer: image.buffer })), { timeout: 10000 });
       }
-      const composer = page.locator("textarea").first();
+      const composer = page.getByRole("textbox").last();
       if (!(await composer.count())) throw new WorkerError(409, "LOGIN_REQUIRED", "Muse 聊天输入区不可用，请重新登录或检查本机页面");
       const baseline = await page.evaluate(MUSE_MEDIA_SCRIPT);
       const before = new Set(baseline.filter((item) => item.kind === input.kind).map((item) => item.url));
       await composer.fill(input.prompt, { timeout: 10000 });
-      const send = page.locator('[data-testid="hatch-composer-send-button"], button[aria-label*="send" i], button[aria-label*="发送"], button:has-text("发送")').first();
+      const send = page.getByRole("button", { name: /send|发送|生成|提交|create/i }).last();
       if (!(await send.count()) || !(await send.isEnabled({ timeout: 10000 }).catch(() => false))) {
         await composer.fill("").catch(() => {});
         throw new WorkerError(409, "SEND_NOT_READY", "Muse 尚未确认提示词已进入可发送状态，任务没有提交");
@@ -356,7 +351,7 @@ export class BrowserPool {
         return { state: "error", message: "Muse 页面不在受支持的网站域名", capabilities: { image: true, video: true } };
       const view = await page.evaluate(() => ({
         body: (document.body?.innerText || "").slice(0, 5000),
-        hasComposer: !!document.querySelector("textarea, [contenteditable=true]"),
+        hasComposer: !!document.querySelector("textarea:not([disabled]), [contenteditable=true][role=textbox]:not([aria-disabled=true])"),
         hasLogin: [...document.querySelectorAll("button,a")].some((el) => /登录|登录\/注册|sign in|log in/i.test(el.innerText || el.getAttribute("aria-label") || "")),
         captcha: !!document.querySelector('iframe[src*="captcha" i], iframe[src*="verify" i], [class*="captcha" i], [class*="verify-slider" i]'),
       }));

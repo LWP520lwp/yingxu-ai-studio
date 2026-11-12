@@ -3,40 +3,42 @@ import type { ReactNode } from "react";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 
-export function BatchFrame({
-  batchCount,
-  batchExpanded,
-  children,
-}: {
+type BatchFrameProps = {
   batchCount: number;
   batchExpanded: boolean;
   children: ReactNode;
-}) {
-  const theme = canvasThemes[useThemeStore((state) => state.theme)];
-  const isBatchRoot = batchCount > 1;
+};
+
+/** A scale-independent SVG stack keeps its silhouette at every canvas zoom level. */
+export function BatchFrame(props: BatchFrameProps) {
+  const palette = canvasThemes[useThemeStore((state) => state.theme)].node;
+  const layers = Math.min(3, Math.max(0, props.batchCount - 1));
   return (
-    <div className="group/batch relative h-full w-full overflow-visible">
-      {isBatchRoot ? (
-        <div className="pointer-events-none absolute inset-0 overflow-visible">
-          {Array.from({ length: Math.min(batchCount - 1, 3) }).map(
-            (_, index) => (
-              <div
-                key={index}
-                className="absolute rounded-[inherit] border shadow-[0_10px_24px_rgba(68,64,60,.12)] transition-all duration-300 group-hover/batch:translate-x-1"
-                style={{
-                  inset: 0,
-                  background: `linear-gradient(135deg, ${theme.node.panel}, ${theme.node.fill})`,
-                  borderColor: theme.node.stroke,
-                  opacity: batchExpanded ? 0 : 1,
-                  transform: `translate(${10 + index * 6}px, ${4 + index * 3}px) rotate(${1.5 + index}deg)`,
-                  zIndex: -index - 1,
-                }}
-              />
-            ),
-          )}
-        </div>
-      ) : null}
-      {children}
+    <div className="group/batch relative isolate size-full overflow-visible">
+      {layers > 0 && (
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className="pointer-events-none absolute inset-0 -z-10 size-full overflow-visible transition-opacity duration-200 motion-reduce:transition-none"
+          style={{ opacity: props.batchExpanded ? 0 : 1 }}
+        >
+          {Array.from({ length: layers }, (_, i) => layers - i).map((depth) => (
+            <rect
+              key={depth}
+              x={depth * 2.4}
+              y={depth * 1.8}
+              width="100"
+              height="100"
+              rx="3"
+              fill={depth % 2 ? palette.panel : palette.fill}
+              stroke={palette.stroke}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </svg>
+      )}
+      {props.children}
     </div>
   );
 }

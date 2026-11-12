@@ -8,96 +8,173 @@ import type { CanvasExportAsset, CanvasExportFile } from "@/types/canvas-export"
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
-type ZipEntry = { name: string; data: BlobPart };
+type ArchiveEntry = { name: string; data: BlobPart };
 
-function storageBlob(storageKey: string) {
-    return storageKey.startsWith("image:") ? getImageBlob(storageKey) : getMediaBlob(storageKey);
+const MIME_EXTENSIONS: ReadonlyArray<readonly [string, string]> = [
+  ["image/png", "png"],
+  ["image/jpeg", "jpg"],
+  ["image/webp", "webp"],
+  ["image/gif", "gif"],
+  ["image/avif", "avif"],
+  ["video/mp4", "mp4"],
+  ["video/webm", "webm"],
+  ["video/quicktime", "mov"],
+  ["audio/mpeg", "mp3"],
+  ["audio/mp4", "m4a"],
+  ["audio/wav", "wav"],
+  ["audio/ogg", "ogg"],
+  ["audio/opus", "opus"],
+  ["audio/aac", "aac"],
+  ["audio/flac", "flac"],
+];
+
+function readStoredAsset(storageKey: string) {
+  return storageKey.startsWith("image:")
+    ? getImageBlob(storageKey)
+    : getMediaBlob(storageKey);
 }
 
-function uniqueNameFactory() {
-    const used = new Set<string>();
-    return (label: string, extension: string) => {
-        const base = safeFileName(label) || i18n.t("canvas.export.item");
-        let candidate = `${base}.${extension}`;
-        let suffix = 1;
-        while (used.has(candidate)) candidate = `${base}-${suffix++}.${extension}`;
-        used.add(candidate);
-        return candidate;
+function createNameAllocator() {
+  const reserved = new Set<string>();
+  return (label: string, extension: string) => {
+    const base = cleanFileName(label) || i18n.t("canvas.export.item");
+    let suffix = 0;
+    let candidate = `${base}.${extension}`;
+    while (reserved.has(candidate.toLocaleLowerCase())) {
+      suffix += 1;
+      candidate = `${base}-${suffix}.${extension}`;
+    }
+    reserved.add(candidate.toLocaleLowerCase());
+    return candidate;
+  };
+}
+
+async function collectProjectArchive(project: CanvasProject) {
+  const keys = collectAssetKeys(project);
+  const resolved = await Promise.all(keys.map(async (storageKey) => {
+    const blob = await readStoredAsset(storageKey);
+    if (!blob) return null;
+    const path = [
+      "projects",
+      encodeArchiveSegment(project.id),
+      "files",
+      `${encodeArchiveSegment(storageKey)}.${extensionFor(blob.type, storageKey)}`,
+    ].join("/");
+    const asset: CanvasExportAsset = {
+      storageKey,
+      path,
+      mimeType: blob.type || "application/octet-stream",
+      bytes: blob.size,
     };
+    return { storageKey, asset, entry: { name: path, data: blob } satisfies ArchiveEntry };
+  }));
+
+  const available = resolved
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+    .sort((left, right) => left.storageKey.localeCompare(right.storageKey));
+  return {
+    project,
+    assets: available.map(({ asset }) => asset),
+    entries: available.map(({ entry }) => entry),
+  };
 }
 
-async function projectArchive(project: CanvasProject) {
-    const entries = await Promise.all(collectStorageKeys(project).map(async (storageKey) => {
-        const blob = await storageBlob(storageKey);
-        if (!blob) return null;
-        const path = `projects/${archiveSegment(project.id)}/files/${archiveSegment(storageKey)}.${fileExtension(blob.type, storageKey)}`;
-        return { storageKey, asset: { storageKey, path, mimeType: blob.type || "application/octet-stream", bytes: blob.size }, entry: { name: path, data: blob } satisfies ZipEntry };
-    }));
-    const available = entries.filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)).sort((left, right) => left.storageKey.localeCompare(right.storageKey));
-    return { project, files: available.map(({ asset }) => asset), entries: available.map(({ entry }) => entry) };
+export async function exportCanvasProjects(
+  projects: CanvasProject[],
+  fileName = i18n.t("canvas.export.defaultProjectName"),
+) {
+  const archives = await Promise.all(projects.map(collectProjectArchive));
+  const manifest: CanvasExportFile = {
+    app: "yingxu-atlas",
+    version: 4,
+    exportedAt: new Date().toISOString(),
+    projects: archives.map(({ project, assets }) => ({ project, files: assets })),
+  };
+  const entries = archives.flatMap(({ entries }) => entries);
+  const zip = await createZip([
+    { name: "projects.json", data: JSON.stringify(manifest, null, 2) },
+    ...entries,
+  ]);
+  saveAs(zip, `${cleanFileName(fileName) || "canvas-projects"}.zip`);
 }
 
-export async function exportCanvasProjects(projects: CanvasProject[], fileName = i18n.t("canvas.export.defaultProjectName")) {
-    const archives = await Promise.all(projects.map(projectArchive));
-    const exportedProjects = archives.map(({ project, files }) => ({ project, files }));
-    const data: CanvasExportFile = { app: "yingxu-atlas", version: 4, exportedAt: new Date().toISOString(), projects: exportedProjects };
-    const entries = archives.flatMap(({ entries }) => entries);
-    const zip = await createZip([{ name: "projects.json", data: JSON.stringify(data, null, 2) }, ...entries]);
-    saveAs(zip, `${safeFileName(fileName)}.zip`);
-}
+export async function exportCanvasNodes(
+  nodes: CanvasNodeData[],
+  fileName = i18n.t("canvas.export.defaultNodesName"),
+) {
+  const allocateName = createNameAllocator();
+  const entries: ArchiveEntry[] = [];
 
-export async function exportCanvasNodes(nodes: CanvasNodeData[], fileName = i18n.t("canvas.export.defaultNodesName")) {
-    const nameFor = uniqueNameFactory();
-    const entries: ZipEntry[] = [];
-    for (const node of nodes) {
-        const title = node.title || node.type;
-        const storageKey = node.metadata?.storageKey || "";
-        if (storageKey) {
-            const blob = await storageBlob(storageKey);
-            if (blob) {
-                entries.push({ name: nameFor(title, fileExtension(blob.type, storageKey)), data: blob });
-                continue;
-            }
-        }
-        if (node.type === CanvasNodeType.Text) {
-            entries.push({ name: nameFor(title, "txt"), data: node.metadata?.content || node.metadata?.prompt || "" });
-            continue;
-        }
-        const content = node.metadata?.content;
-        if (content?.startsWith("data:")) {
-            const blob = await (await fetch(content)).blob();
-            entries.push({ name: nameFor(title, fileExtension(blob.type, storageKey)), data: blob });
-            continue;
-        }
-        entries.push({ name: nameFor(title, "json"), data: JSON.stringify(node, null, 2) });
+  for (const node of nodes) {
+    const title = node.title || node.type;
+    const key = node.metadata?.storageKey || "";
+    if (key) {
+      const blob = await readStoredAsset(key);
+      if (blob) {
+        entries.push({ name: allocateName(title, extensionFor(blob.type, key)), data: blob });
+        continue;
+      }
     }
-    entries.sort((left, right) => left.name.localeCompare(right.name));
-    const zip = await createZip(entries);
-    saveAs(zip, `${safeFileName(fileName)}.zip`);
-}
 
-function collectStorageKeys(value: unknown, keys = new Set<string>()) {
-    if (!value || typeof value !== "object") return [...keys];
-    if ("storageKey" in value && typeof value.storageKey === "string" && value.storageKey.includes(":")) keys.add(value.storageKey);
-    for (const item of Object.values(value)) {
-        if (Array.isArray(item)) for (const child of item) collectStorageKeys(child, keys);
-        else collectStorageKeys(item, keys);
+    if (node.type === CanvasNodeType.Text) {
+      entries.push({
+        name: allocateName(title, "txt"),
+        data: node.metadata?.content || node.metadata?.prompt || "",
+      });
+      continue;
     }
-    return [...keys];
+
+    const content = node.metadata?.content;
+    if (content?.startsWith("data:")) {
+      const blob = await (await fetch(content)).blob();
+      entries.push({ name: allocateName(title, extensionFor(blob.type, key)), data: blob });
+      continue;
+    }
+
+    entries.push({
+      name: allocateName(title, "json"),
+      data: JSON.stringify(node, null, 2),
+    });
+  }
+
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+  const archive = await createZip(entries);
+  saveAs(archive, `${cleanFileName(fileName) || "canvas-assets"}.zip`);
 }
 
-function safeFileName(value: string) {
-    return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_").replace(/^\.+$/, "_").trim();
+function collectAssetKeys(value: unknown, found = new Set<string>()): string[] {
+  if (value === null || typeof value !== "object") return [...found];
+  if (Array.isArray(value)) {
+    for (const child of value) collectAssetKeys(child, found);
+    return [...found];
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "storageKey" && typeof child === "string" && child.includes(":")) {
+      found.add(child);
+    } else {
+      collectAssetKeys(child, found);
+    }
+  }
+  return [...found];
 }
 
-function archiveSegment(value: string) {
-    return encodeURIComponent(value).replace(/\./g, "%2E");
+function cleanFileName(value: string) {
+  return value
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .replace(/^\.+$/, "_")
+    .trim();
 }
 
-function fileExtension(mimeType: string, storageKey: string) {
-    const mime = mimeType.toLowerCase();
-    const extensions: Array<[string, string]> = [["png", "png"], ["jpeg", "jpg"], ["webp", "webp"], ["gif", "gif"], ["mp4", "mp4"], ["webm", "webm"], ["quicktime", "mov"], ["mpeg", "mp3"], ["mp3", "mp3"], ["wav", "wav"], ["ogg", "ogg"], ["opus", "opus"], ["aac", "aac"], ["flac", "flac"], ["mp4a", "m4a"]];
-    const byMime = extensions.find(([fragment]) => mime.includes(fragment))?.[1];
-    const byKey = storageKey.match(/\.([a-z0-9]{1,8})$/i)?.[1]?.toLowerCase();
-    return byMime || byKey || (storageKey.startsWith("image:") ? "png" : "bin");
+function encodeArchiveSegment(value: string) {
+  return encodeURIComponent(value).replace(/\./g, "%2E");
+}
+
+function extensionFor(mimeType: string, storageKey: string) {
+  const mime = mimeType.split(";", 1)[0].trim().toLowerCase();
+  const match = MIME_EXTENSIONS.find(([type]) => type === mime);
+  if (match) return match[1];
+
+  const storedExtension = storageKey.match(/\.([a-z0-9]{1,8})$/i)?.[1];
+  if (storedExtension) return storedExtension.toLowerCase();
+  return storageKey.startsWith("image:") ? "png" : "bin";
 }

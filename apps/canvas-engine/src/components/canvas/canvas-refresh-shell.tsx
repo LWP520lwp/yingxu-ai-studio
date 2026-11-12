@@ -1,47 +1,65 @@
-type CanvasRefreshShellProps = { error?: string; retryLabel?: string; onRetry?: () => void };
+interface CanvasRefreshShellProps {
+  error?: string;
+  retryLabel?: string;
+  onRetry?: () => void;
+}
 
-export function CanvasRefreshShell({ error, retryLabel = "重试", onRetry }: CanvasRefreshShellProps) {
-    return (
-        <main className="relative h-full min-h-0 overflow-hidden bg-background text-foreground">
-            <div
-                className="absolute inset-0 opacity-60"
-                style={{
-                    backgroundImage: "radial-gradient(circle, var(--border) 1px, transparent 1px)",
-                    backgroundSize: "28px 28px",
-                }}
-            />
+export function CanvasRefreshShell({
+  error,
+  retryLabel = "重试",
+  onRetry,
+}: CanvasRefreshShellProps) {
+  return (
+    <main
+      className="relative h-full min-h-0 overflow-hidden bg-background text-foreground"
+      aria-busy={!error}
+      aria-label={error ? undefined : "画布加载中"}
+    >
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 opacity-50"
+        style={{
+          backgroundImage:
+            "linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)",
+          backgroundSize: "32px 32px",
+        }}
+      />
 
-            <div className="absolute bottom-5 left-1/2 z-50 flex h-14 -translate-x-1/2 items-center gap-1 rounded-xl border px-2 shadow-lg backdrop-blur" style={{ background: "var(--background)", borderColor: "var(--border)" }} aria-hidden="true">
-                {Array.from({ length: 7 }).map((_, index) => (
-                    <div key={index} className="size-8 rounded-md bg-current opacity-10" />
-                ))}
-            </div>
+      <div aria-hidden="true" className="absolute inset-x-0 top-0 flex h-12 items-center border-b border-border bg-background/90 px-4">
+        <div className="h-3 w-28 animate-pulse rounded bg-muted" />
+        <div className="ml-auto flex gap-2">
+          <div className="h-7 w-20 animate-pulse rounded-md bg-muted" />
+          <div className="h-7 w-7 animate-pulse rounded-md bg-muted" />
+        </div>
+      </div>
 
-            <div className="absolute bottom-24 left-6 z-50 h-40 w-[240px] rounded-lg border shadow-2xl backdrop-blur-sm" style={{ background: "var(--background)", borderColor: "var(--border)" }} aria-hidden="true">
-                <div className="absolute left-7 top-7 h-5 w-12 rounded-sm bg-current opacity-10" />
-                <div className="absolute left-28 top-16 h-6 w-16 rounded-sm bg-current opacity-10" />
-                <div className="absolute bottom-7 left-16 h-8 w-20 rounded-sm bg-current opacity-10" />
-                <div className="absolute inset-5 rounded border border-current opacity-15" />
-            </div>
+      <div aria-hidden="true" className="absolute inset-x-0 bottom-0 flex h-[88px] items-center gap-2 border-t border-border bg-background/95 px-4">
+        <div className="size-12 shrink-0 animate-pulse rounded-lg bg-muted" />
+        <div className="h-12 w-36 shrink-0 animate-pulse rounded-lg bg-muted" />
+        <div className="h-12 min-w-24 max-w-64 flex-1 animate-pulse rounded-lg bg-muted" />
+        <div className="size-9 shrink-0 animate-pulse rounded-full bg-muted" />
+      </div>
 
-            <div className="absolute bottom-5 left-5 z-50 flex h-14 w-[260px] items-center gap-2 rounded-xl border px-2 shadow-lg backdrop-blur" style={{ background: "var(--background)", borderColor: "var(--border)" }} aria-hidden="true">
-                <div className="size-8 rounded-md bg-current opacity-10" />
-                <div className="size-8 rounded-md bg-current opacity-10" />
-                <div className="h-1 flex-1 rounded-full bg-current opacity-10" />
-                <div className="h-4 w-10 rounded bg-current opacity-10" />
-                <div className="size-8 rounded-md bg-current opacity-10" />
-            </div>
+      <div aria-hidden="true" className="absolute bottom-28 left-5 hidden h-32 w-48 rounded-md border border-border bg-background/85 p-3 shadow-md sm:block">
+        <div className="h-full rounded border border-dashed border-border" />
+      </div>
 
-            {error ? (
-                <div className="absolute inset-0 z-[60] flex items-center justify-center bg-background/70 p-6 backdrop-blur-sm" role="alert">
-                    <div className="max-w-lg text-center">
-                        <p className="mb-4 text-sm text-foreground">{error}</p>
-                        <button type="button" className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted" onClick={onRetry}>
-                            {retryLabel}
-                        </button>
-                    </div>
-                </div>
+      {error ? (
+        <div className="absolute inset-0 z-10 grid place-items-center bg-background/75 p-5 backdrop-blur-sm" role="alert">
+          <div className="w-full max-w-md border-l-2 border-destructive bg-background px-5 py-4 shadow-lg">
+            <p className="mb-4 text-sm text-foreground">{error}</p>
+            {onRetry ? (
+              <button
+                type="button"
+                className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={onRetry}
+              >
+                {retryLabel}
+              </button>
             ) : null}
-        </main>
-    );
+          </div>
+        </div>
+      ) : null}
+    </main>
+  );
 }

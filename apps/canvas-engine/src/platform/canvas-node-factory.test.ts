@@ -110,6 +110,16 @@ describe("canvas node factory", () => {
       bytes: 20,
       mimeType: "audio/mpeg",
     });
+
+    expect(
+      videoMetadata({
+        url: "/empty-video",
+        storageKey: "",
+        bytes: 0,
+        mimeType: "",
+        durationMs: 0,
+      }),
+    ).toMatchObject({ durationMs: 0 });
   });
 
   it("uses stable reference priority and omits inline-only data URLs", () => {

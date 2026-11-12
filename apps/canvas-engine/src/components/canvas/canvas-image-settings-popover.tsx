@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type CSSProperties,
-  type RefObject,
-} from "react";
+import { useId, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Settings2, X } from "lucide-react";
 import { Button } from "antd";
@@ -19,8 +12,9 @@ import {
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
+import { useCanvasPopover } from "@/hooks/use-canvas-popover";
 
-type CanvasImageSettingsPopoverProps = {
+type PopoverProps = {
   config: AiConfig;
   onConfigChange: (key: keyof AiConfig, value: string) => void;
   onMissingConfig?: () => void;
@@ -36,9 +30,7 @@ export type SettingsAnchorRect = Pick<
   DOMRect,
   "left" | "right" | "top" | "bottom" | "width"
 >;
-export type SettingsPopoverPlacement = NonNullable<
-  CanvasImageSettingsPopoverProps["placement"]
->;
+export type SettingsPopoverPlacement = NonNullable<PopoverProps["placement"]>;
 
 export function settingsPopoverPosition(
   anchor: SettingsAnchorRect,
@@ -53,39 +45,39 @@ export function settingsPopoverPosition(
   const below = Math.max(0, viewport.height - anchor.bottom - gap - margin);
   let opensAbove = placement.startsWith("top");
 
-  if (autoAdjustOverflow) {
-    const available = opensAbove ? above : below;
+  if (autoAdjustOverflow && (opensAbove ? above : below) < 180) {
     const alternate = opensAbove ? below : above;
-    if (available < 180 && alternate > available) opensAbove = !opensAbove;
+    if (alternate > (opensAbove ? above : below)) opensAbove = !opensAbove;
   }
 
-  const center = placement === "top" || placement === "bottom";
-  const alignRight = placement.endsWith("Right");
-  const preferredLeft = center
+  const centered = placement === "top" || placement === "bottom";
+  const alignEnd = placement.endsWith("Right");
+  const preferredLeft = centered
     ? anchor.left + anchor.width / 2 - width / 2
-    : alignRight
+    : alignEnd
       ? anchor.right - width
       : anchor.left;
   const maxLeft = Math.max(margin, viewport.width - width - margin);
   const left = Math.max(margin, Math.min(maxLeft, preferredLeft));
-  const forcedVisibleFallback =
-    !autoAdjustOverflow && opensAbove && above < 160;
+  const showBelow = !autoAdjustOverflow && opensAbove && above < 160;
   const fallbackTop = Math.min(
     Math.max(margin, anchor.bottom + gap),
     Math.max(margin, viewport.height - margin - 160),
   );
-  const maxHeight = forcedVisibleFallback
-    ? Math.max(1, Math.min(520, viewport.height - fallbackTop - margin))
-    : Math.max(1, Math.min(520, opensAbove ? above : below));
+  const availableHeight = showBelow
+    ? viewport.height - fallbackTop - margin
+    : opensAbove
+      ? above
+      : below;
 
   return {
     position: "fixed",
     zIndex: 1200,
     width,
     left,
-    maxHeight,
+    maxHeight: Math.max(1, Math.min(520, availableHeight)),
     overflowY: "auto",
-    ...(forcedVisibleFallback
+    ...(showBelow
       ? { top: fallbackTop }
       : opensAbove
         ? { bottom: viewport.height - anchor.top + gap }
@@ -101,98 +93,106 @@ export function CanvasImageSettingsPopover({
   getPopupContainer,
   placement = "topLeft",
   autoAdjustOverflow = true,
-}: CanvasImageSettingsPopoverProps) {
+}: PopoverProps) {
   const { t } = useTranslation();
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
-  const buttonRef = useRef<HTMLSpanElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+  const { anchorRef, panelRef, anchorRect } = useCanvasPopover<
+    HTMLSpanElement,
+    HTMLDivElement
+  >(open, (reason) => setOpenState(false, reason === "escape"));
   const panelId = `image-settings-${useId().replace(/:/g, "")}`;
+
+  function setOpenState(next: boolean, restoreFocus = false) {
+    setOpen(next);
+    onOpenChange?.(next);
+    if (restoreFocus)
+      requestAnimationFrame(() =>
+        anchorRef.current?.querySelector("button")?.focus(),
+      );
+  }
+
   const quality = config.quality || "auto";
   const count = Math.max(
     1,
     Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)),
   );
-  const activeSize = config.size || "auto";
-  const model = modelLabel(config.model || config.imageModel);
-
-  const updateOpen = (nextOpen: boolean, restoreFocus = false) => {
-    setOpen(nextOpen);
-    onOpenChange?.(nextOpen);
-    if (restoreFocus)
-      requestAnimationFrame(() =>
-        buttonRef.current?.querySelector("button")?.focus(),
-      );
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    const syncPosition = () =>
-      setButtonRect(buttonRef.current?.getBoundingClientRect() || null);
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (
-        buttonRef.current?.contains(target) ||
-        panelRef.current?.contains(target)
-      )
-        return;
-      if (
-        document.activeElement instanceof HTMLElement &&
-        panelRef.current?.contains(document.activeElement)
-      )
-        document.activeElement.blur();
-      updateOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      updateOpen(false, true);
-    };
-
-    syncPosition();
-    window.addEventListener("resize", syncPosition);
-    window.addEventListener("scroll", syncPosition, true);
-    window.addEventListener("pointerdown", closeOnOutsidePointer, true);
-    window.addEventListener("keydown", closeOnEscape, true);
-    return () => {
-      window.removeEventListener("resize", syncPosition);
-      window.removeEventListener("scroll", syncPosition, true);
-      window.removeEventListener("pointerdown", closeOnOutsidePointer, true);
-      window.removeEventListener("keydown", closeOnEscape, true);
-    };
-  }, [onOpenChange, open]);
-
-  const popupTarget =
-    buttonRef.current && getPopupContainer
-      ? getPopupContainer(buttonRef.current)
+  const model =
+    (config.model || config.imageModel).split("::").at(-1)?.trim() || "-";
+  const target =
+    anchorRef.current && getPopupContainer
+      ? getPopupContainer(anchorRef.current)
       : typeof document === "undefined"
         ? null
         : document.body;
-  const panel =
-    open && buttonRect && popupTarget ? (
-      <ImageSettingsPortal
-        id={panelId}
-        buttonRect={buttonRect}
-        panelRef={panelRef}
-        placement={placement}
-        autoAdjustOverflow={autoAdjustOverflow}
-        theme={theme}
-        title={t("settingsPanels.image.title")}
-        modelCaption={`${t("model")}: ${model}`}
-        closeLabel={t("common.cancel")}
-        config={config}
-        onClose={() => updateOpen(false, true)}
-        onConfigChange={onConfigChange}
-        target={popupTarget}
-      />
-    ) : null;
+  const popup =
+    open && anchorRect && target
+      ? createPortal(
+          <div
+            ref={panelRef}
+            id={panelId}
+            role="dialog"
+            aria-labelledby={`${panelId}-title`}
+            className="canvas-image-settings-popover"
+            style={{
+              ...settingsPopoverPosition(
+                anchorRect,
+                placement,
+                { width: window.innerWidth, height: window.innerHeight },
+                autoAdjustOverflow,
+              ),
+              boxSizing: "border-box",
+              background: theme.toolbar.panel,
+              border: `1px solid ${theme.toolbar.border}`,
+              borderRadius: 8,
+              boxShadow: "0 16px 44px rgba(0, 0, 0, 0.24)",
+              padding: 14,
+              color: theme.node.text,
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header
+              className="mb-3 flex items-start justify-between gap-3 border-b pb-2"
+              style={{ borderColor: theme.toolbar.border }}
+            >
+              <div className="min-w-0">
+                <h2 id={`${panelId}-title`} className="text-sm font-semibold">
+                  {t("settingsPanels.image.title")}
+                </h2>
+                <p
+                  className="mt-1 truncate text-xs"
+                  style={{ color: theme.node.muted }}
+                  title={`${t("model")}: ${model}`}
+                >
+                  {t("model")}: {model}
+                </p>
+              </div>
+              <Button
+                type="text"
+                size="small"
+                aria-label={t("common.cancel")}
+                title={t("common.cancel")}
+                icon={<X className="size-4" />}
+                onClick={() => setOpenState(false, true)}
+              />
+            </header>
+            <ImageSettingsPanel
+              config={config}
+              onConfigChange={onConfigChange}
+              theme={theme}
+              showTitle={false}
+              className="space-y-4"
+            />
+          </div>,
+          target,
+        )
+      : null;
 
   return (
     <>
-      <span ref={buttonRef} className="inline-flex min-w-0">
+      <span ref={anchorRef} className="inline-flex min-w-0">
         <Button
           size="small"
           type="text"
@@ -205,113 +205,16 @@ export function CanvasImageSettingsPopover({
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
-          onClick={() => updateOpen(!open)}
+          onClick={() => setOpenState(!open)}
         >
           <span className="truncate">
-            {imageQualityLabel(quality)} · {imageSizeLabel(activeSize)} ·{" "}
+            {imageQualityLabel(quality)} ·{" "}
+            {imageSizeLabel(config.size || "auto")} ·{" "}
             {t("canvas.controls.images", { count })}
           </span>
         </Button>
       </span>
-      {panel}
+      {popup}
     </>
   );
-}
-
-function ImageSettingsPortal({
-  id,
-  buttonRect,
-  panelRef,
-  placement,
-  autoAdjustOverflow,
-  theme,
-  title,
-  modelCaption,
-  closeLabel,
-  config,
-  onClose,
-  onConfigChange,
-  target,
-}: {
-  id: string;
-  buttonRect: DOMRect;
-  panelRef: RefObject<HTMLDivElement | null>;
-  placement: SettingsPopoverPlacement;
-  autoAdjustOverflow: boolean;
-  theme: (typeof canvasThemes)[keyof typeof canvasThemes];
-  title: string;
-  modelCaption: string;
-  closeLabel: string;
-  config: AiConfig;
-  onClose: () => void;
-  onConfigChange: (key: keyof AiConfig, value: string) => void;
-  target: HTMLElement;
-}) {
-  const style = {
-    ...settingsPopoverPosition(
-      buttonRect,
-      placement,
-      { width: window.innerWidth, height: window.innerHeight },
-      autoAdjustOverflow,
-    ),
-    boxSizing: "border-box",
-    background: theme.toolbar.panel,
-    border: `1px solid ${theme.toolbar.border}`,
-    borderRadius: 8,
-    boxShadow: "0 16px 44px rgba(0, 0, 0, 0.24)",
-    padding: 14,
-    color: theme.node.text,
-  } satisfies CSSProperties;
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      id={id}
-      role="dialog"
-      aria-labelledby={`${id}-title`}
-      className="canvas-image-settings-popover"
-      style={style}
-      onPointerDown={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <div
-        className="mb-3 flex items-start justify-between gap-3 border-b pb-2"
-        style={{ borderColor: theme.toolbar.border }}
-      >
-        <div className="min-w-0">
-          <h2 id={`${id}-title`} className="text-sm font-semibold">
-            {title}
-          </h2>
-          <div
-            className="mt-1 truncate text-xs"
-            style={{ color: theme.node.muted }}
-            title={modelCaption}
-          >
-            {modelCaption}
-          </div>
-        </div>
-        <Button
-          type="text"
-          size="small"
-          aria-label={closeLabel}
-          title={closeLabel}
-          icon={<X className="size-4" />}
-          onClick={onClose}
-        />
-      </div>
-      <ImageSettingsPanel
-        config={config}
-        onConfigChange={(key, value) => onConfigChange(key, value)}
-        theme={theme}
-        showTitle={false}
-        className="space-y-4"
-      />
-    </div>,
-    target,
-  );
-}
-
-function modelLabel(value: string) {
-  return value.split("::").at(-1)?.trim() || "-";
 }

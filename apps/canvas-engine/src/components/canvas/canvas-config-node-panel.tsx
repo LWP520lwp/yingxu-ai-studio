@@ -1,17 +1,15 @@
 import type { CSSProperties } from "react";
 import {
   Image as ImageIcon,
-  LoaderCircle,
   MessageSquare,
   Music2,
-  Play,
   Settings2,
-  Square,
   Video,
   type LucideIcon,
 } from "lucide-react";
 import { Button, Segmented } from "antd";
 import { useTranslation } from "react-i18next";
+import { GenerationControl } from "./generation-control";
 
 import { ModelPicker } from "@/components/model-picker";
 import {
@@ -107,6 +105,7 @@ export function CanvasConfigNodePanel({
   return (
     <div
       className="flex h-full w-full cursor-move flex-col px-3 pb-3 pt-7 text-sm"
+      aria-busy={isRunning}
       style={{
         color: theme.node.text,
         overflowY: mode === "video" ? "auto" : undefined,
@@ -115,12 +114,14 @@ export function CanvasConfigNodePanel({
     >
       <ModeSelector
         mode={mode}
+        disabled={isRunning}
         onChange={(generationMode) => updateNode({ generationMode })}
       />
 
       <InputSummaryBar
         counts={inputSummary}
         style={chipStyle}
+        disabled={isRunning}
         onCompose={onComposerToggle}
       />
 
@@ -132,6 +133,7 @@ export function CanvasConfigNodePanel({
           className="canvas-compact-control h-10"
           config={config}
           value={config.model}
+          disabled={isRunning}
           onChange={(model) => updateNode({ model })}
           capability={mode}
           onMissingConfig={() => openConfigDialog(true)}
@@ -175,9 +177,11 @@ export function canGenerateFromInputs(
 
 function ModeSelector({
   mode,
+  disabled,
   onChange,
 }: {
   mode: CanvasGenerationMode;
+  disabled: boolean;
   onChange: (mode: CanvasGenerationMode) => void;
 }) {
   const { t } = useTranslation();
@@ -195,6 +199,7 @@ function ModeSelector({
           className="canvas-config-mode !rounded-md !p-0.5"
           aria-label={t("canvas.configNode.title")}
           value={mode}
+          disabled={disabled}
           onChange={(value) => onChange(value as CanvasGenerationMode)}
           options={MODE_OPTIONS.map(({ value, titleKey, icon: Icon }) => ({
             value,
@@ -214,10 +219,12 @@ function ModeSelector({
 function InputSummaryBar({
   counts,
   style,
+  disabled,
   onCompose,
 }: {
   counts: InputSummary;
   style: CSSProperties;
+  disabled: boolean;
   onCompose: () => void;
 }) {
   const { t } = useTranslation();
@@ -247,7 +254,8 @@ function InputSummaryBar({
       ))}
       <button
         type="button"
-        className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 text-[11px]"
+        disabled={disabled}
+        className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 text-[11px] disabled:cursor-not-allowed disabled:opacity-45"
         style={style}
         onMouseDown={(event) => event.stopPropagation()}
         onClick={onCompose}
@@ -361,30 +369,5 @@ function GenerationAction({
   onStop: () => void;
   onGenerate: () => void;
 }) {
-  const { t } = useTranslation();
-  return (
-    <Button
-      type="primary"
-      className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
-      danger={isRunning}
-      disabled={!isRunning && !canGenerate}
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={isRunning ? onStop : onGenerate}
-    >
-      <span className="inline-flex items-center gap-1.5">
-        {isRunning ? (
-          <>
-            <LoaderCircle className="size-4 animate-spin" />
-            <Square className="size-3.5 fill-current" />
-            <span>{t("canvas.configNode.stop")}</span>
-          </>
-        ) : (
-          <>
-            <Play className="size-4" />
-            <span>{t("canvas.configNode.generate")}</span>
-          </>
-        )}
-      </span>
-    </Button>
-  );
+  return <GenerationControl running={isRunning} ready={canGenerate} variant="node" run={onGenerate} stop={onStop} />;
 }

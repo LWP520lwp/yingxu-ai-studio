@@ -11,37 +11,29 @@ export function buildNodeContext(
   scale: number,
   isSelected = false,
 ): CanvasNodeContext {
-  const nodeId = node.id;
-  const nodeType = node.type;
-  const isStillBound = () => host.getNode(nodeId)?.type === nodeType;
-  const storage = createPluginStorage(getNodePluginId(nodeType));
+  const identity = { id: node.id, type: node.type };
+  const stillOwnsSlot = () => host.getNode(identity.id)?.type === identity.type;
+  const withCurrentNode = <Args extends unknown[]>(action: (id: string, ...args: Args) => void) =>
+    (...args: Args) => { if (stillOwnsSlot()) action(identity.id, ...args); };
 
   return {
     node,
     theme,
     scale,
     isSelected,
-    updateMetadata: (patch) => {
-      if (isStillBound()) host.updateMetadata(nodeId, patch);
-    },
-    updateNode: (patch) => {
-      if (isStillBound()) host.updateNode(nodeId, patch);
-    },
+    updateMetadata: withCurrentNode((id, patch) => host.updateMetadata(id, patch)),
+    updateNode: withCurrentNode((id, patch) => host.updateNode(id, patch)),
     getNode: (id) => host.getNode(id),
     getNodes: () => host.getNodes(),
     getConnections: () => host.getConnections(),
-    getUpstream: () => isStillBound() ? host.getUpstream(nodeId) : [],
-    getDownstream: () => isStillBound() ? host.getDownstream(nodeId) : [],
-    applyOps: (ops) => host.applyOps(ops),
-    emit: (event, payload) => emitCanvasEvent(event, payload),
-    on: (event, handler) => onCanvasEvent(event, handler),
+    getUpstream: () => stillOwnsSlot() ? host.getUpstream(identity.id) : [],
+    getDownstream: () => stillOwnsSlot() ? host.getDownstream(identity.id) : [],
+    applyOps: (operations) => host.applyOps(operations),
+    emit: emitCanvasEvent,
+    on: onCanvasEvent,
     ai: host.ai,
-    openPanel: () => {
-      if (isStillBound()) host.openPanel(nodeId);
-    },
-    closePanel: () => {
-      if (isStillBound()) host.closePanel(nodeId);
-    },
-    storage,
+    openPanel: withCurrentNode((id) => host.openPanel(id)),
+    closePanel: withCurrentNode((id) => host.closePanel(id)),
+    storage: createPluginStorage(getNodePluginId(node.type)),
   };
 }

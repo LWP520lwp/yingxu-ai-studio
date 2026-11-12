@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type CSSProperties,
-  type RefObject,
-} from "react";
+import { useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { Settings2, X } from "lucide-react";
 import { Button } from "antd";
@@ -22,11 +15,12 @@ import {
   settingsPopoverPosition,
   type SettingsPopoverPlacement,
 } from "@/components/canvas/canvas-image-settings-popover";
+import { useCanvasPopover } from "@/hooks/use-canvas-popover";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { AiConfig } from "@/stores/use-config-store";
 
-type CanvasVideoSettingsPopoverProps = {
+type VideoSettingsProps = {
   config: AiConfig;
   onConfigChange: (key: keyof AiConfig, value: string) => void;
   buttonClassName?: string;
@@ -38,83 +32,92 @@ export function CanvasVideoSettingsPopover({
   onConfigChange,
   buttonClassName,
   placement = "topLeft",
-}: CanvasVideoSettingsPopoverProps) {
+}: VideoSettingsProps) {
   const { t } = useTranslation();
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
-  const buttonRef = useRef<HTMLSpanElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [buttonRect, setButtonRect] = useState<DOMRect | null>(null);
+  const { anchorRef, panelRef, anchorRect } = useCanvasPopover<
+    HTMLSpanElement,
+    HTMLDivElement
+  >(open, (reason) => setPopoverOpen(false, reason === "escape"));
   const panelId = `video-settings-${useId().replace(/:/g, "")}`;
-  const model = modelLabel(config.model || config.videoModel);
 
-  const updateOpen = (nextOpen: boolean, restoreFocus = false) => {
-    setOpen(nextOpen);
+  function setPopoverOpen(next: boolean, restoreFocus = false) {
+    setOpen(next);
     if (restoreFocus)
       requestAnimationFrame(() =>
-        buttonRef.current?.querySelector("button")?.focus(),
+        anchorRef.current?.querySelector("button")?.focus(),
       );
-  };
+  }
 
-  useEffect(() => {
-    if (!open) return;
-    const syncPosition = () =>
-      setButtonRect(buttonRef.current?.getBoundingClientRect() || null);
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (
-        buttonRef.current?.contains(target) ||
-        panelRef.current?.contains(target)
-      )
-        return;
-      if (
-        document.activeElement instanceof HTMLElement &&
-        panelRef.current?.contains(document.activeElement)
-      )
-        document.activeElement.blur();
-      updateOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      updateOpen(false, true);
-    };
-
-    syncPosition();
-    window.addEventListener("resize", syncPosition);
-    window.addEventListener("scroll", syncPosition, true);
-    window.addEventListener("pointerdown", closeOnOutsidePointer, true);
-    window.addEventListener("keydown", closeOnEscape, true);
-    return () => {
-      window.removeEventListener("resize", syncPosition);
-      window.removeEventListener("scroll", syncPosition, true);
-      window.removeEventListener("pointerdown", closeOnOutsidePointer, true);
-      window.removeEventListener("keydown", closeOnEscape, true);
-    };
-  }, [open]);
-
-  const panel =
-    open && buttonRect ? (
-      <VideoSettingsPortal
-        id={panelId}
-        buttonRect={buttonRect}
-        panelRef={panelRef}
-        placement={placement}
-        theme={theme}
-        title={t("settingsPanels.video.title")}
-        modelCaption={`${t("model")}: ${model}`}
-        closeLabel={t("common.cancel")}
-        config={config}
-        onClose={() => updateOpen(false, true)}
-        onConfigChange={onConfigChange}
-      />
-    ) : null;
+  const model =
+    (config.model || config.videoModel).split("::").at(-1)?.trim() || "-";
+  const popup =
+    open && anchorRect && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={panelRef}
+            id={panelId}
+            role="dialog"
+            aria-labelledby={`${panelId}-title`}
+            className="canvas-video-settings-popover"
+            style={{
+              ...settingsPopoverPosition(anchorRect, placement, {
+                width: window.innerWidth,
+                height: window.innerHeight,
+              }),
+              boxSizing: "border-box",
+              background: theme.toolbar.panel,
+              border: `1px solid ${theme.toolbar.border}`,
+              borderRadius: 8,
+              boxShadow: "0 16px 44px rgba(0, 0, 0, 0.24)",
+              padding: 14,
+              color: theme.node.text,
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header
+              className="mb-3 flex items-start justify-between gap-3 border-b pb-2"
+              style={{ borderColor: theme.toolbar.border }}
+            >
+              <div className="min-w-0">
+                <h2 id={`${panelId}-title`} className="text-sm font-semibold">
+                  {t("settingsPanels.video.title")}
+                </h2>
+                <p
+                  className="mt-1 truncate text-xs"
+                  style={{ color: theme.node.muted }}
+                  title={`${t("model")}: ${model}`}
+                >
+                  {t("model")}: {model}
+                </p>
+              </div>
+              <Button
+                type="text"
+                size="small"
+                aria-label={t("common.cancel")}
+                title={t("common.cancel")}
+                icon={<X className="size-4" />}
+                onClick={() => setPopoverOpen(false, true)}
+              />
+            </header>
+            <VideoSettingsPanel
+              config={config}
+              onConfigChange={onConfigChange}
+              theme={theme}
+              showTitle={false}
+              className="space-y-4"
+            />
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <>
-      <span ref={buttonRef} className="inline-flex min-w-0">
+      <span ref={anchorRef} className="inline-flex min-w-0">
         <Button
           size="small"
           type="text"
@@ -127,7 +130,7 @@ export function CanvasVideoSettingsPopover({
           aria-haspopup="dialog"
           aria-expanded={open}
           aria-controls={open ? panelId : undefined}
-          onClick={() => updateOpen(!open)}
+          onClick={() => setPopoverOpen(!open)}
         >
           <span className="truncate">
             {videoResolutionLabel(config.vquality, config.size)} ·{" "}
@@ -137,99 +140,7 @@ export function CanvasVideoSettingsPopover({
           </span>
         </Button>
       </span>
-      {panel}
+      {popup}
     </>
   );
-}
-
-function VideoSettingsPortal({
-  id,
-  buttonRect,
-  panelRef,
-  placement,
-  theme,
-  title,
-  modelCaption,
-  closeLabel,
-  config,
-  onClose,
-  onConfigChange,
-}: {
-  id: string;
-  buttonRect: DOMRect;
-  panelRef: RefObject<HTMLDivElement | null>;
-  placement: SettingsPopoverPlacement;
-  theme: (typeof canvasThemes)[keyof typeof canvasThemes];
-  title: string;
-  modelCaption: string;
-  closeLabel: string;
-  config: AiConfig;
-  onClose: () => void;
-  onConfigChange: (key: keyof AiConfig, value: string) => void;
-}) {
-  const style = {
-    ...settingsPopoverPosition(buttonRect, placement, {
-      width: window.innerWidth,
-      height: window.innerHeight,
-    }),
-    boxSizing: "border-box",
-    background: theme.toolbar.panel,
-    border: `1px solid ${theme.toolbar.border}`,
-    borderRadius: 8,
-    boxShadow: "0 16px 44px rgba(0, 0, 0, 0.24)",
-    padding: 14,
-    color: theme.node.text,
-  } satisfies CSSProperties;
-
-  return createPortal(
-    <div
-      ref={panelRef}
-      id={id}
-      role="dialog"
-      aria-labelledby={`${id}-title`}
-      className="canvas-video-settings-popover"
-      style={style}
-      onPointerDown={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
-    >
-      <div
-        className="mb-3 flex items-start justify-between gap-3 border-b pb-2"
-        style={{ borderColor: theme.toolbar.border }}
-      >
-        <div className="min-w-0">
-          <h2 id={`${id}-title`} className="text-sm font-semibold">
-            {title}
-          </h2>
-          <div
-            className="mt-1 truncate text-xs"
-            style={{ color: theme.node.muted }}
-            title={modelCaption}
-          >
-            {modelCaption}
-          </div>
-        </div>
-        <Button
-          type="text"
-          size="small"
-          aria-label={closeLabel}
-          title={closeLabel}
-          icon={<X className="size-4" />}
-          onClick={onClose}
-        />
-      </div>
-      <VideoSettingsPanel
-        config={config}
-        onConfigChange={(key, value) => onConfigChange(key, value)}
-        theme={theme}
-        showTitle={false}
-        className="space-y-4"
-      />
-    </div>,
-    document.body,
-  );
-}
-
-function modelLabel(value: string) {
-  return value.split("::").at(-1)?.trim() || "-";
 }

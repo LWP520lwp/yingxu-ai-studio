@@ -12,9 +12,7 @@
     <script>
       try {
         var s = JSON.parse(
-          localStorage.getItem("yingxu-atlas:theme_store:v2") ||
-            localStorage.getItem("infinite-canvas:theme_store") ||
-            "{}",
+          localStorage.getItem("yingxu-atlas:theme_store:v2") || "{}",
         );
         var t = s.state && s.state.theme === "light" ? "light" : "dark";
         document.documentElement.classList.toggle("dark", t === "dark");

@@ -1,42 +1,28 @@
 import { createScopedStorage } from "@/lib/localforage-storage";
+import { mapConcurrent } from "@/lib/async-pool";
 import { usePromptSourceStore } from "@/stores/use-prompt-source-store";
+import type {
+  Prompt,
+  PromptListResponse,
+  PromptSourceRefreshResult,
+  PromptSourceRefreshSummary,
+  PromptSourceStatus,
+  RawPrompt,
+} from "@/types/prompts";
 import i18n from "@/i18n";
 import type { PromptSource } from "./prompt-source-presets";
-import { runPromptSource, type RawPrompt } from "./prompt-source-runtime";
+import { runPromptSource } from "./prompt-source-runtime";
 
-export type Prompt = RawPrompt & {
-  sourceId: string;
-  category: string;
-  githubUrl: string;
-};
+export type {
+  Prompt,
+  PromptListResponse,
+  PromptSourceRefreshResult,
+  PromptSourceRefreshSummary,
+  PromptSourceStatus,
+} from "@/types/prompts";
+export type { RawPrompt } from "@/types/prompts";
 
 export const ALL_PROMPTS_OPTION = "all";
-
-export type PromptListResponse = {
-  items: Prompt[];
-  tags: string[];
-  categories: string[];
-  total: number;
-};
-
-export type PromptSourceStatus = {
-  sourceId: string;
-  count: number;
-  lastSuccessAt: string;
-  lastError: string;
-};
-
-export type PromptSourceRefreshResult = PromptSourceStatus & {
-  sourceName: string;
-  success: boolean;
-};
-
-export type PromptSourceRefreshSummary = {
-  results: PromptSourceRefreshResult[];
-  total: number;
-  successCount: number;
-  failureCount: number;
-};
 
 type SourceCache = PromptSourceStatus & {
   items: Prompt[];
@@ -45,6 +31,7 @@ type SourceCache = PromptSourceStatus & {
 };
 
 const CACHE_MAX_AGE = 60 * 60 * 1000;
+const SOURCE_FETCH_CONCURRENCY = 4;
 const promptCache = createScopedStorage("prompt_cache");
 const requests = new Map<string, Promise<PromptSourceRefreshResult>>();
 const activeSignature = new Map<string, string>();
@@ -76,23 +63,10 @@ function requestKey(source: PromptSource) {
   return `${source.id}\0${signatureOf(source)}`;
 }
 
-function normalizeCachedItems(
+function bindSource(
   source: PromptSource,
-  values: Prompt[],
+  values: readonly RawPrompt[],
 ): Prompt[] {
-  return values.map((item) => ({
-    ...item,
-    description: item.description || "",
-    referenceImageUrls: Array.isArray(item.referenceImageUrls)
-      ? item.referenceImageUrls
-      : [],
-    sourceId: source.id,
-    category: source.name,
-    githubUrl: item.sourceUrl || source.homepage,
-  }));
-}
-
-function attachSource(source: PromptSource, values: RawPrompt[]): Prompt[] {
   return values.map((item) => ({
     ...item,
     description: item.description || "",
@@ -131,7 +105,7 @@ async function refreshOne(
 ): Promise<PromptSourceRefreshResult> {
   const oldCache = await readCache(source.id);
   try {
-    const items = attachSource(source, await runPromptSource(source));
+    const items = bindSource(source, await runPromptSource(source));
     const lastSuccessAt = new Date().toISOString();
     const next: SourceCache = {
       sourceId: source.id,
@@ -200,14 +174,14 @@ async function loadSource(source: PromptSource): Promise<Prompt[]> {
       cached.signature !== signature ||
       Date.now() - cached.fetchedAt >= CACHE_MAX_AGE;
     if (isStale) void getOrRefresh(source).catch(() => undefined);
-    return normalizeCachedItems(source, cached.items);
+    return bindSource(source, cached.items);
   }
 
   const refreshed = await getOrRefresh(source);
   if (!refreshed.success) throw new Error(refreshed.lastError);
   const current = await readCache(source.id);
   if (!current || current.signature !== signature) return [];
-  return normalizeCachedItems(source, current.items);
+  return bindSource(source, current.items);
 }
 
 export async function fetchPrompts({
@@ -224,14 +198,16 @@ export async function fetchPrompts({
   pageSize?: number;
 } = {}): Promise<PromptListResponse> {
   const sources = uniqueEnabledSources();
-  const settled = await Promise.all(
-    sources.map(async (source) => {
+  const settled = await mapConcurrent(
+    sources,
+    SOURCE_FETCH_CONCURRENCY,
+    async (source) => {
       try {
         return await loadSource(source);
       } catch {
         return [];
       }
-    }),
+    },
   );
   const all = settled.flat();
   const normalizedKeyword = keyword.trim().toLocaleLowerCase();
@@ -283,7 +259,13 @@ export async function refreshSource(
 }
 
 export async function refreshAllSources(): Promise<PromptSourceRefreshSummary> {
-  return summarize(await Promise.all(uniqueEnabledSources().map(getOrRefresh)));
+  return summarize(
+    await mapConcurrent(
+      uniqueEnabledSources(),
+      SOURCE_FETCH_CONCURRENCY,
+      getOrRefresh,
+    ),
+  );
 }
 
 export async function refreshDueSources(
@@ -304,7 +286,13 @@ export async function refreshDueSources(
         : null;
     }),
   );
-  return summarize(await Promise.all(due.filter(isSource).map(getOrRefresh)));
+  return summarize(
+    await mapConcurrent(
+      due.filter(isSource),
+      SOURCE_FETCH_CONCURRENCY,
+      getOrRefresh,
+    ),
+  );
 }
 
 export async function fetchPromptSourceStatuses(): Promise<

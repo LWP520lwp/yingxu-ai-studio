@@ -23,6 +23,12 @@ describe("embedded canvas navigation", () => {
         expect(platformActionForPath("https://example.invalid/", "project-one")).toBe("projects");
     });
 
+    it("keeps nested and foreign project routes inside the host project picker", () => {
+        expect(platformActionForPath("/canvas/project-one/settings", "project-one")).toBe("projects");
+        expect(platformActionForPath("/canvas/project%2Fone", "project-one")).toBe("projects");
+        expect(platformActionForPath("/pool/other", "project-one")).toBe("projects");
+    });
+
     it("requests the host home action and propagates a failure to the caller", async () => {
         request.mockResolvedValueOnce({ ok: true });
         await openPlatformAction("home");

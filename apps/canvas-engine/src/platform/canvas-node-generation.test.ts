@@ -9,9 +9,7 @@ const harness = vi.hoisted(() => ({
   definitions: new Map<
     string,
     {
-      resource?: (
-        node: CanvasNodeData,
-      ) => {
+      resource?: (node: CanvasNodeData) => {
         kind: "image" | "video" | "audio" | "text";
         url?: string;
         text?: string;
@@ -106,19 +104,29 @@ describe("canvas node generation context", () => {
     expect(staleNodeContext.referenceImages.map(({ id }) => id)).toEqual([
       "frame",
     ]);
-    expect(
-      staleConnectionContext.referenceImages.map(({ id }) => id),
-    ).toEqual(["frame"]);
+    expect(staleConnectionContext.referenceImages.map(({ id }) => id)).toEqual([
+      "frame",
+    ]);
   });
 
   it("propagates reference-read errors and forwards cancellation to image hydration", async () => {
     const nodes = [node("target", CanvasNodeType.Video), image("frame")];
-    const context = buildNodeGenerationContext("target", nodes, [edge("frame", "target")], "move");
+    const context = buildNodeGenerationContext(
+      "target",
+      nodes,
+      [edge("frame", "target")],
+      "move",
+    );
     const controller = new AbortController();
     const failure = new Error("Reference asset was deleted");
     vi.mocked(imageToDataUrl).mockRejectedValueOnce(failure);
-    await expect(hydrateNodeGenerationContext(context, { signal: controller.signal })).rejects.toBe(failure);
-    expect(imageToDataUrl).toHaveBeenLastCalledWith(context.referenceImages[0], { signal: controller.signal });
+    await expect(
+      hydrateNodeGenerationContext(context, { signal: controller.signal }),
+    ).rejects.toBe(failure);
+    expect(imageToDataUrl).toHaveBeenLastCalledWith(
+      context.referenceImages[0],
+      { signal: controller.signal },
+    );
   });
 
   it("keeps upstream text order and deduplicates direct, nested-group, and plugin references", () => {
@@ -235,6 +243,41 @@ describe("canvas node generation context", () => {
     expect(context.referenceImages).toEqual([]);
     expect(context.imageCount).toBe(0);
     expect(context.prompt).toBe("Animate ");
+  });
+
+  it("preserves empty, unclosed, and ordinary prompt text without treating it as a resource", () => {
+    const prompt = "Plain text @[node:] and @[node:unfinished";
+    const target = node("target", CanvasNodeType.Config, {
+      composerContent: "select references explicitly",
+    });
+    const context = buildNodeGenerationContext(
+      "target",
+      [target, image("connected")],
+      [edge("connected", "target")],
+      prompt,
+    );
+
+    expect(context.prompt).toBe(prompt);
+    expect(context.referenceImages).toEqual([]);
+    expect(context.imageCount).toBe(0);
+  });
+
+  it("uses connected frame images when malformed tokens do not select a resource", () => {
+    const target = node("target", CanvasNodeType.Config, {
+      generationMode: "video",
+      videoMode: "frames",
+      composerContent: "frame motion",
+    });
+    const prompt = "Transition from @[node:] to @[node:unfinished";
+    const context = buildNodeGenerationContext(
+      "target",
+      [target, image("connected")],
+      [edge("connected", "target")],
+      prompt,
+    );
+
+    expect(context.prompt).toBe(prompt);
+    expect(context.referenceImages.map(({ id }) => id)).toEqual(["connected"]);
   });
 
   it("preserves reference-frame order, supports one or two frames, and honors explicit token order", () => {

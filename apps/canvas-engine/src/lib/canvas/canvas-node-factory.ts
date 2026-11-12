@@ -1,3 +1,5 @@
+import { nanoid } from "nanoid";
+
 import { getNodeSpec, NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import type { AiConfig } from "@/stores/use-config-store";
@@ -13,96 +15,90 @@ import {
   type Position,
 } from "@/types/canvas";
 
-type Dimensions = { width?: number; height?: number };
-
-function finite(value: number | undefined, fallback: number) {
+function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function nonNegative(value: number | undefined) {
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.max(0, value)
-    : 0;
+function validExtent(value: unknown, fallback: number): number {
+  return Math.max(1, numberOr(value, fallback));
 }
 
-function mediaDimensions(media: Dimensions) {
-  const width = finite(media.width, 0);
-  const height = finite(media.height, 0);
+function positiveMetadata(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function nonNegativeMetadata(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function centeredAt(center: Position, width: number, height: number): Position {
   return {
-    ...(width > 0 ? { naturalWidth: width } : {}),
-    ...(height > 0 ? { naturalHeight: height } : {}),
+    x: numberOr(center?.x, 0) - width / 2,
+    y: numberOr(center?.y, 0) - height / 2,
   };
 }
 
-function mediaMetadataBase(
+function describeMedia(
   media: UploadedFile | UploadedImage,
-  fallbackMimeType: string,
+  defaultMime: string,
+  includeDimensions = true,
 ): CanvasNodeMetadata {
-  const durationMs = "durationMs" in media ? media.durationMs : undefined;
+  const mime = typeof media.mimeType === "string" ? media.mimeType.trim() : "";
+  const storageKey =
+    typeof media.storageKey === "string" ? media.storageKey.trim() : "";
+  const duration = nonNegativeMetadata(
+    "durationMs" in media ? media.durationMs : undefined,
+  );
+  const width = includeDimensions ? positiveMetadata(media.width) : undefined;
+  const height = includeDimensions ? positiveMetadata(media.height) : undefined;
+
   return {
     content: typeof media.url === "string" ? media.url : "",
-    ...(typeof media.storageKey === "string" && media.storageKey
-      ? { storageKey: media.storageKey }
-      : {}),
     status: "success",
-    ...mediaDimensions(media),
-    bytes: nonNegative(media.bytes),
-    mimeType:
-      typeof media.mimeType === "string" && media.mimeType.trim()
-        ? media.mimeType
-        : fallbackMimeType,
-    ...(typeof durationMs === "number" &&
-    Number.isFinite(durationMs) &&
-    durationMs >= 0
-      ? { durationMs }
-      : {}),
+    bytes: Math.max(0, numberOr(media.bytes, 0)),
+    mimeType: mime || defaultMime,
+    ...(storageKey ? { storageKey } : {}),
+    ...(width ? { naturalWidth: width } : {}),
+    ...(height ? { naturalHeight: height } : {}),
+    ...(duration !== undefined ? { durationMs: duration } : {}),
   };
 }
 
-function centeredPosition(position: Position, width: number, height: number) {
-  const centerX = finite(position?.x, 0);
-  const centerY = finite(position?.y, 0);
-  return { x: centerX - width / 2, y: centerY - height / 2 };
+function chooseReferenceLocator(image: ReferenceImage): string | undefined {
+  const storageKey =
+    typeof image?.storageKey === "string" ? image.storageKey.trim() : "";
+  if (storageKey) return storageKey;
+
+  const url = typeof image?.url === "string" ? image.url.trim() : "";
+  if (url) return url;
+
+  const legacy = typeof image?.dataUrl === "string" ? image.dataUrl.trim() : "";
+  return legacy && !/^data:/i.test(legacy) ? legacy : undefined;
 }
 
-function validDimension(value: number | undefined, fallback: number) {
-  return Math.max(1, finite(value, fallback));
-}
-
-function referenceUrlOrEmpty(image: ReferenceImage) {
-  if (typeof image?.storageKey === "string" && image.storageKey.trim())
-    return image.storageKey;
-  if (typeof image?.url === "string" && image.url.trim()) return image.url;
-  if (
-    typeof image?.dataUrl === "string" &&
-    image.dataUrl &&
-    !/^data:/i.test(image.dataUrl)
-  ) {
-    return image.dataUrl;
-  }
-  return undefined;
-}
-
-/** Create a node whose supplied world position identifies its center. */
+/** Positions supplied by callers describe the visual center of the new node. */
 export function createCanvasNode(
   type: CanvasNodeTypeId,
-  position: Position,
+  center: Position,
   metadata?: CanvasNodeMetadata,
 ): CanvasNodeData {
   const spec = getNodeSpec(type);
-  const width = validDimension(spec.width, 340);
-  const baseHeight = validDimension(spec.height, 240);
+  const width = validExtent(spec.width, 340);
+  const baseHeight = validExtent(spec.height, 240);
   const height =
     type === CanvasNodeType.Config && metadata?.generationMode === "video"
       ? Math.max(360, baseHeight)
       : baseHeight;
-  const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   return {
-    id,
+    id: `${type}-${nanoid(10)}`,
     type,
     title: spec.title,
-    position: centeredPosition(position, width, height),
+    position: centeredAt(center, width, height),
     width,
     height,
     metadata: { ...spec.metadata, ...metadata },
@@ -110,22 +106,19 @@ export function createCanvasNode(
 }
 
 export function imageMetadata(image: UploadedImage): CanvasNodeMetadata {
-  return mediaMetadataBase(image, "image/png");
+  return describeMedia(image, "image/png");
 }
 
 export function videoMetadata(video: UploadedFile): CanvasNodeMetadata {
-  return mediaMetadataBase(video, "video/mp4");
+  return describeMedia(video, "video/mp4");
 }
 
 export function audioMetadata(audio: UploadedFile): CanvasNodeMetadata {
-  const metadata = mediaMetadataBase(audio, "audio/mpeg");
-  delete metadata.naturalWidth;
-  delete metadata.naturalHeight;
-  return metadata;
+  return describeMedia(audio, "audio/mpeg", false);
 }
 
 export function referenceUrl(image: ReferenceImage) {
-  return referenceUrlOrEmpty(image);
+  return chooseReferenceLocator(image);
 }
 
 export function buildImageGenerationMetadata(
@@ -134,17 +127,18 @@ export function buildImageGenerationMetadata(
   count: number,
   references: ReferenceImage[],
 ): CanvasNodeMetadata {
-  const urls = (Array.isArray(references) ? references : [])
-    .map(referenceUrlOrEmpty)
-    .filter((url): url is string => Boolean(url));
+  const locators = (Array.isArray(references) ? references : [])
+    .map(chooseReferenceLocator)
+    .filter((locator): locator is string => Boolean(locator));
+
   return {
     generationType: type,
     model: config.model,
     size: config.size,
     quality: config.quality,
     ...(config.background ? { background: config.background } : {}),
-    count: Math.max(1, Math.floor(finite(count, 1))),
-    references: urls,
+    count: Math.max(1, Math.floor(numberOr(count, 1))),
+    references: locators,
   };
 }
 
@@ -163,44 +157,47 @@ export function buildAudioGenerationMetadata(
 export function applyNodeConfigPatch(
   node: CanvasNodeData,
   patch: Partial<CanvasNodeData["metadata"]>,
-) {
-  const safePatch = patch || {};
-  const next = { ...node, metadata: { ...node.metadata, ...safePatch } };
+): CanvasNodeData {
+  const change = patch ?? {};
+  const next = { ...node, metadata: { ...node.metadata, ...change } };
 
   if (
     node.type === CanvasNodeType.Config &&
-    (safePatch.generationMode === "video" ||
-      safePatch.videoSkillId !== undefined)
+    (change.generationMode === "video" || change.videoSkillId !== undefined)
   ) {
-    return { ...next, height: Math.max(360, validDimension(node.height, 360)) };
+    return { ...next, height: Math.max(360, validExtent(node.height, 360)) };
   }
 
+  const isResizableMedia =
+    node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video;
   if (
-    (node.type !== CanvasNodeType.Image &&
-      node.type !== CanvasNodeType.Video) ||
-    typeof safePatch.size !== "string" ||
+    !isResizableMedia ||
+    typeof change.size !== "string" ||
     Boolean(node.metadata?.content)
   ) {
     return next;
   }
 
-  const spec =
+  const fallback =
     node.type === CanvasNodeType.Image
       ? NODE_DEFAULT_SIZE.image
       : NODE_DEFAULT_SIZE.video;
-  const size = nodeSizeFromRatio(safePatch.size, spec.width, spec.height);
-  if (!size) return next;
+  const dimensions = nodeSizeFromRatio(
+    change.size,
+    fallback.width,
+    fallback.height,
+  );
+  if (!dimensions) return next;
 
-  const currentWidth = validDimension(node.width, spec.width);
-  const currentHeight = validDimension(node.height, spec.height);
-  const centerX = finite(node.position?.x, 0) + currentWidth / 2;
-  const centerY = finite(node.position?.y, 0) + currentHeight / 2;
+  const width = validExtent(node.width, fallback.width);
+  const height = validExtent(node.height, fallback.height);
+  const center = {
+    x: numberOr(node.position?.x, 0) + width / 2,
+    y: numberOr(node.position?.y, 0) + height / 2,
+  };
   return {
     ...next,
-    ...size,
-    position: {
-      x: centerX - size.width / 2,
-      y: centerY - size.height / 2,
-    },
+    ...dimensions,
+    position: centeredAt(center, dimensions.width, dimensions.height),
   };
 }

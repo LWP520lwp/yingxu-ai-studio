@@ -1,6 +1,6 @@
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Segmented, Switch } from "antd";
+import { Switch } from "antd";
 import {
   CircleDot,
   Eraser,
@@ -80,11 +80,9 @@ type CanvasToolbarProps = {
   onRepairConnections: (connections: CanvasConnection[]) => void;
 };
 
-type ToolbarPopover = "extensions" | "appearance";
-const commandIcons: Record<
-  Exclude<CanvasToolbarCommand, "audit">,
-  LucideIcon
-> = {
+type MenuName = "extensions" | "appearance";
+
+const actionIcons: Record<Exclude<CanvasToolbarCommand, "audit">, LucideIcon> = {
   pan: Hand,
   undo: Undo2,
   redo: Redo2,
@@ -105,64 +103,46 @@ const commandIcons: Record<
 
 export function CanvasToolbar(props: CanvasToolbarProps) {
   const { t } = useTranslation();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [popover, setPopover] = useState<ToolbarPopover | null>(null);
-  const [popoverX, setPopoverX] = useState(0);
-  const colorTheme = useThemeStore((state) => state.theme);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [openMenu, setOpenMenu] = useState<MenuName | null>(null);
+  const [menuCenter, setMenuCenter] = useState<number | null>(null);
+  const themeKey = useThemeStore((state) => state.theme);
   const setTheme = useThemeStore((state) => state.setTheme);
-  const theme = canvasThemes[colorTheme];
+  const colors = canvasThemes[themeKey];
   const registryVersion = useNodeRegistryVersion((state) => state.version);
-  const extensions = useMemo(
+
+  const extensionNodes = useMemo(
     () =>
       listNodeDefinitions().filter(
-        (definition) =>
-          definition.showInCreateMenu !== false &&
-          getNodePluginId(definition.type) !== "builtin",
+        (item) =>
+          item.showInCreateMenu !== false &&
+          getNodePluginId(item.type) !== "builtin",
       ),
     [registryVersion],
   );
-  const sections = canvasToolbarSections({
-    canRedo: props.canRedo,
+
+  const groups = canvasToolbarSections({
     canUndo: props.canUndo,
-    extensionCount: extensions.length,
+    canRedo: props.canRedo,
+    extensionCount: extensionNodes.length,
     selectedCount: props.selectedCount,
   });
 
   useEffect(() => {
-    if (!popover) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setPopover(null);
+    if (!openMenu) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!barRef.current?.contains(event.target as Node)) setOpenMenu(null);
     };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPopover(null);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenu(null);
     };
-    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
-    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
-      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
     };
-  }, [popover]);
-
-  const showPopover = (
-    nextPopover: ToolbarPopover,
-    event: ReactMouseEvent<HTMLButtonElement>,
-  ) => {
-    if (popover === nextPopover) {
-      setPopover(null);
-      return;
-    }
-    const root = rootRef.current?.getBoundingClientRect();
-    const button = event.currentTarget.getBoundingClientRect();
-    if (root) {
-      const panelHalfWidth = nextPopover === "extensions" ? 132 : 142;
-      const center = button.left + button.width / 2 - root.left;
-      setPopoverX(
-        Math.min(root.width - panelHalfWidth, Math.max(panelHalfWidth, center)),
-      );
-    }
-    setPopover(nextPopover);
-  };
+  }, [openMenu]);
 
   const labels: Record<CanvasToolbarCommand, string> = {
     pan: t("canvas.toolbar.pan"),
@@ -183,84 +163,83 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
     delete: t("canvas.deleteSelected"),
     clear: t("canvas.toolbar.clear"),
   };
-  const sectionLabels = {
+
+  const openMenuFrom = (name: MenuName, event: MouseEvent<HTMLButtonElement>) => {
+    if (openMenu === name) {
+      setOpenMenu(null);
+      return;
+    }
+    const bar = barRef.current?.getBoundingClientRect();
+    if (bar) {
+      const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+      const width = Math.min(name === "extensions" ? 264 : 280, viewportWidth - 24);
+      const anchor = event.currentTarget.getBoundingClientRect();
+      const half = width / 2;
+      const viewportCenter = Math.max(
+        half + 12,
+        Math.min(viewportWidth - half - 12, anchor.left + anchor.width / 2),
+      );
+      setMenuCenter(viewportCenter - bar.left);
+    }
+    setOpenMenu(name);
+  };
+
+  const invoke = (command: Exclude<CanvasToolbarCommand, "audit" | MenuName>) => {
+    switch (command) {
+      case "pan":
+        props.onCanvasToolChange(toggleCanvasTool(props.canvasTool));
+        break;
+      case "undo":
+        props.onUndo();
+        break;
+      case "redo":
+        props.onRedo();
+        break;
+      case "focus":
+        props.onFocusSelected();
+        break;
+      case "tidy":
+        props.onTidyLayout();
+        break;
+      case "text":
+        props.onAddText();
+        break;
+      case "image":
+        props.onAddImage();
+        break;
+      case "video":
+        props.onAddVideo();
+        break;
+      case "audio":
+        props.onAddAudio();
+        break;
+      case "config":
+        props.onAddConfig();
+        break;
+      case "group":
+        props.onAddGroup();
+        break;
+      case "upload":
+        props.onUpload();
+        break;
+      case "delete":
+        props.onDelete();
+        break;
+      case "clear":
+        props.onClear();
+        break;
+    }
+  };
+
+  const groupNames = {
     workflow: `${labels.undo}, ${labels.redo}, ${labels.focus}`,
     create: `${labels.text}, ${labels.image}, ${labels.video}, ${labels.audio}`,
     project: `${labels.upload}, ${labels.appearance}, ${labels.clear}`,
   };
 
-  const commandButton = (
-    command: CanvasToolbarCommand,
-    disabledByState = false,
-  ) => {
-    if (command === "audit") {
-      return (
-        <div key={command} className="grid size-9 place-items-center">
-          <CanvasWorkflowAuditAction
-            nodes={props.nodes}
-            connections={props.connections}
-            onFocusNode={props.onFocusNode}
-            onRepairConnections={props.onRepairConnections}
-          />
-        </div>
-      );
-    }
-
-    if (command === "extensions" || command === "appearance") {
-      const active = popover === command;
-      const Icon = commandIcons[command];
-      return (
-        <ActionButton
-          key={command}
-          icon={Icon}
-          label={labels[command]}
-          active={active}
-          expanded={active}
-          toggle
-          theme={theme}
-          onClick={(event) => showPopover(command, event)}
-        />
-      );
-    }
-
-    const callbacks: Partial<Record<CanvasToolbarCommand, () => void>> = {
-      pan: () => props.onCanvasToolChange(toggleCanvasTool(props.canvasTool)),
-      undo: props.onUndo,
-      redo: props.onRedo,
-      focus: props.onFocusSelected,
-      tidy: props.onTidyLayout,
-      text: props.onAddText,
-      image: props.onAddImage,
-      video: props.onAddVideo,
-      audio: props.onAddAudio,
-      config: props.onAddConfig,
-      group: props.onAddGroup,
-      upload: props.onUpload,
-      delete: props.onDelete,
-      clear: props.onClear,
-    };
-    return (
-      <ActionButton
-        key={command}
-        icon={commandIcons[command]}
-        label={
-          command === "pan"
-            ? `${labels.pan} · ${t("canvas.toolbar.panHint")}`
-            : labels[command]
-        }
-        active={command === "pan" && props.canvasTool === "pan"}
-        toggle={command === "pan"}
-        disabled={disabledByState}
-        danger={command === "delete" || command === "clear"}
-        theme={theme}
-        onClick={callbacks[command]}
-      />
-    );
-  };
-
   return (
     <div
-      ref={rootRef}
+      ref={barRef}
       className="pointer-events-none absolute bottom-5 z-50 flex justify-center"
       style={{ left: 300, right: 16 }}
       data-canvas-bottom-toolbar
@@ -268,10 +247,10 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
       <div
         className="pointer-events-auto flex h-14 max-w-full items-center gap-1 overflow-x-auto rounded-lg border px-2 shadow-lg backdrop-blur"
         style={{
-          background: theme.toolbar.panel,
-          borderColor: theme.toolbar.border,
+          background: colors.toolbar.panel,
+          borderColor: colors.toolbar.border,
           boxShadow:
-            colorTheme === "dark"
+            themeKey === "dark"
               ? "0 18px 45px rgba(0,0,0,.32)"
               : "0 16px 40px rgba(28,25,23,.12)",
         }}
@@ -279,102 +258,115 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
         aria-label={t("canvas.toolbar.actions")}
         aria-orientation="horizontal"
       >
-        {sections.map((section) => (
+        {groups.map((group) => (
           <div
-            key={section.id}
+            key={group.id}
             className="flex h-9 shrink-0 items-center gap-1 border-r px-1 last:border-r-0"
-            style={{ borderColor: theme.toolbar.border }}
+            style={{ borderColor: colors.toolbar.border }}
             role="group"
-            aria-label={sectionLabels[section.id]}
+            aria-label={groupNames[group.id]}
           >
-            {section.commands.map(({ id, disabled }) =>
-              commandButton(id, disabled),
-            )}
+            {group.commands.map(({ id, disabled }) => {
+              if (id === "audit") {
+                return (
+                  <span key={id} className="grid size-9 place-items-center">
+                    <CanvasWorkflowAuditAction
+                      nodes={props.nodes}
+                      connections={props.connections}
+                      onFocusNode={props.onFocusNode}
+                      onRepairConnections={props.onRepairConnections}
+                    />
+                  </span>
+                );
+              }
+
+              if (id === "extensions" || id === "appearance") {
+                return (
+                  <ToolbarButton
+                    key={id}
+                    icon={actionIcons[id]}
+                    label={labels[id]}
+                    active={openMenu === id}
+                    expanded={openMenu === id}
+                    colors={colors}
+                    onClick={(event) => openMenuFrom(id, event)}
+                  />
+                );
+              }
+
+              const label =
+                id === "pan"
+                  ? `${labels.pan} · ${t("canvas.toolbar.panHint")}`
+                  : labels[id];
+              const active = id === "pan" && props.canvasTool === "pan";
+              return (
+                <ToolbarButton
+                  key={id}
+                  icon={actionIcons[id]}
+                  label={label}
+                  active={active}
+                  pressed={id === "pan" ? active : undefined}
+                  danger={id === "delete" || id === "clear"}
+                  disabled={disabled}
+                  colors={colors}
+                  onClick={() => invoke(id)}
+                />
+              );
+            })}
           </div>
         ))}
       </div>
 
-      {popover === "extensions" && extensions.length > 0 ? (
-        <section
-          className="pointer-events-auto absolute bottom-[calc(100%+10px)] z-30 max-h-[50vh] w-[264px] -translate-x-1/2 overflow-y-auto rounded-lg border p-2 shadow-xl backdrop-blur"
-          style={{
-            left: popoverX || "50%",
-            background: theme.toolbar.panel,
-            borderColor: theme.toolbar.border,
-            color: theme.toolbar.item,
+      {openMenu === "extensions" && extensionNodes.length > 0 ? (
+        <ExtensionMenu
+          items={extensionNodes}
+          center={menuCenter}
+          colors={colors}
+          title={labels.extensions}
+          onSelect={(type) => {
+            props.onAddExtensionNode(type);
+            setOpenMenu(null);
           }}
-          role="dialog"
-          aria-label={t("canvas.toolbar.extensions")}
-        >
-          <h2 className="px-2 pb-2 pt-1 text-xs font-semibold opacity-60">
-            {t("canvas.toolbar.extensions")}
-          </h2>
-          <ul className="grid list-none gap-1 p-0">
-            {extensions.map((definition) => (
-              <li key={definition.type}>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:bg-white/10"
-                  style={{ color: theme.toolbar.item }}
-                  onClick={() => {
-                    props.onAddExtensionNode(definition.type);
-                    setPopover(null);
-                  }}
-                >
-                  <span
-                    className="grid size-7 shrink-0 place-items-center rounded-md text-base"
-                    style={{ background: theme.toolbar.itemHover }}
-                    aria-hidden="true"
-                  >
-                    {definition.icon}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">
-                    {getNodeSpec(definition.type).title}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+        />
       ) : null}
 
-      {popover === "appearance" ? (
-        <AppearancePanel
-          x={popoverX}
-          theme={theme}
-          colorTheme={colorTheme}
+      {openMenu === "appearance" ? (
+        <AppearanceMenu
+          center={menuCenter}
+          colors={colors}
+          themeKey={themeKey}
           setTheme={setTheme}
           backgroundMode={props.backgroundMode}
           onBackgroundModeChange={props.onBackgroundModeChange}
           showImageInfo={props.showImageInfo}
           onShowImageInfoChange={props.onShowImageInfoChange}
-          onClose={() => setPopover(null)}
+          onClose={() => setOpenMenu(null)}
         />
       ) : null}
     </div>
   );
 }
 
-function ActionButton({
+function ToolbarButton({
   icon: Icon,
   label,
-  theme,
+  colors,
   active = false,
-  disabled = false,
   danger = false,
+  disabled = false,
+  pressed,
   expanded,
-  toggle = false,
   onClick,
 }: {
   icon: LucideIcon;
   label: string;
-  theme: CanvasTheme;
+  colors: CanvasTheme;
   active?: boolean;
-  disabled?: boolean;
   danger?: boolean;
+  disabled?: boolean;
+  pressed?: boolean;
   expanded?: boolean;
-  toggle?: boolean;
-  onClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <button
@@ -382,14 +374,14 @@ function ActionButton({
       className="grid size-9 shrink-0 place-items-center rounded-md transition-colors hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-35 dark:hover:bg-white/10"
       style={{
         color: active
-          ? theme.toolbar.activeText
+          ? colors.toolbar.activeText
           : danger
             ? "#f87171"
-            : theme.toolbar.item,
-        background: active ? theme.toolbar.activeBg : undefined,
+            : colors.toolbar.item,
+        background: active ? colors.toolbar.activeBg : undefined,
       }}
       aria-label={label}
-      aria-pressed={toggle ? active : undefined}
+      aria-pressed={pressed}
       aria-expanded={expanded}
       aria-haspopup={expanded === undefined ? undefined : "dialog"}
       title={label}
@@ -401,10 +393,63 @@ function ActionButton({
   );
 }
 
-function AppearancePanel({
-  x,
-  theme,
-  colorTheme,
+function ExtensionMenu({
+  items,
+  center,
+  colors,
+  title,
+  onSelect,
+}: {
+  items: ReturnType<typeof listNodeDefinitions>;
+  center: number | null;
+  colors: CanvasTheme;
+  title: string;
+  onSelect: (type: string) => void;
+}) {
+  return (
+    <section
+      className="pointer-events-auto absolute bottom-[calc(100%+10px)] z-30 max-h-[50vh] w-[min(264px,calc(100vw-24px))] -translate-x-1/2 overflow-y-auto rounded-lg border p-2 shadow-xl backdrop-blur"
+      style={{
+        left: center ?? "50%",
+        background: colors.toolbar.panel,
+        borderColor: colors.toolbar.border,
+        color: colors.toolbar.item,
+      }}
+      role="dialog"
+      aria-label={title}
+    >
+      <h2 className="px-2 pb-2 pt-1 text-xs font-semibold opacity-60">{title}</h2>
+      <ul className="m-0 grid list-none gap-1 p-0">
+        {items.map((item) => (
+          <li key={item.type}>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:bg-white/10"
+              style={{ color: colors.toolbar.item }}
+              onClick={() => onSelect(item.type)}
+            >
+              <span
+                className="grid size-7 shrink-0 place-items-center rounded-md text-base"
+                style={{ background: colors.toolbar.itemHover }}
+                aria-hidden="true"
+              >
+                {item.icon}
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {getNodeSpec(item.type).title}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function AppearanceMenu({
+  center,
+  colors,
+  themeKey,
   setTheme,
   backgroundMode,
   onBackgroundModeChange,
@@ -412,9 +457,9 @@ function AppearancePanel({
   onShowImageInfoChange,
   onClose,
 }: {
-  x: number;
-  theme: CanvasTheme;
-  colorTheme: CanvasColorTheme;
+  center: number | null;
+  colors: CanvasTheme;
+  themeKey: CanvasColorTheme;
   setTheme: (theme: CanvasColorTheme) => void;
   backgroundMode: CanvasBackgroundMode;
   onBackgroundModeChange: (mode: CanvasBackgroundMode) => void;
@@ -423,22 +468,30 @@ function AppearancePanel({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const modes: Array<{
+    id: CanvasBackgroundMode;
+    icon: LucideIcon;
+    label: string;
+  }> = [
+    { id: "lines", icon: Grid2x2, label: t("canvas.toolbar.lines") },
+    { id: "dots", icon: CircleDot, label: t("canvas.toolbar.dots") },
+    { id: "blank", icon: Square, label: t("canvas.toolbar.blank") },
+  ];
+
   return (
     <section
-      className="pointer-events-auto absolute bottom-[calc(100%+10px)] z-30 w-[280px] -translate-x-1/2 rounded-lg border p-3 shadow-xl backdrop-blur"
+      className="pointer-events-auto absolute bottom-[calc(100%+10px)] z-30 w-[min(280px,calc(100vw-24px))] -translate-x-1/2 rounded-lg border p-3 shadow-xl backdrop-blur"
       style={{
-        left: x || "50%",
-        background: theme.toolbar.panel,
-        borderColor: theme.toolbar.border,
-        color: theme.toolbar.item,
+        left: center ?? "50%",
+        background: colors.toolbar.panel,
+        borderColor: colors.toolbar.border,
+        color: colors.toolbar.item,
       }}
       role="dialog"
       aria-label={t("canvas.toolbar.appearance")}
     >
       <header className="flex items-center justify-between gap-3 px-1 pb-2">
-        <h2 className="text-sm font-semibold">
-          {t("canvas.toolbar.appearance")}
-        </h2>
+        <h2 className="text-sm font-semibold">{t("canvas.toolbar.appearance")}</h2>
         <button
           type="button"
           className="text-xs opacity-55 hover:opacity-100"
@@ -447,64 +500,56 @@ function AppearancePanel({
           {t("common.close")}
         </button>
       </header>
+
       <h3 className="px-1 pb-1.5 text-[11px] font-medium opacity-55">
         {t("canvas.toolbar.themeMode")}
       </h3>
       <div
         className="grid grid-cols-2 gap-1 rounded-md p-1"
-        style={{ background: theme.toolbar.itemHover }}
+        style={{ background: colors.toolbar.itemHover }}
       >
-        <ThemeChoice colorTheme={colorTheme} target="light" onChange={setTheme}>
+        <ThemeOption themeKey={themeKey} target="light" onChange={setTheme}>
           <Sun className="size-4" />
           {t("canvas.toolbar.light")}
-        </ThemeChoice>
-        <ThemeChoice colorTheme={colorTheme} target="dark" onChange={setTheme}>
+        </ThemeOption>
+        <ThemeOption themeKey={themeKey} target="dark" onChange={setTheme}>
           <Moon className="size-4" />
           {t("canvas.toolbar.dark")}
-        </ThemeChoice>
+        </ThemeOption>
       </div>
+
       <h3 className="mt-3 px-1 pb-1.5 text-[11px] font-medium opacity-55">
         {t("canvas.toolbar.gridStyle")}
       </h3>
-      <Segmented
-        className="w-full !p-1 [&_.ant-segmented-group]:!flex [&_.ant-segmented-item]:!min-h-8 [&_.ant-segmented-item]:!flex-1 [&_.ant-segmented-item-label]:!min-h-8 [&_.ant-segmented-item-label]:!leading-8"
-        value={backgroundMode}
-        onChange={(value) =>
-          onBackgroundModeChange(value as CanvasBackgroundMode)
-        }
-        options={[
-          {
-            value: "dots",
-            label: (
-              <span className="inline-flex items-center gap-1.5">
-                <CircleDot className="size-4" />
-                {t("canvas.toolbar.dots")}
-              </span>
-            ),
-          },
-          {
-            value: "lines",
-            label: (
-              <span className="inline-flex items-center gap-1.5">
-                <Grid2x2 className="size-4" />
-                {t("canvas.toolbar.lines")}
-              </span>
-            ),
-          },
-          {
-            value: "blank",
-            label: (
-              <span className="inline-flex items-center gap-1.5">
-                <Square className="size-4" />
-                {t("canvas.toolbar.blank")}
-              </span>
-            ),
-          },
-        ]}
-      />
+      <fieldset className="grid grid-cols-3 gap-2 border-0 p-0">
+        <legend className="sr-only">{t("canvas.toolbar.gridStyle")}</legend>
+        {modes.map(({ id, icon: Icon, label }) => {
+          const selected = backgroundMode === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              className="flex min-h-16 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              style={{
+                color: selected ? colors.toolbar.activeText : colors.toolbar.item,
+                background: selected ? colors.toolbar.activeBg : colors.node.fill,
+                borderColor: selected
+                  ? colors.toolbar.activeText
+                  : colors.toolbar.border,
+              }}
+              aria-pressed={selected}
+              onClick={() => onBackgroundModeChange(id)}
+            >
+              <Icon className="size-6" strokeWidth={1.25} aria-hidden="true" />
+              {label}
+            </button>
+          );
+        })}
+      </fieldset>
+
       <label className="mt-3 flex items-center justify-between gap-3 rounded-md px-1.5 py-1">
         <span className="inline-flex min-w-0 items-center gap-1.5 text-[11px] font-medium opacity-70">
-          <Info className="size-3.5" />
+          <Info className="size-3.5" aria-hidden="true" />
           {t("canvas.toolbar.imageInfo")}
         </span>
         <Switch
@@ -518,37 +563,37 @@ function AppearancePanel({
   );
 }
 
-function ThemeChoice({
-  colorTheme,
+function ThemeOption({
+  themeKey,
   target,
   onChange,
   children,
 }: {
-  colorTheme: CanvasColorTheme;
+  themeKey: CanvasColorTheme;
   target: CanvasColorTheme;
   onChange: (theme: CanvasColorTheme) => void;
   children: ReactNode;
 }) {
-  const active = colorTheme === target;
-  const theme = canvasThemes[colorTheme];
+  const selected = themeKey === target;
+  const colors = canvasThemes[themeKey];
   const { t } = useTranslation();
   const label =
     target === "dark" ? t("topNav.darkTheme") : t("topNav.lightTheme");
-  const activeStyle =
-    colorTheme === "light"
+  const selectedStyle =
+    themeKey === "light"
       ? { background: "#111111", color: "#ffffff" }
-      : { background: theme.toolbar.activeBg, color: theme.toolbar.activeText };
+      : { background: colors.toolbar.activeBg, color: colors.toolbar.activeText };
 
   return (
     <AnimatedThemeToggler
-      theme={colorTheme}
+      theme={themeKey}
       targetTheme={target}
       onThemeChange={onChange}
       className="inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2 text-sm transition"
-      style={active ? activeStyle : { color: theme.toolbar.item }}
+      style={selected ? selectedStyle : { color: colors.toolbar.item }}
       aria-label={label}
       title={label}
-      aria-pressed={active}
+      aria-pressed={selected}
     >
       {children}
     </AnimatedThemeToggler>

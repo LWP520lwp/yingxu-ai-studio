@@ -48,7 +48,7 @@ All successful responses are JSON. All errors are `{code,message,submissionUncer
 | `DELETE` | `/accounts/{uuid}` | Close and recursively remove a profile only after validating its UUID, directory type and worker metadata |
 | `POST` | `/accounts/{uuid}/generate` | Submit a synchronous Muse web task to the already-open Muse account and return one verified result. It does not create a login session. |
 
-Status is `login_required`, `ready`, `verification_required`, `unsupported`, or `error`, with a separate `capabilities:{image,video}`. Muse selectors are based on a public MIT adapter, not on a live verification of this deployment's logged-in account. `ready` only confirms a composer is visible. **It does not confirm an account can generate, a quota remains, or image/video output works.** Doubao login status can be inspected; both Doubao generation capabilities currently remain false and generation returns HTTP 501 `UNSUPPORTED_CAPABILITY` until the visible UI is calibrated and tested.
+Status is `login_required`, `ready`, `verification_required`, `unsupported`, or `error`, with a separate `capabilities:{image,video}`. Muse interaction uses accessible text and button names, then detects newly visible image/video elements after submission. `ready` only confirms a composer is visible. **It does not confirm an account can generate, a quota remains, or image/video output works.** Doubao login status can be inspected; both Doubao generation capabilities currently remain false and generation returns HTTP 501 `UNSUPPORTED_CAPABILITY` until the visible UI is calibrated and tested.
 
 Generate body:
 

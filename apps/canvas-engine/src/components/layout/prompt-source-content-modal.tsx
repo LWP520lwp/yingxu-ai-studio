@@ -1,7 +1,6 @@
-import { App, Button, Empty, Modal, Space, Table, Tag } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { Copy, FolderPlus, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { App, Button, Empty, Input, Modal, Select, Tag } from "antd";
+import { Copy, FolderPlus, RefreshCw, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { PromptDetailDialog } from "@/pages/prompts/components/prompt-detail-dialog";
@@ -13,21 +12,6 @@ import {
   type Prompt,
 } from "@/services/api/prompts";
 import type { PromptSource } from "@/services/api/prompt-source-presets";
-
-type PromptColumnFactory = (actions: {
-  copy: (text: string) => void;
-  details: (prompt: Prompt) => void;
-  save: (prompt: Prompt) => void;
-  labels: {
-    cover: string;
-    title: string;
-    tags: string;
-    actions: string;
-    copy: string;
-    details: string;
-    save: string;
-  };
-}) => ColumnsType<Prompt>;
 
 export function PromptSourceContentModal({
   source,
@@ -41,10 +25,27 @@ export function PromptSourceContentModal({
   const [items, setItems] = useState<Prompt[]>([]);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState<Prompt | null>(null);
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("all");
   const requestId = useRef(0);
   const mounted = useRef(true);
   const copyText = useCopyText();
   const addAsset = useAssetStore((state) => state.addAsset);
+  const categories = useMemo(
+    () => [...new Set(items.map((item) => item.category).filter(Boolean))],
+    [items],
+  );
+  const visibleItems = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    return items.filter((item) => {
+      if (category !== "all" && item.category !== category) return false;
+      if (!normalized) return true;
+      return [item.title, item.prompt, item.description, ...item.tags]
+        .join(" ")
+        .toLocaleLowerCase()
+        .includes(normalized);
+    });
+  }, [category, items, query]);
 
   const load = useCallback(
     async (force: boolean) => {
@@ -97,6 +98,11 @@ export function PromptSourceContentModal({
     };
   }, [load, source?.id]);
 
+  useEffect(() => {
+    setQuery("");
+    setCategory("all");
+  }, [source?.id]);
+
   const saveAsset = useCallback(
     (item: Prompt) => {
       addAsset({
@@ -116,21 +122,6 @@ export function PromptSourceContentModal({
     },
     [addAsset, message, t],
   );
-
-  const columns = buildPromptColumns({
-    copy: (text) => copyText(text, t("common.promptCopied")),
-    details: setDetail,
-    save: saveAsset,
-    labels: {
-      cover: t("config.promptSources.content.cover"),
-      title: t("config.promptSources.content.titleColumn"),
-      tags: t("config.promptSources.content.tags"),
-      actions: t("config.promptSources.content.actions"),
-      copy: t("common.copy"),
-      details: t("common.details"),
-      save: t("common.addToAssets"),
-    },
-  });
 
   return (
     <>
@@ -165,23 +156,98 @@ export function PromptSourceContentModal({
           </div>
         }
       >
-        <Table<Prompt>
-          rowKey="id"
-          size="small"
-          loading={loading}
-          dataSource={items}
-          pagination={{ pageSize: 10, showSizeChanger: false, size: "small" }}
-          scroll={{ y: "56vh" }}
-          locale={{
-            emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={t("config.promptSources.content.empty")}
-              />
-            ),
-          }}
-          columns={columns}
-        />
+        <div className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_220px]">
+            <Input
+              allowClear
+              prefix={<Search className="size-3.5 text-stone-400" />}
+              aria-label={t("config.promptSources.content.titleColumn")}
+              placeholder={t("config.promptSources.content.titleColumn")}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <Select
+              value={category}
+              onChange={setCategory}
+              aria-label={t("config.promptSources.content.tags")}
+              options={[
+                { value: "all", label: t("common.all") },
+                ...categories.map((value) => ({ value, label: value })),
+              ]}
+            />
+          </div>
+          {visibleItems.length ? (
+            <div className="grid max-h-[58vh] grid-cols-1 gap-2 overflow-y-auto pr-1 md:grid-cols-2">
+              {visibleItems.map((item) => (
+                <article
+                  key={item.id}
+                  className="grid min-w-0 grid-cols-[68px_minmax(0,1fr)] gap-3 rounded-md border border-stone-200 p-3 dark:border-stone-700"
+                >
+                  {item.coverUrl ? (
+                    <img
+                      src={item.coverUrl}
+                      alt=""
+                      loading="lazy"
+                      className="size-[68px] rounded object-cover"
+                    />
+                  ) : (
+                    <div className="grid size-[68px] place-items-center rounded bg-stone-100 text-xs text-stone-400 dark:bg-stone-800">
+                      {item.category}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">
+                      {item.title}
+                    </div>
+                    <p className="mt-1 line-clamp-3 break-words text-xs leading-5 text-stone-500">
+                      {item.prompt}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {item.tags.slice(0, 4).map((tag, index) => (
+                        <Tag key={`${tag}:${index}`} className="m-0">
+                          {tag}
+                        </Tag>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Copy className="size-3.5" />}
+                        onClick={() =>
+                          void copyText(item.prompt, t("common.promptCopied"))
+                        }
+                      >
+                        {t("common.copy")}
+                      </Button>
+                      <Button
+                        size="small"
+                        type="text"
+                        onClick={() => setDetail(item)}
+                      >
+                        {t("common.details")}
+                      </Button>
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<FolderPlus className="size-3.5" />}
+                        onClick={() => saveAsset(item)}
+                      >
+                        {t("common.addToAssets")}
+                      </Button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={t("config.promptSources.content.empty")}
+              className="py-12"
+            />
+          )}
+        </div>
       </Modal>
       <PromptDetailDialog
         prompt={detail}
@@ -192,83 +258,6 @@ export function PromptSourceContentModal({
     </>
   );
 }
-
-const buildPromptColumns: PromptColumnFactory = ({
-  copy,
-  details,
-  save,
-  labels,
-}) => [
-  {
-    title: labels.cover,
-    dataIndex: "coverUrl",
-    width: 72,
-    render: (coverUrl: string) =>
-      coverUrl ? (
-        <img
-          src={coverUrl}
-          alt=""
-          loading="lazy"
-          className="size-12 rounded object-cover"
-        />
-      ) : (
-        <div className="size-12 rounded bg-stone-100 dark:bg-stone-800" />
-      ),
-  },
-  {
-    title: labels.title,
-    dataIndex: "title",
-    render: (title: string, item: Prompt) => (
-      <div className="min-w-0">
-        <div className="truncate font-medium">{title}</div>
-        <div className="mt-0.5 line-clamp-2 text-xs text-stone-500">
-          {item.prompt}
-        </div>
-      </div>
-    ),
-  },
-  {
-    title: labels.tags,
-    dataIndex: "tags",
-    width: 200,
-    render: (tags: string[]) => (
-      <div className="flex flex-wrap gap-1">
-        {tags.slice(0, 4).map((tag, index) => (
-          <Tag key={`${tag}:${index}`} className="m-0">
-            {tag}
-          </Tag>
-        ))}
-      </div>
-    ),
-  },
-  {
-    title: labels.actions,
-    width: 210,
-    render: (_: unknown, item: Prompt) => (
-      <Space size={4} wrap>
-        <Button
-          size="small"
-          type="text"
-          icon={<Copy className="size-3.5" />}
-          onClick={() => copy(item.prompt)}
-        >
-          {labels.copy}
-        </Button>
-        <Button size="small" type="text" onClick={() => details(item)}>
-          {labels.details}
-        </Button>
-        <Button
-          size="small"
-          type="text"
-          icon={<FolderPlus className="size-3.5" />}
-          onClick={() => save(item)}
-        >
-          {labels.save}
-        </Button>
-      </Space>
-    ),
-  },
-];
 
 async function reloadPromptSource(sourceId: string) {
   await refreshSource(sourceId);

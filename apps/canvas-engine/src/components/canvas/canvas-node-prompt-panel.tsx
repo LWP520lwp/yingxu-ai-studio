@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { ArrowUp, LoaderCircle, Maximize2, Square } from "lucide-react";
+import { Maximize2 } from "lucide-react";
 import { Button, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
+import { GenerationControl } from "./generation-control";
 
 import { ModelPicker } from "@/components/model-picker";
 import {
@@ -27,6 +28,7 @@ import {
   CanvasNodeType,
   type CanvasGenerationMode,
   type CanvasNodeData,
+  type CanvasNodeMetadata,
 } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
@@ -383,35 +385,7 @@ function GenerationButton({
   onStop: () => void;
   onGenerate: () => void;
 }) {
-  const { t } = useTranslation();
-  return (
-    <Button
-      type="primary"
-      className="!h-10 !min-w-16 shrink-0 !rounded-full !px-3"
-      danger={isRunning}
-      disabled={!isRunning && !hasPrompt}
-      onClick={isRunning ? onStop : onGenerate}
-      aria-label={t(
-        isRunning
-          ? "canvas.promptPanel.stopGeneration"
-          : "canvas.promptPanel.generate",
-      )}
-    >
-      <span className="flex items-center gap-1.5">
-        {isRunning ? (
-          <>
-            <LoaderCircle className="size-4 animate-spin" />
-            <Square className="size-3.5 fill-current" />
-            <span className="text-xs font-medium">
-              {t("canvas.promptPanel.stop")}
-            </span>
-          </>
-        ) : (
-          <ArrowUp className="size-4" />
-        )}
-      </span>
-    </Button>
-  );
+  return <GenerationControl running={isRunning} ready={hasPrompt} variant="composer" run={onGenerate} stop={onStop} />;
 }
 
 type ExpandedPromptEditorProps = Omit<
@@ -472,72 +446,100 @@ export function buildNodeConfig(
   node: CanvasNodeData,
   mode: CanvasNodeGenerationMode,
 ): AiConfig {
+  const choose = <Value,>(
+    ...candidates: Array<Value | null | undefined>
+  ): Value => {
+    const selected = candidates.find(
+      (candidate) =>
+        candidate !== undefined && candidate !== null && candidate !== "",
+    );
+    return (selected ?? candidates.at(-1)) as Value;
+  };
+
   return {
     ...globalConfig,
     model: resolveModelForCapability(globalConfig, node.metadata?.model, mode),
-    reasoningEffort:
-      node.metadata?.reasoningEffort ||
-      globalConfig.reasoningEffort ||
+    reasoningEffort: choose(
+      node.metadata?.reasoningEffort,
+      globalConfig.reasoningEffort,
       defaultConfig.reasoningEffort,
-    quality:
-      node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
-    size: node.metadata?.size || globalConfig.size || defaultConfig.size,
-    background:
-      node.metadata?.background ??
-      globalConfig.background ??
+    ),
+    quality: choose(
+      node.metadata?.quality,
+      globalConfig.quality,
+      defaultConfig.quality,
+    ),
+    size: choose(node.metadata?.size, globalConfig.size, defaultConfig.size),
+    background: choose(
+      node.metadata?.background,
+      globalConfig.background,
       defaultConfig.background,
-    videoSeconds:
-      node.metadata?.seconds ||
-      globalConfig.videoSeconds ||
+    ),
+    videoSeconds: choose(
+      node.metadata?.seconds,
+      globalConfig.videoSeconds,
       defaultConfig.videoSeconds,
-    vquality:
-      node.metadata?.vquality ||
-      globalConfig.vquality ||
+    ),
+    vquality: choose(
+      node.metadata?.vquality,
+      globalConfig.vquality,
       defaultConfig.vquality,
-    videoGenerateAudio:
-      node.metadata?.generateAudio ||
-      globalConfig.videoGenerateAudio ||
+    ),
+    videoGenerateAudio: choose(
+      node.metadata?.generateAudio,
+      globalConfig.videoGenerateAudio,
       defaultConfig.videoGenerateAudio,
-    videoWatermark:
-      node.metadata?.watermark ||
-      globalConfig.videoWatermark ||
+    ),
+    videoWatermark: choose(
+      node.metadata?.watermark,
+      globalConfig.videoWatermark,
       defaultConfig.videoWatermark,
-    videoMode:
-      node.metadata?.videoMode ||
-      globalConfig.videoMode ||
+    ),
+    videoMode: choose(
+      node.metadata?.videoMode,
+      globalConfig.videoMode,
       defaultConfig.videoMode,
-    audioVoice:
-      node.metadata?.audioVoice ||
-      globalConfig.audioVoice ||
+    ),
+    audioVoice: choose(
+      node.metadata?.audioVoice,
+      globalConfig.audioVoice,
       defaultConfig.audioVoice,
-    audioFormat:
-      node.metadata?.audioFormat ||
-      globalConfig.audioFormat ||
+    ),
+    audioFormat: choose(
+      node.metadata?.audioFormat,
+      globalConfig.audioFormat,
       defaultConfig.audioFormat,
-    audioSpeed:
-      node.metadata?.audioSpeed ||
-      globalConfig.audioSpeed ||
+    ),
+    audioSpeed: choose(
+      node.metadata?.audioSpeed,
+      globalConfig.audioSpeed,
       defaultConfig.audioSpeed,
-    audioInstructions:
-      node.metadata?.audioInstructions ||
-      globalConfig.audioInstructions ||
+    ),
+    audioInstructions: choose(
+      node.metadata?.audioInstructions,
+      globalConfig.audioInstructions,
       defaultConfig.audioInstructions,
+    ),
     count: String(
-      node.metadata?.count ||
-        (mode === "image"
-          ? globalConfig.canvasImageCount || globalConfig.count
-          : globalConfig.count) ||
-        defaultConfig.count,
+      node.metadata?.count != null && node.metadata.count > 0
+        ? node.metadata.count
+        : choose(
+            mode === "image" ? globalConfig.canvasImageCount : undefined,
+            globalConfig.count,
+            defaultConfig.count,
+          ),
     ),
   };
 }
 
 export function videoConfigPatch(key: keyof AiConfig, value: string) {
-  if (key === "videoSeconds") return { seconds: value };
-  if (key === "videoGenerateAudio") return { generateAudio: value };
-  if (key === "videoWatermark") return { watermark: value };
-  if (key === "videoMode") return { videoMode: value };
-  return { [key]: value };
+  const fields: Partial<Record<keyof AiConfig, keyof CanvasNodeMetadata>> = {
+    videoSeconds: "seconds",
+    videoGenerateAudio: "generateAudio",
+    videoWatermark: "watermark",
+    videoMode: "videoMode",
+  };
+  return { [fields[key] ?? key]: value };
 }
 
 export function audioConfigPatch(key: CanvasAudioSettingKey, value: string) {

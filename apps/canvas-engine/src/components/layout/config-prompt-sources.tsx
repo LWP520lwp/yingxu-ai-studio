@@ -1,5 +1,5 @@
 import { Alert, App, Button, Empty, Select, Skeleton, Switch, Tag } from "antd";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowUpRight,
   Eye,
@@ -15,8 +15,6 @@ import { PromptSourceContentModal } from "./prompt-source-content-modal";
 import { PromptSourceEditorDrawer } from "./prompt-source-editor-drawer";
 import {
   fetchPromptSourceStatuses,
-  refreshAllSources,
-  refreshSource,
   type PromptSourceStatus,
 } from "@/services/api/prompts";
 import type { PromptSource } from "@/services/api/prompt-source-presets";
@@ -29,13 +27,21 @@ import {
   promptSourceHealth,
   promptSourceIntervalKey,
 } from "@/lib/prompt-source-view-model";
-
-const STATUS_QUERY_KEY = ["prompt-source-statuses"];
+import {
+  PROMPT_SOURCE_STATUS_QUERY_KEY,
+  usePromptSourceActions,
+} from "./use-prompt-source-actions";
 
 export function ConfigPromptSources() {
-  const { message, modal } = App.useApp();
+  const { modal } = App.useApp();
   const { i18n, t } = useTranslation();
-  const queryClient = useQueryClient();
+  const {
+    refreshingIds,
+    refreshingAll,
+    refreshOne,
+    refreshAll,
+    invalidate,
+  } = usePromptSourceActions();
   const sources = usePromptSourceStore((state) => state.sources);
   const schedule = usePromptSourceStore((state) => state.schedule);
   const addSource = usePromptSourceStore((state) => state.addSource);
@@ -44,16 +50,12 @@ export function ConfigPromptSources() {
   const toggleSource = usePromptSourceStore((state) => state.toggleSource);
   const updateSchedule = usePromptSourceStore((state) => state.updateSchedule);
   const statusQuery = useQuery({
-    queryKey: STATUS_QUERY_KEY,
+    queryKey: PROMPT_SOURCE_STATUS_QUERY_KEY,
     queryFn: fetchPromptSourceStatuses,
   });
 
   const [editingSource, setEditingSource] = useState<PromptSource | null>(null);
   const [viewingId, setViewingId] = useState("");
-  const [refreshingIds, setRefreshingIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const [refreshingAll, setRefreshingAll] = useState(false);
   const viewingSource =
     sources.find((source) => source.id === viewingId) || null;
   const hasSourceRefresh = refreshingIds.size > 0;
@@ -65,17 +67,9 @@ export function ConfigPromptSources() {
     ),
   }));
 
-  const invalidatePrompts = async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["prompts"] }),
-      queryClient.invalidateQueries({ queryKey: ["side-panel-prompts"] }),
-      queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY }),
-    ]);
-  };
-
   const handleSave = (source: PromptSource) => {
     saveSource(source);
-    void invalidatePrompts();
+    void invalidate();
   };
 
   const handleDelete = (source: PromptSource) => {
@@ -87,70 +81,9 @@ export function ConfigPromptSources() {
       cancelText: t("common.cancel"),
       onOk: async () => {
         removeSource(source.id);
-        await invalidatePrompts();
+        await invalidate();
       },
     });
-  };
-
-  const handleRefreshOne = async (source: PromptSource) => {
-    if (isRefreshBusy) return;
-    setRefreshingIds((current) => new Set(current).add(source.id));
-    try {
-      const result = await refreshSource(source.id);
-      await invalidatePrompts();
-      message.success(
-        t("config.promptSources.refreshed", {
-          name: source.name,
-          count: result.count,
-        }),
-      );
-    } catch (error) {
-      await queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY });
-      message.error(
-        error instanceof Error
-          ? error.message
-          : t("config.promptSources.refreshFailedCached"),
-      );
-    } finally {
-      setRefreshingIds((current) => {
-        const next = new Set(current);
-        next.delete(source.id);
-        return next;
-      });
-    }
-  };
-
-  const handleRefreshAll = async () => {
-    if (isRefreshBusy) return;
-    setRefreshingAll(true);
-    try {
-      const result = await refreshAllSources();
-      updateSchedule("lastFetchedAt", new Date().toISOString());
-      await invalidatePrompts();
-      if (result.failureCount) {
-        message.warning(
-          t("config.promptSources.refreshPartial", {
-            success: result.successCount,
-            failed: result.failureCount,
-          }),
-        );
-      } else {
-        message.success(
-          t("config.promptSources.refreshAllSuccess", {
-            sources: result.successCount,
-            total: result.total,
-          }),
-        );
-      }
-    } catch (error) {
-      message.error(
-        error instanceof Error
-          ? error.message
-          : t("config.promptSources.refreshFailed"),
-      );
-    } finally {
-      setRefreshingAll(false);
-    }
   };
 
   return (
@@ -213,10 +146,10 @@ export function ConfigPromptSources() {
                 refreshing={refreshingIds.has(source.id)}
                 onToggle={(enabled) => {
                   toggleSource(source.id, enabled);
-                  void invalidatePrompts();
+                  void invalidate();
                 }}
                 onView={() => setViewingId(source.id)}
-                onRefresh={() => void handleRefreshOne(source)}
+                onRefresh={() => void refreshOne(source, isRefreshBusy)}
                 onEdit={() => setEditingSource(source)}
                 onDelete={() => handleDelete(source)}
               />
@@ -251,7 +184,7 @@ export function ConfigPromptSources() {
             icon={<RefreshCw className="size-3.5" aria-hidden="true" />}
             loading={refreshingAll}
             disabled={hasSourceRefresh}
-            onClick={() => void handleRefreshAll()}
+            onClick={() => void refreshAll(isRefreshBusy)}
           >
             {t("config.promptSources.refreshAll")}
           </Button>

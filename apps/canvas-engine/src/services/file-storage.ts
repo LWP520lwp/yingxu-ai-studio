@@ -2,6 +2,7 @@ import { nanoid } from "nanoid";
 
 import { createScopedStorage } from "@/lib/localforage-storage";
 import { withLocalProxy } from "@/stores/use-config-store";
+import { collectStorageGarbage } from "./storage-garbage-collector";
 import {
   abortReason,
   collectStoredKeys,
@@ -98,12 +99,10 @@ export async function deleteStoredMedia(keys: Iterable<string>) {
 }
 
 export async function cleanupUnusedMedia(usedData: unknown) {
-  const usedKeys = collectMediaStorageKeys(usedData);
-  const unused: string[] = [];
-  await store.iterate((_value, key) => {
-    if (!usedKeys.has(key)) unused.push(key);
+  await collectStorageGarbage({
+    retained: collectMediaStorageKeys(usedData),
+    stores: [{ storage: store, remove: (key) => deleteStoredMedia([key]) }],
   });
-  await deleteStoredMedia(unused);
 }
 
 export function collectMediaStorageKeys(

@@ -3,750 +3,186 @@ import type { ModelCapability } from "@/stores/use-config-store";
 
 export type PluginTemplate = { label: string; script: string };
 
-export function getPluginTemplates(): Record<ModelCapability, PluginTemplate[]> {
-    return {
-    image: [
-        {
-            label: i18n.t("modelPlugin.templates.openai"),
-            script: `/**
- * OpenAI image generation and editing.
- * Text-to-image uses POST /v1/images/generations (JSON) when images is empty.
- * Image editing uses POST /v1/images/edits (multipart) when images has data URLs.
- * @param {string} prompt
- * @param {string[]} images - reference images as data URLs; empty for text-to-image
- * @param {object} params
- * @param {string} params.size - output size, e.g. "1024x1024" or "auto"
- * @param {string} params.quality - "low" | "medium" | "high" | "xhigh" | "max"
- * @param {number} params.count - number of images
- * @param {string} [params.background] - "transparent" when requested
- * @param {string} model
- * @param {string} baseUrl
- * @param {string} apiKey
- * @param {function} request - raw HTTP helper; relative urls join baseUrl without /v1
- * @returns {Promise<string[]>} image URLs or data URLs
- */
-async function generateImage({
-  prompt,
-  images,
-  params: {
-    size,
-    quality,
-    count,
-    background,
+const makeTemplate = (
+  provider: "openai" | "gemini",
+  script: string,
+): PluginTemplate => ({
+  label: i18n.t(`modelPlugin.templates.${provider}`),
+  script,
+});
+
+const imageTemplates: PluginTemplate[] = [
+  makeTemplate(
+    "openai",
+    String.raw`const headers = { Authorization: "Bearer " + apiKey };
+const resultUrl = baseUrl + "/v1/images/" + (images.length ? "edits" : "generations");
+let body;
+if (images.length) {
+  body = new FormData();
+  for (const [key, value] of Object.entries({ model, prompt, n: params.count || 1, size: params.size || "auto", quality: params.quality || "high", background: params.background || "auto", response_format: "b64_json" })) body.set(key, String(value));
+  for (const image of images) body.append(images.length > 1 ? "image[]" : "image", await (await fetch(image)).blob(), "reference.png");
+} else {
+  headers["Content-Type"] = "application/json";
+  body = { model, prompt, n: params.count || 1, size: params.size || "auto", quality: params.quality || "high", background: params.background || "auto", response_format: "b64_json" };
+}
+const response = await request({ method: "post", url: resultUrl, headers, data: body });
+return (response.data || []).map((item) => item.b64_json ? "data:image/png;base64," + item.b64_json : item.url).filter(Boolean);`,
+  ),
+  makeTemplate(
+    "gemini",
+    String.raw`const parts = [{ text: prompt }];
+for (const source of images) {
+  const match = /^data:([^;]+);base64,(.*)$/.exec(source);
+  if (match) parts.push({ inline_data: { mime_type: match[1], data: match[2] } });
+}
+const dimensions = /^(\d+)x(\d+)$/.exec(String(params.size || ""));
+const divisor = (a, b) => b ? divisor(b, a % b) : a;
+const ratio = dimensions ? (() => { const d = divisor(Number(dimensions[1]), Number(dimensions[2])); return Number(dimensions[1]) / d + ":" + Number(dimensions[2]) / d; })() : (params.size && params.size !== "auto" ? params.size : "1:1");
+const response = await request({
+  method: "post",
+  url: baseUrl + "/v1beta/models/" + model + ":generateContent",
+  headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+  data: { contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"], imageConfig: { aspectRatio: ratio, imageSize: params.resolution && params.resolution !== "auto" ? String(params.resolution).toUpperCase() : undefined } } },
+});
+const output = [];
+for (const candidate of response.candidates || []) for (const part of candidate.content?.parts || []) {
+  const image = part.inlineData || part.inline_data;
+  if (image?.data) output.push("data:" + (image.mimeType || image.mime_type || "image/png") + ";base64," + image.data);
+}
+return output;`,
+  ),
+];
+
+const videoTemplates: PluginTemplate[] = [
+  makeTemplate(
+    "openai",
+    String.raw`const form = new FormData();
+for (const [key, value] of Object.entries({ model, prompt, seconds: params.seconds || 8, size: params.size || "1280x720", resolution_name: params.resolution || "720p", generate_audio: params.generateAudio !== false, watermark: params.watermark === true, mode: params.mode || "reference" })) form.set(key, String(value));
+const addImage = async (key, source, name) => form.append(key, await (await fetch(source)).blob(), name);
+if (params.mode === "frames" && images.length <= 2) {
+  if (images[0]) await addImage("first_frame", images[0], "start.png");
+  if (images[1]) await addImage("last_frame", images[1], "end.png");
+} else for (const image of images) await addImage("image[]", image, "reference.png");
+for (const file of videos) form.append("video[]", file);
+for (const file of audios) form.append("audio[]", file);
+const headers = { Authorization: "Bearer " + apiKey };
+const task = await request({ method: "post", url: baseUrl + "/v1/videos", headers, data: form });
+return await poll(
+  async () => {
+    const state = await request({ method: "get", url: baseUrl + "/v1/videos/" + task.id, headers });
+    if (["failed", "cancelled"].includes(state.status)) throw new Error(state.error?.message || "Video generation failed");
+    if (state.video_url || state.url) return { url: state.video_url || state.url };
+    if (state.status === "completed") return request({ method: "get", url: baseUrl + "/v1/videos/" + task.id + "/content", headers, responseType: "blob" });
+    return null;
   },
-  model,
-  baseUrl,
-  apiKey,
-  request,
-}) {
-  if (images.length === 0) {
-    const data = await request({
-      method: "post",
-      url: \`\${baseUrl}/v1/images/generations\`,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: \`Bearer \${apiKey}\`,
-      },
-      data: {
-        model: model,
-        prompt: prompt,
-        n: count,
-        size: size,
-        quality: quality,
-        background: background,
-        response_format: "b64_json",
-      },
-    });
-    const urls = [];
-    for (const item of data.data || []) {
-      urls.push(item.b64_json ? \`data:image/png;base64,\${item.b64_json}\` : item.url);
-    }
-    return urls;
-  }
-
-  const form = new FormData();
-  form.set("model", model);
-  form.set("prompt", prompt);
-  form.set("n", String(count));
-  form.set("size", size);
-  form.set("quality", quality);
-  form.set("background", background);
-  form.set("response_format", "b64_json");
-  const imageField = images.length > 1 ? "image[]" : "image";
-  for (const dataUrl of images) {
-    form.append(imageField, await (await fetch(dataUrl)).blob(), "ref.png");
-  }
-  const edited = await request({
-    method: "post",
-    url: \`\${baseUrl}/v1/images/edits\`,
-    headers: {
-      Authorization: \`Bearer \${apiKey}\`,
-    },
-    data: form,
-  });
-  const urls = [];
-  for (const item of edited.data || []) {
-    urls.push(item.b64_json ? \`data:image/png;base64,\${item.b64_json}\` : item.url);
-  }
-  return urls;
+  (value) => value,
+  { intervalMs: 2500, timeoutMs: 300000 },
+);`,
+  ),
+  makeTemplate(
+    "gemini",
+    String.raw`const decodeMedia = async (source) => {
+  let dataUrl = source;
+  if (source instanceof Blob) dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(reader.error); reader.readAsDataURL(source); });
+  const match = /^data:([^;]+);base64,(.*)$/.exec(String(dataUrl));
+  if (!match) throw new Error("Reference media could not be read");
+  return { mimeType: match[1], bytesBase64Encoded: match[2] };
+};
+const ratioBySize = { "1280x720": "16:9", "1920x1080": "16:9", "720x1280": "9:16", "1080x1920": "9:16" };
+const ratio = params.ratio || ratioBySize[params.size] || (params.size && params.size !== "auto" ? params.size : "16:9");
+const instance = { prompt };
+if (params.mode === "frames") {
+  if (images[0]) instance.image = await decodeMedia(images[0]);
+  if (images[1]) instance.lastFrame = await decodeMedia(images[1]);
+} else if (images.length) {
+  instance.referenceImages = await Promise.all(images.map(async (image) => ({ image: await decodeMedia(image), referenceType: "asset" })));
 }
-
-return await generateImage({
-  prompt,
-  images,
-  params,
-  model,
-  baseUrl,
-  apiKey,
-  request,
-});`,
-        },
-        {
-            label: i18n.t("modelPlugin.templates.gemini"),
-            script: `/**
- * Gemini image generation via models/{model}:generateContent.
- * Reference images go into parts.inline_data. size maps to aspectRatio, resolution maps to imageSize; Gemini has no quality parameter.
- * @param {string} prompt
- * @param {string[]} images - reference images as data URLs
- * @param {object} params
- * @param {string} params.size - "2048x2048", "16:9", "auto", etc.; sent as aspectRatio
- * @param {string} params.resolution - "1k" | "2k" | "4k" | "auto"; sent as imageSize
- * @param {string} params.quality - "low" | "medium" | "high" | "xhigh" | "max"; unused here
- * @param {number} params.count - number of generateContent calls
- * @param {string} model
- * @param {string} baseUrl
- * @param {string} apiKey
- * @param {function} request
- * @returns {Promise<string[]>} image data URLs
- */
-function gcd(a, b) {
-  return b ? gcd(b, a % b) : a;
-}
-
-async function generateImage({
-  prompt,
-  images,
-  params: {
-    size,
-    resolution,
-    count,
+if (videos[0]) instance.video = await decodeMedia(videos[0]);
+if (audios[0]) instance.audio = await decodeMedia(audios[0]);
+const headers = { "Content-Type": "application/json", "x-goog-api-key": apiKey };
+const operation = await request({
+  method: "post",
+  url: baseUrl + "/v1beta/models/" + model + ":predictLongRunning",
+  headers,
+  data: { instances: [instance], parameters: { aspectRatio: ratio, durationSeconds: Number(params.seconds) || 8, resolution: params.resolution || "720p", generateAudio: params.generateAudio !== false, addWatermark: params.watermark === true } },
+});
+return poll(
+  () => request({ method: "get", url: baseUrl + "/v1beta/" + operation.name, headers }),
+  (state) => {
+    if (state.error) throw new Error(state.error.message || "Video generation failed");
+    if (!state.done) return null;
+    const uri = state.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
+    if (!uri) throw new Error("The model returned no video URI");
+    return { url: uri.includes("key=") ? uri : uri + (uri.includes("?") ? "&" : "?") + "key=" + apiKey };
   },
-  model,
-  baseUrl,
-  apiKey,
-  request,
-}) {
-  const parts = [{ text: prompt }];
-  for (const dataUrl of images) {
-    const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
-    if (match) {
-      parts.push({
-        inline_data: {
-          mime_type: match[1],
-          data: match[2],
-        },
-      });
-    }
-  }
+  { intervalMs: 5000, timeoutMs: 300000 },
+);`,
+  ),
+];
 
-  let aspectRatio = "1:1";
-  if (size && size !== "auto") {
-    const pixels = size.match(/^(\\d+)x(\\d+)$/);
-    if (pixels) {
-      const width = Number(pixels[1]);
-      const height = Number(pixels[2]);
-      const divisor = gcd(width, height);
-      aspectRatio = \`\${width / divisor}:\${height / divisor}\`;
-    } else if (size.includes(":")) {
-      aspectRatio = size;
-    }
-  }
-  const imageSize = resolution && resolution !== "auto" ? resolution.toUpperCase() : undefined;
-  const n = Number(count) || 1;
-  const urls = [];
-
-  for (let i = 0; i < n; i++) {
-    const data = await request({
-      method: "post",
-      url: \`\${baseUrl}/v1beta/models/\${model}:generateContent\`,
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      data: {
-        contents: [
-          {
-            role: "user",
-            parts: parts,
-          },
-        ],
-        generationConfig: {
-          responseModalities: ["TEXT", "IMAGE"],
-          imageConfig: {
-            aspectRatio: aspectRatio,
-            imageSize: imageSize,
-          },
-        },
-      },
-    });
-    for (const candidate of data.candidates || []) {
-      for (const part of candidate.content?.parts || []) {
-        const img = part.inlineData || part.inline_data;
-        if (img && img.data) {
-          urls.push(\`data:\${img.mimeType || img.mime_type || "image/png"};base64,\${img.data}\`);
-        }
-      }
-    }
-  }
-  return urls;
-}
-
-return await generateImage({
-  prompt,
-  images,
-  params,
-  model,
-  baseUrl,
-  apiKey,
-  request,
+const audioTemplates: PluginTemplate[] = [
+  makeTemplate(
+    "openai",
+    String.raw`return request({
+  method: "post",
+  url: baseUrl + "/v1/audio/speech",
+  headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+  responseType: "blob",
+  data: { model, input: prompt, voice: params.voice, response_format: params.format || "mp3", speed: Number(params.speed) || 1, instructions: params.instructions || undefined },
 });`,
-        },
-    ],
-    video: [
-        {
-            label: i18n.t("modelPlugin.templates.openai"),
-            script: `/**
- * OpenAI-compatible video: POST /v1/videos (multipart), then poll GET /v1/videos/{id}.
- * Do not set Content-Type on FormData; the browser adds the boundary.
- * @param {string} prompt
- * @param {string[]} images - reference images as data URLs
- * @param {File[]} videos - reference videos; empty when none
- * @param {File[]} audios - reference audio; empty when none
- * @param {object} params
- * @param {string} params.mode - "frames" uses first/last frame fields; "reference" sends all images as references. More than 2 images become "reference".
- * @param {string|number} params.seconds - duration
- * @param {string} params.size - output size, e.g. "1280x720"
- * @param {string} params.resolution - e.g. "720p"
- * @param {boolean} params.generateAudio
- * @param {boolean} params.watermark
- * @param {string} model
- * @param {string} baseUrl
- * @param {string} apiKey
- * @param {function} request
- * @param {function} poll
- * @returns {Promise<{url: string}|Blob>}
- */
-async function generateVideo({
-  prompt,
-  images,
-  videos,
-  audios,
-  params: {
-    mode,
-    seconds,
-    size,
-    resolution,
-    generateAudio,
-    watermark,
-  },
-  model,
-  baseUrl,
-  apiKey,
-  request,
-  poll,
-}) {
-  const form = new FormData();
-  form.set("model", model);
-  form.set("prompt", prompt);
-  form.set("seconds", String(seconds || 8));
-  form.set("size", String(size || "1280x720"));
-  form.set("resolution_name", String(resolution || "720p"));
-  form.set("generate_audio", String(generateAudio !== false));
-  form.set("watermark", String(watermark === true));
-  form.set("mode", mode);
-  if (mode === "frames") {
-    if (images[0]) {
-      form.append("first_frame", await (await fetch(images[0])).blob(), "first.png");
-    }
-    if (images[1]) {
-      form.append("last_frame", await (await fetch(images[1])).blob(), "last.png");
-    }
-  } else {
-    for (const dataUrl of images) {
-      form.append("image[]", await (await fetch(dataUrl)).blob(), "ref.png");
-    }
-  }
-  for (const file of videos) {
-    form.append("video[]", file);
-  }
-  for (const file of audios) {
-    form.append("audio[]", file);
-  }
+  ),
+  makeTemplate(
+    "gemini",
+    String.raw`const response = await request({
+  method: "post",
+  url: baseUrl + "/v1beta/models/" + model + ":generateContent",
+  headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+  data: { contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: params.voice || "Kore" } } } } },
+});
+for (const part of response.candidates?.[0]?.content?.parts || []) {
+  const audio = part.inlineData || part.inline_data;
+  if (audio?.data) return { data: audio.data };
+}
+throw new Error("The model returned no audio data");`,
+  ),
+];
 
-  const headers = {
-    Authorization: \`Bearer \${apiKey}\`,
+const textTemplates: PluginTemplate[] = [
+  makeTemplate(
+    "openai",
+    String.raw`const response = await request({
+  method: "post",
+  url: baseUrl + "/v1/responses",
+  headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+  data: { model, input: messages, ...(reasoningEffort && reasoningEffort !== "auto" ? { reasoning: { effort: reasoningEffort } } : {}) },
+});
+const text = response.output_text || (response.output || []).flatMap((item) => item.content || []).map((part) => part.text || "").join("");
+onDelta(text);
+return text;`,
+  ),
+  makeTemplate(
+    "gemini",
+    String.raw`const contents = messages.filter((item) => item.role !== "system").map((item) => ({ role: item.role === "assistant" ? "model" : "user", parts: [{ text: item.content }] }));
+const response = await request({
+  method: "post",
+  url: baseUrl + "/v1beta/models/" + model + ":generateContent",
+  headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+  data: { contents, ...(systemPrompt ? { systemInstruction: { parts: [{ text: systemPrompt }] } } : {}) },
+});
+const text = (response.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("");
+onDelta(text);
+return text;`,
+  ),
+];
+
+export function getPluginTemplates(): Record<
+  ModelCapability,
+  PluginTemplate[]
+> {
+  return {
+    image: imageTemplates,
+    video: videoTemplates,
+    audio: audioTemplates,
+    text: textTemplates,
   };
-  const task = await request({
-    method: "post",
-    url: \`\${baseUrl}/v1/videos\`,
-    headers,
-    data: form,
-  });
-
-  return await poll(
-    async () => {
-      const state = await request({
-        method: "get",
-        url: \`\${baseUrl}/v1/videos/\${task.id}\`,
-        headers,
-      });
-      if (state.status === "failed" || state.status === "cancelled") {
-        throw new Error(state.error && state.error.message ? state.error.message : "video generation failed");
-      }
-      if (state.video_url || state.url) {
-        return { url: state.video_url || state.url };
-      }
-      if (state.status === "completed") {
-        return await request({
-          method: "get",
-          url: \`\${baseUrl}/v1/videos/\${task.id}/content\`,
-          headers,
-          responseType: "blob",
-        });
-      }
-      return null;
-    },
-    (result) => result,
-    { intervalMs: 2500, timeoutMs: 300000 },
-  );
-}
-
-return await generateVideo({
-  prompt,
-  images,
-  videos,
-  audios,
-  params,
-  model,
-  baseUrl,
-  apiKey,
-  request,
-  poll,
-});`,
-        },
-        {
-            label: i18n.t("modelPlugin.templates.gemini"),
-            script: `/**
- * Gemini Veo video: POST models/{model}:predictLongRunning, then poll the operation.
- * First/last-frame mode: images[0] -> image, images[1] -> lastFrame.
- * Reference mode: all images -> referenceImages.
- * @param {string} prompt
- * @param {string[]} images - reference images as data URLs
- * @param {File[]} videos - reference videos; empty when none
- * @param {File[]} audios - reference audio; empty when none
- * @param {object} params
- * @param {string} params.mode - "frames" or "reference"
- * @param {string|number} params.seconds - sent as durationSeconds
- * @param {string} params.size - pixel size; mapped to aspectRatio when needed
- * @param {string} params.ratio - aspect ratio, e.g. "16:9"
- * @param {string} params.resolution - e.g. "720p"
- * @param {boolean} params.generateAudio
- * @param {boolean} params.watermark - sent as addWatermark
- * @param {string} model
- * @param {string} baseUrl
- * @param {string} apiKey
- * @param {function} request
- * @param {function} poll
- * @returns {Promise<{url: string}>}
- */
-async function generateVideo({
-  prompt,
-  images,
-  videos,
-  audios,
-  params: {
-    mode,
-    seconds,
-    size,
-    resolution,
-    ratio,
-    generateAudio,
-    watermark,
-  },
-  model,
-  baseUrl,
-  apiKey,
-  request,
-  poll,
-}) {
-  async function toInline(source) {
-    if (typeof source === "string") {
-      const match = source.match(/^data:([^;]+);base64,(.*)$/);
-      return {
-        bytesBase64Encoded: match ? match[2] : "",
-        mimeType: match ? match[1] : "image/png",
-      };
-    }
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(source);
-    });
-    const match = String(dataUrl).match(/^data:([^;]+);base64,(.*)$/);
-    return {
-      bytesBase64Encoded: match ? match[2] : "",
-      mimeType: match ? match[1] : (source.type || "application/octet-stream"),
-    };
-  }
-
-  const aspectRatioMap = {
-    "1280x720": "16:9",
-    "1920x1080": "16:9",
-    "720x1280": "9:16",
-    "1080x1920": "9:16",
-  };
-  let aspectRatio = ratio || size || "16:9";
-  if (aspectRatio === "auto") {
-    aspectRatio = "16:9";
-  }
-  if (aspectRatioMap[aspectRatio]) {
-    aspectRatio = aspectRatioMap[aspectRatio];
-  }
-
-  const instance = {
-    prompt: prompt,
-  };
-  if (mode === "frames") {
-    if (images[0]) {
-      instance.image = await toInline(images[0]);
-    }
-    if (images[1]) {
-      instance.lastFrame = await toInline(images[1]);
-    }
-  } else {
-    instance.referenceImages = [];
-    for (const dataUrl of images) {
-      instance.referenceImages.push({
-        image: await toInline(dataUrl),
-        referenceType: "asset",
-      });
-    }
-  }
-  if (videos[0]) {
-    instance.video = await toInline(videos[0]);
-  }
-  if (audios[0]) {
-    instance.audio = await toInline(audios[0]);
-  }
-
-  const headers = {
-    "Content-Type": "application/json",
-    "x-goog-api-key": apiKey,
-  };
-  const op = await request({
-    method: "post",
-    url: \`\${baseUrl}/v1beta/models/\${model}:predictLongRunning\`,
-    headers,
-    data: {
-      instances: [instance],
-      parameters: {
-        aspectRatio: aspectRatio,
-        durationSeconds: Number(seconds) || 8,
-        resolution: resolution || "720p",
-        generateAudio: generateAudio !== false,
-        addWatermark: watermark === true,
-      },
-    },
-  });
-
-  return await poll(
-    () => request({
-      method: "get",
-      url: \`\${baseUrl}/v1beta/\${op.name}\`,
-      headers,
-    }),
-    (state) => {
-      if (state.error) {
-        throw new Error(state.error.message || "video generation failed");
-      }
-      if (!state.done) return null;
-      const uri = state.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
-      if (!uri) throw new Error("Gemini did not return a video URI");
-      if (uri.includes("key=")) return { url: uri };
-      const separator = uri.includes("?") ? "&" : "?";
-      return { url: uri + separator + "key=" + apiKey };
-    },
-    { intervalMs: 5000, timeoutMs: 300000 },
-  );
-}
-
-return await generateVideo({
-  prompt,
-  images,
-  videos,
-  audios,
-  params,
-  model,
-  baseUrl,
-  apiKey,
-  request,
-  poll,
-});`,
-        },
-    ],
-    audio: [
-        {
-            label: i18n.t("modelPlugin.templates.openai"),
-            script: `/**
- * OpenAI speech: POST /v1/audio/speech.
- * @param {string} prompt - text to speak
- * @param {object} params
- * @param {string} params.voice
- * @param {string} params.format - response_format, e.g. "mp3"
- * @param {string|number} params.speed
- * @param {string} [params.instructions] - voice style instructions
- * @param {string} model
- * @param {string} baseUrl
- * @param {string} apiKey
- * @param {function} request
- * @returns {Promise<Blob>}
- */
-async function generateAudio({
-  prompt,
-  params: {
-    voice,
-    format,
-    speed,
-    instructions,
-  },
-  model,
-  baseUrl,
-  apiKey,
-  request,
-}) {
-  return await request({
-    method: "post",
-    url: \`\${baseUrl}/v1/audio/speech\`,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: \`Bearer \${apiKey}\`,
-    },
-    responseType: "blob",
-    data: {
-      model: model,
-      input: prompt,
-      voice: voice,
-      response_format: format,
-      speed: Number(speed),
-      instructions: instructions,
-    },
-  });
-}
-
-return await generateAudio({
-  prompt,
-  params,
-  model,
-  baseUrl,
-  apiKey,
-  request,
-});`,
-        },
-        {
-            label: i18n.t("modelPlugin.templates.gemini"),
-            script: `/**
- * Gemini TTS: POST models/{model}:generateContent with AUDIO modality.
- * Audio bytes are returned in inlineData.data (base64 PCM).
- * @param {string} prompt - text to speak
- * @param {object} params
- * @param {string} params.voice - prebuilt voice name
- * @param {string} model
- * @param {string} baseUrl
- * @param {string} apiKey
- * @param {function} request
- * @returns {Promise<{data: string}>}
- */
-async function generateAudio({
-  prompt,
-  params: {
-    voice,
-  },
-  model,
-  baseUrl,
-  apiKey,
-  request,
-}) {
-  const data = await request({
-    method: "post",
-    url: \`\${baseUrl}/v1beta/models/\${model}:generateContent\`,
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    data: {
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: prompt }],
-        },
-      ],
-      generationConfig: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: voice,
-            },
-          },
-        },
-      },
-    },
-  });
-  const parts = data.candidates?.[0]?.content?.parts || [];
-  let audio = null;
-  for (const part of parts) {
-    audio = part.inlineData || part.inline_data;
-    if (audio && audio.data) break;
-  }
-  if (!audio || !audio.data) throw new Error("Gemini did not return audio");
-  return { data: audio.data };
-}
-
-return await generateAudio({
-  prompt,
-  params,
-  model,
-  baseUrl,
-  apiKey,
-  request,
-});`,
-        },
-    ],
-    text: [
-        {
-            label: i18n.t("modelPlugin.templates.openai"),
-            script: `/**
- * OpenAI text: POST /v1/responses.
- * @param {{role: string, content: string}[]} messages - includes the system message when present
- * @param {string} model
- * @param {string} baseUrl
- * @param {string} apiKey
- * @param {string} reasoningEffort - "auto" | "low" | "medium" | "high" | "xhigh"; omit reasoning when "auto"
- * @param {function} request
- * @param {function} onDelta - push streaming text
- * @returns {Promise<string>}
- */
-async function generateText({
-  messages,
-  model,
-  baseUrl,
-  apiKey,
-  reasoningEffort,
-  request,
-  onDelta,
-}) {
-  const body = {
-    model: model,
-    input: messages,
-  };
-  if (reasoningEffort && reasoningEffort !== "auto") {
-    body.reasoning = {
-      effort: reasoningEffort,
-    };
-  }
-  const data = await request({
-    method: "post",
-    url: \`\${baseUrl}/v1/responses\`,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: \`Bearer \${apiKey}\`,
-    },
-    data: body,
-  });
-  const text = data.output_text
-    || (data.output || []).flatMap((o) => o.content || []).map((c) => c.text || "").join("")
-    || "";
-  onDelta(text);
-  return text;
-}
-
-return await generateText({
-  messages,
-  model,
-  baseUrl,
-  apiKey,
-  reasoningEffort,
-  request,
-  onDelta,
-});`,
-        },
-        {
-            label: i18n.t("modelPlugin.templates.gemini"),
-            script: `/**
- * Gemini text: POST models/{model}:generateContent.
- * System messages are skipped in contents; systemPrompt goes to systemInstruction.
- * @param {{role: string, content: string}[]} messages
- * @param {string} systemPrompt
- * @param {string} model
- * @param {string} baseUrl
- * @param {string} apiKey
- * @param {function} request
- * @param {function} onDelta - push streaming text
- * @returns {Promise<string>}
- */
-async function generateText({
-  messages,
-  systemPrompt,
-  model,
-  baseUrl,
-  apiKey,
-  request,
-  onDelta,
-}) {
-  const contents = [];
-  for (const message of messages) {
-    if (message.role === "system") continue;
-    contents.push({
-      role: message.role === "assistant" ? "model" : "user",
-      parts: [{ text: message.content }],
-    });
-  }
-  const body = {
-    contents: contents,
-  };
-  if (systemPrompt) {
-    body.systemInstruction = {
-      parts: [{ text: systemPrompt }],
-    };
-  }
-  const data = await request({
-    method: "post",
-    url: \`\${baseUrl}/v1beta/models/\${model}:generateContent\`,
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    data: body,
-  });
-  let text = "";
-  for (const part of data.candidates?.[0]?.content?.parts || []) {
-    text += part.text || "";
-  }
-  onDelta(text);
-  return text;
-}
-
-return await generateText({
-  messages,
-  systemPrompt,
-  model,
-  baseUrl,
-  apiKey,
-  request,
-  onDelta,
-});`,
-        },
-    ],
-    };
 }

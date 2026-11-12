@@ -1,9 +1,21 @@
-export const APP_VERSION = __APP_VERSION__ || "dev";
+const FALLBACK_REGISTRY = "/plugins/official-plugins.json";
 
-// A deployer may provide their own documentation. Built-in help stays in the app.
-export const DOCS_URL = import.meta.env.VITE_DOC_URL || "";
+function setting(value: string | undefined) {
+  return value?.trim() || "";
+}
 
-// The workbench owns its registry endpoint. Deployments can replace it with a
-// trusted mirror, but a fresh install never reaches a third-party registry by
-// default.
-export const PLUGIN_REGISTRY_URL = import.meta.env.VITE_PLUGIN_REGISTRY_URL || "/plugins/official-plugins.json";
+function publicLink(value: string) {
+  if (!value) return "";
+  if (value.startsWith("/")) return value;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+export const APP_VERSION = setting(__APP_VERSION__) || "dev";
+export const DOCS_URL = publicLink(setting(import.meta.env.VITE_DOC_URL));
+export const PLUGIN_REGISTRY_URL =
+  publicLink(setting(import.meta.env.VITE_PLUGIN_REGISTRY_URL)) || FALLBACK_REGISTRY;

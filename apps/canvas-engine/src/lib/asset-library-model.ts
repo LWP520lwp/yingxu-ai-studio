@@ -3,7 +3,7 @@ import type {
   ImageAsset,
   TextAsset,
   VideoAsset,
-} from "@/stores/use-asset-store";
+} from "@/types/asset";
 
 export type AssetPatch = Partial<Omit<Asset, "id" | "createdAt">>;
 

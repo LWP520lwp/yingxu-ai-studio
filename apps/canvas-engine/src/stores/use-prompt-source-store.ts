@@ -1,66 +1,59 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import { localForageStorage } from "@/lib/localforage-storage";
 
-import { DEFAULT_PROMPT_SOURCES, createPromptSource, type PromptSource } from "@/services/api/prompt-source-presets";
+import { createMigratingStorage } from "@/lib/localforage-storage";
+import { LEGACY_STORAGE_KEYS } from "@/lib/legacy-data-compatibility";
+import { createPromptSource, DEFAULT_PROMPT_SOURCES, type PromptSource } from "@/services/api/prompt-source-presets";
+import {
+  DEFAULT_PROMPT_SOURCE_SCHEDULE,
+  normalizePromptSourceSchedule,
+  removePromptSource,
+  restorePromptSourceCatalog,
+  setPromptSourceEnabled,
+  upsertPromptSource,
+  type PromptSourceSchedule,
+} from "@/lib/prompt-source-catalog";
 
-export type PromptSourceSchedule = {
-    intervalMinutes: number;
-    lastFetchedAt: string;
-};
+export { isPromptSourceInterval, PROMPT_SOURCE_INTERVALS } from "@/lib/prompt-source-catalog";
+export type { PromptSourceSchedule } from "@/lib/prompt-source-catalog";
 
-const PROMPT_SOURCE_STORE_KEY = "yingxu-atlas:prompt_source_store:v3";
-const LEGACY_PROMPT_SOURCE_STORE_KEY = "infinite-canvas:prompt_source_store_v2";
-
-const defaultSchedule: PromptSourceSchedule = {
-    intervalMinutes: 30,
-    lastFetchedAt: "",
-};
-
-export const PROMPT_SOURCE_INTERVALS = [0, 30, 60, 360, 1440];
+const STORE_KEY = "yingxu-atlas:prompt_source_store:v3";
 
 type PromptSourceStore = {
-    sources: PromptSource[];
-    schedule: PromptSourceSchedule;
-    addSource: () => PromptSource;
-    saveSource: (source: PromptSource) => void;
-    removeSource: (id: string) => void;
-    toggleSource: (id: string, enabled: boolean) => void;
-    updateSchedule: <K extends keyof PromptSourceSchedule>(key: K, value: PromptSourceSchedule[K]) => void;
+  sources: PromptSource[];
+  schedule: PromptSourceSchedule;
+  addSource: () => PromptSource;
+  saveSource: (source: PromptSource) => void;
+  removeSource: (id: string) => void;
+  toggleSource: (id: string, enabled: boolean) => void;
+  updateSchedule: <K extends keyof PromptSourceSchedule>(key: K, value: PromptSourceSchedule[K]) => void;
 };
 
 export const usePromptSourceStore = create<PromptSourceStore>()(
-    persist(
-        (set) => ({
-            sources: DEFAULT_PROMPT_SOURCES,
-            schedule: defaultSchedule,
-            addSource: () => createPromptSource(),
-            saveSource: (source) =>
-                set((state) => ({
-                    sources: state.sources.some((item) => item.id === source.id)
-                        ? state.sources.map((item) => (item.id === source.id && !item.builtIn ? createPromptSource(source) : item))
-                        : [...state.sources, createPromptSource(source)],
-                })),
-            removeSource: (id) => set((state) => ({ sources: state.sources.filter((item) => item.id !== id || item.builtIn) })),
-            toggleSource: (id, enabled) => set((state) => ({ sources: state.sources.map((item) => (item.id === id ? { ...item, enabled } : item)) })),
-            updateSchedule: (key, value) => set((state) => ({ schedule: { ...state.schedule, [key]: value } })),
-        }),
-        {
-            name: PROMPT_SOURCE_STORE_KEY,
-            storage: createJSONStorage(() => ({
-                getItem: async (name: string) => (await localForageStorage.getItem(name)) ?? (await localForageStorage.getItem(LEGACY_PROMPT_SOURCE_STORE_KEY)),
-                setItem: (name: string, value: string) => localForageStorage.setItem(name, value),
-                removeItem: (name: string) => localForageStorage.removeItem(name),
-            })),
-            partialize: (state) => ({ sources: state.sources, schedule: state.schedule }),
-            merge: (persisted, current) => {
-                const persistedState = (persisted || {}) as Partial<PromptSourceStore>;
-                const savedSources = Array.isArray(persistedState.sources) ? persistedState.sources : [];
-                const enabledById = new Map(savedSources.map((source) => [source.id, source.enabled]));
-                const builtIn = DEFAULT_PROMPT_SOURCES.map((source) => ({ ...source, enabled: enabledById.get(source.id) ?? source.enabled }));
-                const custom = savedSources.filter((source) => !source.builtIn).map((source) => createPromptSource(source));
-                return { ...current, sources: [...builtIn, ...custom], schedule: { ...defaultSchedule, ...(persistedState.schedule || {}) } };
-            },
-        },
-    ),
+  persist(
+    (set) => ({
+      sources: DEFAULT_PROMPT_SOURCES,
+      schedule: { ...DEFAULT_PROMPT_SOURCE_SCHEDULE },
+      addSource: () => createPromptSource(),
+      saveSource: (source) => set((state) => ({ sources: upsertPromptSource(state.sources, source) })),
+      removeSource: (id) => set((state) => ({ sources: removePromptSource(state.sources, id) })),
+      toggleSource: (id, enabled) => set((state) => ({ sources: setPromptSourceEnabled(state.sources, id, enabled) })),
+      updateSchedule: (key, value) => set((state) => ({
+        schedule: normalizePromptSourceSchedule({ ...state.schedule, [key]: value }),
+      })),
+    }),
+    {
+      name: STORE_KEY,
+      storage: createJSONStorage(() => createMigratingStorage(LEGACY_STORAGE_KEYS.promptSources)),
+      partialize: ({ sources, schedule }) => ({ sources, schedule }),
+      merge: (saved, current) => {
+        const value = saved as Partial<PromptSourceStore> | null;
+        return {
+          ...current,
+          sources: restorePromptSourceCatalog(value?.sources),
+          schedule: normalizePromptSourceSchedule(value?.schedule),
+        };
+      },
+    },
+  ),
 );

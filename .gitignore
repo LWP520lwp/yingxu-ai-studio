@@ -29,8 +29,8 @@ __pycache__/
 
 # Canvas engine bundles are regenerated from apps/canvas-engine.
 /apps/web/public/canvas-engine/
-# Local upstream reference checkout; migrated source is tracked separately.
-/vendor/infinite-canvas/
+# Local-only vendor workspaces.
+/vendor/
 
 # Local runtime data and logs
 data/

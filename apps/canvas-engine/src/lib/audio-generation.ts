@@ -1,86 +1,58 @@
-export const audioVoiceOptions = [
-  { value: "alloy", label: "Alloy" },
-  { value: "ash", label: "Ash" },
-  { value: "ballad", label: "Ballad" },
-  { value: "coral", label: "Coral" },
-  { value: "echo", label: "Echo" },
-  { value: "fable", label: "Fable" },
-  { value: "nova", label: "Nova" },
-  { value: "onyx", label: "Onyx" },
-  { value: "sage", label: "Sage" },
-  { value: "shimmer", label: "Shimmer" },
-  { value: "verse", label: "Verse" },
-  { value: "marin", label: "Marin" },
-  { value: "cedar", label: "Cedar" },
+const voices = [
+  ["alloy", "Alloy"], ["ash", "Ash"], ["ballad", "Ballad"],
+  ["coral", "Coral"], ["echo", "Echo"], ["fable", "Fable"],
+  ["nova", "Nova"], ["onyx", "Onyx"], ["sage", "Sage"],
+  ["shimmer", "Shimmer"], ["verse", "Verse"], ["marin", "Marin"],
+  ["cedar", "Cedar"],
 ] as const;
 
-export const audioFormatOptions = [
-  { value: "mp3", label: "MP3" },
-  { value: "wav", label: "WAV" },
-  { value: "opus", label: "Opus" },
-  { value: "aac", label: "AAC" },
-  { value: "flac", label: "FLAC" },
-  { value: "pcm", label: "PCM" },
+const formats = [
+  ["mp3", "MP3", "audio/mpeg"], ["wav", "WAV", "audio/wav"],
+  ["opus", "Opus", "audio/opus"], ["aac", "AAC", "audio/aac"],
+  ["flac", "FLAC", "audio/flac"], ["pcm", "PCM", "audio/pcm"],
 ] as const;
 
+export const audioVoiceOptions = voices.map(([value, label]) => ({ value, label }));
+export const audioFormatOptions = formats.map(([value, label]) => ({ value, label }));
 export const audioSpeedPresets = ["0.75", "1", "1.25", "1.5"] as const;
 export const MIN_AUDIO_SPEED = 0.25;
 export const MAX_AUDIO_SPEED = 4;
 
-export type AudioVoice = (typeof audioVoiceOptions)[number]["value"];
-export type AudioFormat = (typeof audioFormatOptions)[number]["value"];
+export type AudioVoice = (typeof voices)[number][0];
+export type AudioFormat = (typeof formats)[number][0];
 
-const voiceByValue = new Map(
-  audioVoiceOptions.map((option) => [option.value, option]),
-);
-const formatByValue = new Map(
-  audioFormatOptions.map((option) => [option.value, option]),
+const voiceLabels = new Map<string, string>(voices);
+const formatInfo = new Map<string, { label: string; mime: string }>(
+  formats.map(([value, label, mime]) => [value, { label, mime }]),
 );
 
 export function normalizeAudioVoiceValue(value: string): AudioVoice {
-  return voiceByValue.has(value as AudioVoice)
-    ? (value as AudioVoice)
-    : "alloy";
+  return voiceLabels.has(value) ? value as AudioVoice : "alloy";
 }
 
 export function normalizeAudioFormatValue(value: string): AudioFormat {
-  return formatByValue.has(value as AudioFormat)
-    ? (value as AudioFormat)
-    : "mp3";
+  return formatInfo.has(value) ? value as AudioFormat : "mp3";
 }
 
-export function normalizeAudioSpeedValue(value: string): string {
-  const speed = Number(value);
-  if (!Number.isFinite(speed)) return "1";
-  const bounded = Math.min(MAX_AUDIO_SPEED, Math.max(MIN_AUDIO_SPEED, speed));
-  return String(Number(bounded.toFixed(2)));
+export function normalizeAudioSpeedValue(value: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "1";
+  const speed = Math.min(MAX_AUDIO_SPEED, Math.max(MIN_AUDIO_SPEED, parsed));
+  return String(Number(speed.toFixed(2)));
 }
 
-export function audioVoiceLabel(value: string): string {
-  return voiceByValue.get(normalizeAudioVoiceValue(value))?.label ?? "Alloy";
+export function audioVoiceLabel(value: string) {
+  return voiceLabels.get(normalizeAudioVoiceValue(value)) ?? "Alloy";
 }
 
-export function audioFormatLabel(value: string): string {
-  return formatByValue.get(normalizeAudioFormatValue(value))?.label ?? "MP3";
+export function audioFormatLabel(value: string) {
+  return formatInfo.get(normalizeAudioFormatValue(value))?.label ?? "MP3";
 }
 
-export function audioSpeedLabel(value: string): string {
+export function audioSpeedLabel(value: string) {
   return `${normalizeAudioSpeedValue(value)}x`;
 }
 
-export function audioMimeType(format: string): string {
-  switch (normalizeAudioFormatValue(format)) {
-    case "wav":
-      return "audio/wav";
-    case "opus":
-      return "audio/opus";
-    case "aac":
-      return "audio/aac";
-    case "flac":
-      return "audio/flac";
-    case "pcm":
-      return "audio/pcm";
-    case "mp3":
-      return "audio/mpeg";
-  }
+export function audioMimeType(format: string) {
+  return formatInfo.get(normalizeAudioFormatValue(format))?.mime ?? "audio/mpeg";
 }

@@ -21,6 +21,18 @@ export type CanvasProject = {
 };
 
 export type CanvasDeletedProject = { id: string; deletedAt: string };
+export type CanvasProjectPatch = Partial<
+  Pick<
+    CanvasProject,
+    | "nodes"
+    | "connections"
+    | "chatSessions"
+    | "activeChatId"
+    | "backgroundMode"
+    | "showImageInfo"
+    | "viewport"
+  >
+>;
 export type CanvasCatalog = {
   projects: CanvasProject[];
   deletedProjects: CanvasDeletedProject[];
@@ -84,9 +96,12 @@ export function renameCanvasProject(
   );
 }
 
-export function updateCanvasProject<P extends Partial<Pick<CanvasProject,
-  "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport"
->>>(projects: CanvasProject[], id: string, patch: P, now: string) {
+export function updateCanvasProject(
+  projects: CanvasProject[],
+  id: string,
+  patch: CanvasProjectPatch,
+  now: string,
+) {
   const current = projects.find((project) => project.id === id);
   if (!current || Object.entries(patch).every(([key, value]) => current[key as keyof CanvasProject] === value)) return projects;
   return projects.map((project) =>

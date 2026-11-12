@@ -69,6 +69,11 @@ describe("video preparation templates and model capabilities", () => {
         expect(second.textCount).toBe(1);
     });
 
+    it("creates a source-only prompt when the selected Skill has no user instruction", () => {
+        expect(textVideoPrompt("text-two", "   ")).toBe("@[node:text-two]");
+        expect(textVideoPrompt("text-two", "先固定景别\n\n@[node:text-two]")).toBe("先固定景别\n\n@[node:text-two]");
+    });
+
     it("selects available requested/default models and otherwise falls back to the shared Muse channel", () => {
         const models = [{ id: "muse-video", available: false }, { id: "doubao-video", available: true }, { id: "muse-service-video", available: true }];
         expect(selectVideoModel(models, "platform::doubao-video")?.id).toBe("doubao-video");

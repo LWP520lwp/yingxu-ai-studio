@@ -128,12 +128,16 @@ export function ConnectionCreateMenu({
 }) {
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const { t } = useTranslation();
+  const menuRef = useRef<HTMLDivElement>(null);
   const entries = buildConnectionCreateEntries((key) => t(key));
+  useMenuKeyboard(menuRef, onClose);
 
   return (
     <div
+      ref={menuRef}
       className="absolute z-[120] w-[240px] rounded-2xl border p-2 shadow-2xl backdrop-blur"
       data-connection-create-menu
+      role="menu"
       style={{
         left: pending.position.x,
         top: pending.position.y,
@@ -151,7 +155,7 @@ export function ConnectionCreateMenu({
         label={t("canvas.createMenu.fromNode")}
         onClose={onClose}
       />
-      <div className="grid gap-0.5">
+      <div className="grid gap-0.5" role="presentation">
         {entries.map((entry) => (
           <ConnectionCreateOption
             key={entry.id}
@@ -183,6 +187,7 @@ export function ConnectionCreateOption({
   return (
     <button
       type="button"
+      role="menuitem"
       className="flex h-12 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2 text-left transition focus-visible:outline-2 focus-visible:outline-offset-1"
       style={{ color: theme.node.text, outlineColor: theme.node.activeStroke }}
       onClick={onClick}
@@ -237,6 +242,8 @@ export function NodeCreateMenu({
     [registryVersion],
   );
 
+  useMenuKeyboard(menuRef, onClose);
+
   useEffect(() => {
     const dismissWhenOutside = (event: PointerEvent) => {
       const menu = menuRef.current;
@@ -252,6 +259,7 @@ export function NodeCreateMenu({
       ref={menuRef}
       className="absolute z-[120] max-h-[70vh] w-[240px] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur thin-scrollbar"
       data-canvas-no-zoom
+      role="menu"
       style={{
         left: position.x,
         top: position.y,
@@ -268,7 +276,7 @@ export function NodeCreateMenu({
         label={t("canvas.createMenu.select")}
         onClose={onClose}
       />
-      <div className="grid gap-0.5">
+      <div className="grid gap-0.5" role="presentation">
         {definitions.map((definition) => (
           <ConnectionCreateOption
             key={definition.type}
@@ -310,4 +318,55 @@ function MenuHeading({
       </button>
     </div>
   );
+}
+
+function useMenuKeyboard(
+  menuRef: React.RefObject<HTMLDivElement | null>,
+  onClose: () => void,
+) {
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const buttons = [
+        ...menu.querySelectorAll<HTMLButtonElement>(
+          'button[role="menuitem"]:not(:disabled)',
+        ),
+      ];
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (
+        !buttons.length ||
+        !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
+      )
+        return;
+
+      event.preventDefault();
+      const current = buttons.indexOf(
+        document.activeElement as HTMLButtonElement,
+      );
+      const next =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? buttons.length - 1
+            : (current +
+                (event.key === "ArrowDown" ? 1 : -1) +
+                buttons.length) %
+              buttons.length;
+      buttons[next].focus();
+    };
+
+    menu.addEventListener("keydown", handleKeyDown);
+    menu
+      .querySelector<HTMLButtonElement>(
+        'button[role="menuitem"]:not(:disabled)',
+      )
+      ?.focus();
+    return () => menu.removeEventListener("keydown", handleKeyDown);
+  }, [menuRef, onClose]);
 }

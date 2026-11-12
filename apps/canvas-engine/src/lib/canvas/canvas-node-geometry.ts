@@ -2,7 +2,6 @@ import {
     CanvasNodeType,
     type CanvasConnection,
     type CanvasNodeData,
-    type ConnectionHandle,
     type ViewportTransform,
 } from "@/types/canvas";
 
@@ -351,46 +350,6 @@ export function findContainingGroupId(
             return group.id;
     }
     return undefined;
-}
-
-/** Anchor a candidate target on the side opposite the handle that began a new edge. */
-export function getConnectionTargetAnchor(
-    node: CanvasNodeData,
-    current: ConnectionHandle,
-) {
-    const frame = rectOf(node);
-    return {
-        x: current.handleType === "source" ? frame.left : frame.right,
-        y: (frame.top + frame.bottom) / 2,
-    };
-}
-
-/** Keep regular edge direction tied to the drag start and route every config edge into its config node. */
-export function normalizeConnection(
-    firstNodeId: string,
-    secondNodeId: string,
-    nodes: CanvasNodeData[],
-    firstHandleType: "source" | "target",
-) {
-    const first = nodes.find((node) => node.id === firstNodeId);
-    const second = nodes.find((node) => node.id === secondNodeId);
-    if (
-        !first ||
-        !second ||
-        first.id === second.id ||
-        second.type === CanvasNodeType.Group
-    )
-        return null;
-    if (
-        first.type === CanvasNodeType.Config &&
-        second.type === CanvasNodeType.Config
-    )
-        return null;
-    if (second.type === CanvasNodeType.Config)
-        return { fromNodeId: first.id, toNodeId: second.id };
-    if (first.type === CanvasNodeType.Config && firstHandleType === "target")
-        return { fromNodeId: second.id, toNodeId: first.id };
-    return { fromNodeId: first.id, toNodeId: second.id };
 }
 
 export type FocusFrame = {

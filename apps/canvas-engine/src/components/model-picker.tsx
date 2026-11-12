@@ -1,14 +1,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { App } from "antd";
+import { App, Select } from "antd";
 import { Cpu, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@/components/ui/select";
 import {
   getModelIconPath,
   getModelPickerEmptyState,
@@ -28,6 +22,7 @@ type ModelPickerProps = {
   fullWidth?: boolean;
   placeholder?: string;
   onMissingConfig?: () => void;
+  disabled?: boolean;
 };
 
 export function ModelPicker({
@@ -39,6 +34,7 @@ export function ModelPicker({
   fullWidth = false,
   placeholder,
   onMissingConfig,
+  disabled = false,
 }: ModelPickerProps) {
   const { t } = useTranslation();
   const { message } = App.useApp();
@@ -53,6 +49,24 @@ export function ModelPicker({
   const current = value || "";
   const pickerPlaceholder = placeholder || t("settingsPanels.model.select");
   const canRefresh = capability === "image" || capability === "video";
+  const selectOptions = useMemo(
+    () =>
+      options.length
+        ? options.map((model) => ({
+            value: model,
+            label: <ModelLabel config={config} model={model} />,
+          }))
+        : [
+            {
+              value: "__empty__",
+              label: (
+                <EmptyModelLabel config={config} capability={capability} />
+              ),
+              disabled: true,
+            },
+          ],
+    [capability, config, options],
+  );
 
   useEffect(() => () => refreshController.current?.abort(), []);
 
@@ -123,69 +137,47 @@ export function ModelPicker({
         fullWidth ? "w-full" : "w-fit",
         className,
       )}
+      onPointerDown={(event) => event.stopPropagation()}
     >
       <Select
+        aria-label={
+          current ? getModelPickerLabel(config, current) : pickerPlaceholder
+        }
+        className={cn(
+          "canvas-composer-model-picker min-w-0",
+          fullWidth ? "w-full flex-1" : "w-fit flex-1",
+          className,
+        )}
+        popupClassName="canvas-model-picker-popup"
         open={open}
-        value={current}
+        disabled={disabled}
+        value={current || undefined}
         onOpenChange={openPicker}
-        onValueChange={onChange}
-      >
-        <SelectTrigger
-          aria-label={
-            current ? getModelPickerLabel(config, current) : pickerPlaceholder
-          }
-          className={cn(
-            "canvas-composer-model-picker h-8 w-fit max-w-full gap-2 rounded-full border border-input bg-transparent px-3 text-sm font-normal shadow-sm transition-colors",
-            fullWidth
-              ? "w-full min-w-0 flex-1 justify-start"
-              : "min-w-0 flex-1 justify-start",
-            "data-[state=open]:border-ring data-[state=open]:ring-2 data-[state=open]:ring-ring/20",
-            className,
-          )}
-          onMouseDown={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          title={
-            current ? getModelPickerLabel(config, current) : pickerPlaceholder
-          }
-        >
-          <ModelIcon model={current} />
-          <span className="canvas-model-picker-text min-w-0 flex-1 truncate text-left">
-            {current ? getModelPickerLabel(config, current) : pickerPlaceholder}
-          </span>
-        </SelectTrigger>
-        <SelectContent
-          data-canvas-no-zoom
-          className="z-[1200] w-80 max-w-[calc(100vw-24px)] rounded-xl border border-border/70 bg-popover p-1 shadow-xl"
-          position="popper"
-          align="start"
-          side="bottom"
-          sideOffset={6}
-          onPointerDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          {options.length ? (
-            options.map((model) => (
-              <SelectItem
-                key={model}
-                value={model}
-                textValue={getModelPickerLabel(config, model)}
-              >
-                <ModelLabel config={config} model={model} />
-              </SelectItem>
-            ))
+        onChange={(model) => onChange(String(model || ""))}
+        options={selectOptions}
+        optionRender={(option) => option.label}
+        labelRender={() =>
+          current ? (
+            <ModelLabel config={config} model={current} />
           ) : (
-            <SelectItem value="__empty__" disabled>
-              <EmptyModelLabel config={config} capability={capability} />
-            </SelectItem>
-          )}
-        </SelectContent>
-      </Select>
+            <span className="truncate text-left text-muted-foreground">
+              {pickerPlaceholder}
+            </span>
+          )
+        }
+        placeholder={pickerPlaceholder}
+        showSearch={false}
+        popupMatchSelectWidth={320}
+        listHeight={320}
+        onMouseDown={(event) => event.stopPropagation()}
+        onInputKeyDown={(event) => event.stopPropagation()}
+      ></Select>
       {canRefresh ? (
         <button
           type="button"
           aria-label={refreshing ? "正在刷新模型状态" : "刷新模型状态"}
           aria-busy={refreshing}
-          disabled={refreshing}
+          disabled={disabled || refreshing}
           title="刷新模型状态；任务结束后可重新检查，当前节点设置会保留"
           className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-wait disabled:opacity-50"
           onMouseDown={(event) => event.stopPropagation()}

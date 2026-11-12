@@ -25,7 +25,8 @@ vi.mock("@/i18n", () => ({ default: { t: (key: string) => key } }));
 vi.mock("@/stores/use-config-store", () => ({ defaultConfig: {}, resolveModelForCapability: vi.fn() }));
 
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
-import { audioExtension, findRetrySourceNode, generationReferenceUrls, hydrateAssistantImages, hydrateCanvasImages, imageExtension, isAudioFile } from "@/lib/canvas/canvas-generation-helpers";
+import { audioExtension, buildGenerationConfig, findRetrySourceNode, generationReferenceUrls, getGenerationCount, hydrateAssistantImages, hydrateCanvasImages, imageExtension, isAudioFile } from "@/lib/canvas/canvas-generation-helpers";
+import { resolveModelForCapability, type AiConfig } from "@/stores/use-config-store";
 
 const node = (id: string, type: CanvasNodeData["type"], metadata?: CanvasNodeData["metadata"]): CanvasNodeData => ({
     id, type, title: id, position: { x: 0, y: 0 }, width: 120, height: 80, metadata,
@@ -54,6 +55,24 @@ describe("canvas generation support", () => {
         expect(audioExtension("audio/ogg; codecs=opus")).toBe("opus");
         expect(isAudioFile({ type: "", name: "voice.FLAC" } as File)).toBe(true);
         expect(isAudioFile({ type: "text/plain", name: "notes.txt" } as File)).toBe(false);
+    });
+
+    it("clamps generation counts and preserves explicit false video settings", () => {
+        expect([getGenerationCount("0"), getGenerationCount("-3"), getGenerationCount("99"), getGenerationCount("bad")]).toEqual([1, 1, 15, 1]);
+        vi.mocked(resolveModelForCapability).mockReturnValue("video-model");
+        const config = {
+            model: "default-model",
+            videoGenerateAudio: "true",
+            videoWatermark: "true",
+            count: "2",
+        } as unknown as AiConfig;
+        const videoNode = node("video", CanvasNodeType.Video, { generateAudio: "false", watermark: "false" });
+
+        expect(buildGenerationConfig(config, videoNode, "video")).toMatchObject({
+            model: "video-model",
+            videoGenerateAudio: "false",
+            videoWatermark: "false",
+        });
     });
 
     it("deduplicates stored generation references while preserving input order", () => {

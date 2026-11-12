@@ -50,6 +50,16 @@ describe("refreshing model availability without remounting the draft", () => {
         expect((await pending).video[0].available).toBe(false);
     });
 
+    it("keeps distinct image and video capabilities from the refreshed catalog", async () => {
+        const pending = rpc.refreshPlatformModels();
+        const sent = await request();
+        reply(sent.id, { image: [{ id: "image-only", available: true }], video: [{ id: "video-only", available: false }] });
+        await expect(pending).resolves.toMatchObject({
+            image: [{ id: "image-only", available: true }],
+            video: [{ id: "video-only", available: false }],
+        });
+    });
+
     it("does not replace a newer catalog pushed by the host while waiting", async () => {
         const listener = vi.fn(); const stop = rpc.onPlatformInit(listener); listener.mockClear();
         const pending = rpc.refreshPlatformModels(); const sent = await request();

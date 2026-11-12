@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  MouseEvent,
-  PointerEvent,
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import { Image } from "antd";
@@ -12,22 +17,13 @@ import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 import i18n from "@/i18n";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { isImeComposing, isPlainEnterKey } from "@/lib/keyboard-event";
-import { useThemeStore } from "@/stores/use-theme-store";
-import {
-  parsePromptInputTokens,
-  promptMenuPosition,
-} from "@/lib/canvas/canvas-prompt-input";
-import {
-  CanvasPromptEditorController,
-  type PromptMentionContext,
-} from "@/lib/canvas/canvas-prompt-editor";
-import {
-  resolvePromptEditorKeyIntent,
-  stepMentionSelection,
-} from "@/lib/canvas/canvas-prompt-editor-model";
+import { parsePromptInputTokens, promptMenuPosition } from "@/lib/canvas/canvas-prompt-input";
+import { CanvasPromptEditorController, type PromptMentionContext } from "@/lib/canvas/canvas-prompt-editor";
+import { resolvePromptEditorKeyIntent, stepMentionSelection } from "@/lib/canvas/canvas-prompt-editor-model";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { useThemeStore } from "@/stores/use-theme-store";
 
-type Props = {
+type CanvasPromptChipInputProps = {
   value: string;
   references: CanvasResourceReference[];
   onChange: (value: string) => void;
@@ -37,8 +33,19 @@ type Props = {
   placeholder?: string;
 };
 
-// Prompt-panel contentEditable input: @ references embed thumbnail chips instead of plain label text.
-// Serialization converts chips back to reference labels so the generated value matches the former textarea semantics.
+type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
+type MentionPickerProps = {
+  id: string;
+  anchor: DOMRect | null;
+  choices: CanvasResourceReference[];
+  activeIndex: number;
+  theme: CanvasTheme;
+  onSelect: (reference: CanvasResourceReference) => void;
+};
+
+const editorToken = (reference: CanvasResourceReference) =>
+  reference.valueToken || reference.label;
+
 export function CanvasPromptChipInput({
   value,
   references,
@@ -47,197 +54,186 @@ export function CanvasPromptChipInput({
   className,
   style,
   placeholder,
-}: Props) {
+}: CanvasPromptChipInputProps) {
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
-  const editorRef = useRef<HTMLDivElement>(null);
-  const controllerRef = useRef<CanvasPromptEditorController | null>(null);
-  const composingRef = useRef(false);
-  // Track the last value emitted to the parent. An identical focused value is this component's own echo,
-  // so skip rebuilding to preserve the caret and IME. Rebuild external changes even while focused.
-  const lastEmittedRef = useRef(value);
-  const [mention, setMention] = useState<PromptMentionContext | null>(null);
+  const editorId = `prompt-editor-${useId().replace(/:/g, "")}`;
+  const inputRef = useRef<HTMLDivElement>(null);
+  const behavior = useRef<CanvasPromptEditorController | null>(null);
+  const composing = useRef(false);
+  const lastPublishedValue = useRef(value);
+  const [activeMention, setActiveMention] = useState<PromptMentionContext | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
-  const activeReferences = useMemo(
-    () => references.filter((item) => item.active),
+  const usableReferences = useMemo(
+    () => references.filter((reference) => reference.active),
     [references],
   );
-  const referenceByLabel = useMemo(
-    () => new Map(activeReferences.map((item) => [item.label, item])),
-    [activeReferences],
+  const referencesByToken = useMemo(
+    () => new Map(usableReferences.map((reference) => [editorToken(reference), reference])),
+    [usableReferences],
   );
-  // Match longer labels first so a shorter label cannot split a longer one.
-  const activeLabels = useMemo(
-    () =>
-      Array.from(new Set(activeReferences.map((item) => item.label))).sort(
-        (a, b) => b.length - a.length,
-      ),
-    [activeReferences],
+  const tokensInUse = useMemo(
+    () => [...new Set(usableReferences.map(editorToken))].sort((a, b) => b.length - a.length),
+    [usableReferences],
   );
-  const tokens = useMemo(
-    () => parsePromptInputTokens(value, activeLabels),
-    [value, activeLabels],
+  const documentTokens = useMemo(
+    () => parsePromptInputTokens(value, tokensInUse),
+    [tokensInUse, value],
   );
+  const choices = useMemo(() => {
+    if (!activeMention) return [];
+    const query = activeMention.query.trim().toLocaleLowerCase();
+    return usableReferences.filter((reference) => {
+      const searchable = [reference.label, reference.title, reference.kind, reference.text || ""]
+        .join(" ")
+        .toLocaleLowerCase();
+      return !query || searchable.includes(query);
+    });
+  }, [activeMention, usableReferences]);
 
-  const candidates = useMemo(() => {
-    if (!mention) return [];
-    const query = mention.query.trim().toLowerCase();
-    if (!query) return activeReferences;
-    return activeReferences.filter((item) =>
-      `${item.label} ${item.title} ${item.kind} ${item.text || ""}`
-        .toLowerCase()
-        .includes(query),
-    );
-  }, [mention, activeReferences]);
-
-  // Rebuild the DOM from value when unfocused, or when a focused value is an external change rather than an emitted echo.
   useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
+    const element = inputRef.current;
+    if (!element) return;
 
-    const context = {
-      referenceByLabel,
+    const editorContext = {
+      referenceByLabel: referencesByToken,
       theme,
       onImagePreview: setImagePreview,
     };
-    if (!controllerRef.current || controllerRef.current.element !== editor) {
-      controllerRef.current = new CanvasPromptEditorController(editor, context);
+    if (!behavior.current || behavior.current.element !== element) {
+      behavior.current = new CanvasPromptEditorController(element, editorContext);
     } else {
-      controllerRef.current.updateContext(context);
+      behavior.current.updateContext(editorContext);
     }
 
-    if (document.activeElement === editor && value === lastEmittedRef.current)
-      return;
-    controllerRef.current.render(tokens);
-    lastEmittedRef.current = value;
-  }, [tokens, referenceByLabel, theme, value]);
+    // Rebuilding active content would reset the browser caret on each keystroke.
+    if (document.activeElement === element && value === lastPublishedValue.current) return;
+    behavior.current.render(documentTokens);
+    lastPublishedValue.current = value;
+  }, [documentTokens, referencesByToken, theme, value]);
 
-  const emit = (next: string) => {
-    lastEmittedRef.current = next;
+  const emitValue = (next: string) => {
+    lastPublishedValue.current = next;
     onChange(next);
   };
 
-  const syncFromEditor = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    emit(controllerRef.current?.serialize() || "");
-    syncMention();
-  };
-
-  const syncMention = () => {
-    const next = controllerRef.current?.mentionAtCaret() || null;
-    if (!next || !activeReferences.length) {
-      closeMention();
+  const inspectCaret = () => {
+    const found = behavior.current?.mentionAtCaret() || null;
+    if (!found || usableReferences.length === 0) {
+      setActiveMention(null);
+      setActiveIndex(0);
       return;
     }
-    setMention(next);
+    setActiveMention(found);
     setActiveIndex(0);
   };
 
-  const closeMention = () => {
-    setMention(null);
-    setActiveIndex(0);
+  const commitDomEdit = () => {
+    emitValue(behavior.current?.serialize() || "");
+    inspectCaret();
   };
 
   const insertReference = (reference: CanvasResourceReference) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    controllerRef.current?.insertReference(reference);
-    closeMention();
-    emit(controllerRef.current?.serialize() || "");
+    behavior.current?.insertReference(reference);
+    setActiveMention(null);
+    emitValue(behavior.current?.serialize() || "");
   };
 
-  const showPlaceholder = !value.trim();
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    const hasChoices = Boolean(activeMention && choices.length > 0);
+    const intent = resolvePromptEditorKeyIntent({
+      key: event.key,
+      composing: isImeComposing(event) || composing.current,
+      mentionHasCandidates: hasChoices,
+      adjacentReference: behavior.current?.hasAdjacentReference(event.key) ?? false,
+      plainEnter: isPlainEnterKey(event),
+      canSubmit: Boolean(onSubmit),
+    });
+
+    switch (intent) {
+      case "ignore-composition":
+        return;
+      case "next-mention":
+        event.preventDefault();
+        setActiveIndex((index) => stepMentionSelection(index, 1, choices.length));
+        return;
+      case "previous-mention":
+        event.preventDefault();
+        setActiveIndex((index) => stepMentionSelection(index, -1, choices.length));
+        return;
+      case "accept-mention":
+        event.preventDefault();
+        insertReference(choices[Math.min(activeIndex, choices.length - 1)]);
+        return;
+      case "dismiss-mention":
+        event.preventDefault();
+        setActiveMention(null);
+        return;
+      case "delete-reference":
+        event.preventDefault();
+        behavior.current?.deleteAdjacentReference(event.key);
+        requestAnimationFrame(commitDomEdit);
+        return;
+      case "submit":
+        event.preventDefault();
+        onSubmit?.();
+        return;
+      case "refresh-mention":
+        requestAnimationFrame(inspectCaret);
+    }
+  };
 
   return (
     <div className="relative w-full">
-      {showPlaceholder && placeholder ? (
+      {value.trim() === "" && placeholder ? (
         <div
-          className="pointer-events-none absolute left-3 top-2 text-sm leading-5"
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-3 top-2 text-sm leading-5"
           style={{ color: theme.node.placeholder }}
         >
           {placeholder}
         </div>
       ) : null}
+
       <div
-        ref={editorRef}
+        id={editorId}
+        ref={inputRef}
         contentEditable
         suppressContentEditableWarning
         role="textbox"
+        aria-label={placeholder || i18n.t("canvas.composer.title")}
         aria-multiline="true"
+        aria-autocomplete="list"
+        aria-expanded={Boolean(activeMention && choices.length)}
+        aria-controls={activeMention && choices.length ? `${editorId}-mentions` : undefined}
+        aria-activedescendant={activeMention && choices.length ? `${editorId}-mention-${activeIndex}` : undefined}
         className={`${className || ""} overflow-y-auto whitespace-pre-wrap break-words outline-none`}
         style={{ ...style, cursor: "text" }}
         onInput={() => {
-          if (!composingRef.current) syncFromEditor();
+          if (!composing.current) commitDomEdit();
         }}
-        onCompositionStart={() => {
-          composingRef.current = true;
-        }}
+        onCompositionStart={() => { composing.current = true; }}
         onCompositionEnd={() => {
-          composingRef.current = false;
-          syncFromEditor();
+          composing.current = false;
+          commitDomEdit();
         }}
-        onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-          event.stopPropagation();
-          const intent = resolvePromptEditorKeyIntent({
-            key: event.key,
-            composing: isImeComposing(event),
-            mentionHasCandidates: Boolean(mention && candidates.length),
-            adjacentReference:
-              controllerRef.current?.hasAdjacentReference(event.key) || false,
-            plainEnter: isPlainEnterKey(event),
-            canSubmit: Boolean(onSubmit),
-          });
-          switch (intent) {
-            case "ignore-composition":
-              return;
-            case "next-mention":
-              event.preventDefault();
-              setActiveIndex((index) =>
-                stepMentionSelection(index, 1, candidates.length),
-              );
-              return;
-            case "previous-mention":
-              event.preventDefault();
-              setActiveIndex((index) =>
-                stepMentionSelection(index, -1, candidates.length),
-              );
-              return;
-            case "accept-mention":
-              event.preventDefault();
-              insertReference(
-                candidates[Math.min(activeIndex, candidates.length - 1)],
-              );
-              return;
-            case "dismiss-mention":
-              event.preventDefault();
-              closeMention();
-              return;
-            case "delete-reference":
-              event.preventDefault();
-              controllerRef.current?.deleteAdjacentReference(event.key);
-              requestAnimationFrame(syncFromEditor);
-              return;
-            case "submit":
-              event.preventDefault();
-              onSubmit?.();
-              return;
-            case "refresh-mention":
-              requestAnimationFrame(syncMention);
-          }
-        }}
-        onBlur={() => window.setTimeout(closeMention, 120)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => window.setTimeout(() => setActiveMention(null), 120)}
       />
-      {mention && candidates.length ? (
-        <MentionMenu
-          rect={mention.rect}
-          references={candidates}
-          activeIndex={Math.min(activeIndex, candidates.length - 1)}
+
+      {activeMention && choices.length > 0 ? (
+        <MentionPicker
+          id={`${editorId}-mentions`}
+          anchor={activeMention.rect}
+          choices={choices}
+          activeIndex={Math.min(activeIndex, choices.length - 1)}
           theme={theme}
           onSelect={insertReference}
         />
       ) : null}
+
       {imagePreview ? (
         <Image
           src={imagePreview}
@@ -246,7 +242,9 @@ export function CanvasPromptChipInput({
           preview={{
             visible: true,
             src: imagePreview,
-            onVisibleChange: (visible) => !visible && setImagePreview(null),
+            onVisibleChange: (visible) => {
+              if (!visible) setImagePreview(null);
+            },
           }}
         />
       ) : null}
@@ -254,89 +252,74 @@ export function CanvasPromptChipInput({
   );
 }
 
-function MentionMenu({
-  rect,
-  references,
-  activeIndex,
-  theme,
-  onSelect,
-}: {
-  rect: DOMRect | null;
-  references: CanvasResourceReference[];
-  activeIndex: number;
-  theme: (typeof canvasThemes)[keyof typeof canvasThemes];
-  onSelect: (reference: CanvasResourceReference) => void;
-}) {
-  const selectedRef = useRef(false);
-  const activeItemRef = useRef<HTMLButtonElement | null>(null);
-
+function MentionPicker({ id, anchor, choices, activeIndex, theme, onSelect }: MentionPickerProps) {
+  const activeOption = useRef<HTMLButtonElement>(null);
+  const selectionClaimed = useRef(false);
   useEffect(() => {
-    activeItemRef.current?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, references]);
+    activeOption.current?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, choices]);
 
-  const selectReference = (reference: CanvasResourceReference) => {
-    if (selectedRef.current) return;
-    selectedRef.current = true;
+  const fallbackAnchor = { left: 16, right: 16, top: 16, bottom: 36 };
+  const placement = promptMenuPosition(
+    anchor || fallbackAnchor,
+    { width: window.innerWidth, height: window.innerHeight },
+    { width: 280, height: 240, gutter: 12, gap: 5 },
+  );
+  const stopMenuEvent = (event: ReactPointerEvent | ReactMouseEvent) => event.stopPropagation();
+
+  const choose = (reference: CanvasResourceReference) => {
+    if (selectionClaimed.current) return;
+    selectionClaimed.current = true;
     onSelect(reference);
   };
 
-  const stopCanvasInteraction = (event: PointerEvent | MouseEvent) =>
-    event.stopPropagation();
-
-  const anchor = rect || { left: 16, right: 16, top: 16, bottom: 16 };
-  const position = promptMenuPosition(anchor, {
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
-
   return createPortal(
     <div
+      id={id}
       data-canvas-resource-mention-menu="true"
-      className="fixed z-[1100] overflow-y-auto rounded-xl border p-1 shadow-2xl backdrop-blur-md"
+      role="listbox"
+      className="fixed z-[1100] overflow-y-auto rounded-md border p-1 shadow-xl"
       style={{
-        left: position.left,
-        top: position.top,
-        width: position.width,
-        maxHeight: position.maxHeight,
+        left: placement.left,
+        top: placement.top,
+        width: placement.width,
+        maxHeight: placement.maxHeight,
         background: theme.toolbar.panel,
         borderColor: theme.toolbar.border,
         color: theme.node.text,
       }}
-      onPointerDown={stopCanvasInteraction}
-      onMouseDown={stopCanvasInteraction}
+      onPointerDown={stopMenuEvent}
+      onMouseDown={stopMenuEvent}
       onClick={(event) => event.stopPropagation()}
     >
-      {references.map((reference, index) => (
+      {choices.map((reference, index) => (
         <button
           key={reference.id}
-          ref={index === activeIndex ? activeItemRef : undefined}
+          id={`${id.slice(0, -"-mentions".length)}-mention-${index}`}
+          ref={index === activeIndex ? activeOption : undefined}
           type="button"
-          className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition"
+          role="option"
+          aria-selected={index === activeIndex}
+          className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left text-xs"
           style={{
-            background:
-              index === activeIndex ? theme.toolbar.activeBg : "transparent",
-            color:
-              index === activeIndex
-                ? theme.toolbar.activeText
-                : theme.node.text,
+            background: index === activeIndex ? theme.toolbar.activeBg : "transparent",
+            color: index === activeIndex ? theme.toolbar.activeText : theme.node.text,
           }}
           onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            selectReference(reference);
+            choose(reference);
           }}
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            selectReference(reference);
+            choose(reference);
           }}
         >
-          <ReferencePreview reference={reference} />
+          <ResourceIcon reference={reference} />
           <span className="min-w-0 flex-1">
-            <span className="block font-medium">{reference.label}</span>
-            <span className="block truncate opacity-65">
-              {reference.text || reference.title}
-            </span>
+            <span className="block truncate font-medium">{reference.label}</span>
+            <span className="block truncate opacity-60">{reference.text || reference.title}</span>
           </span>
         </button>
       ))}
@@ -345,38 +328,31 @@ function MentionMenu({
   );
 }
 
-function ReferencePreview({
-  reference,
-}: {
-  reference: CanvasResourceReference;
-}) {
-  if (reference.kind === "image" && reference.previewUrl)
-    return (
-      <img
-        src={reference.previewUrl}
-        alt=""
-        className="size-9 rounded-md object-cover"
-      />
-    );
-  if (reference.kind === "video" && reference.previewUrl)
+function ResourceIcon({ reference }: { reference: CanvasResourceReference }) {
+  if (reference.kind === "image" && reference.previewUrl) {
+    return <img src={reference.previewUrl} alt="" className="size-9 rounded object-cover" />;
+  }
+  if (reference.kind === "video" && reference.previewUrl) {
     return (
       <video
         src={reference.previewUrl}
-        className="size-9 rounded-md bg-black object-cover"
+        className="size-9 rounded bg-black object-cover"
         muted
         preload="metadata"
+        aria-hidden="true"
       />
     );
-  const Icon =
-    reference.kind === "audio"
-      ? Music2
-      : reference.kind === "video"
-        ? Video
-        : reference.kind === "image"
-          ? ImageIcon
-          : FileText;
+  }
+
+  const Icon = reference.kind === "audio"
+    ? Music2
+    : reference.kind === "video"
+      ? Video
+      : reference.kind === "image"
+        ? ImageIcon
+        : FileText;
   return (
-    <span className="grid size-9 shrink-0 place-items-center rounded-md bg-black/10">
+    <span className="grid size-9 shrink-0 place-items-center rounded bg-black/10" aria-hidden="true">
       <Icon className="size-4" />
     </span>
   );

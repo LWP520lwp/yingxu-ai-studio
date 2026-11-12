@@ -66,4 +66,22 @@ describe("canvas panel state", () => {
     expect(store.getState().messages[0]?.id).toBe("10");
     expect(store.getState().messages.at(-1)?.id).toBe("509");
   });
+
+  it("bounds bulk history restores and rejects an invalid panel width", () => {
+    const store = useAgentStore;
+    store.setState({ messages: [], eventLogs: [], width: 440 });
+    const messages: AgentChatItem[] = Array.from({ length: 510 }, (_, index) => ({
+      id: String(index),
+      role: "assistant",
+      text: `message ${index}`,
+    }));
+
+    store.getState().setAgentState({ width: 900, messages });
+    expect(store.getState().width).toBe(720);
+    expect(store.getState().messages).toHaveLength(500);
+    expect(store.getState().messages[0]?.id).toBe("10");
+
+    store.getState().setAgentState({ width: Number.NaN });
+    expect(store.getState().width).toBe(720);
+  });
 });

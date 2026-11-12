@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import {
@@ -16,8 +17,8 @@ import type {
   ViewportTransform,
 } from "@/types/canvas";
 
-const MINIMAP_WIDTH = 240;
-const MINIMAP_HEIGHT = 160;
+const MAP_SIZE = { width: 240, height: 160 } as const;
+const KEYBOARD_NUDGE = 48;
 
 type MinimapProps = {
   nodes: CanvasNodeData[];
@@ -34,37 +35,42 @@ export function Minimap({
   viewportSize,
   onViewportChange,
 }: MinimapProps) {
+  const { t } = useTranslation();
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const draggingRef = useRef(false);
   const layout = useMemo(
-    () => createMinimapLayout(nodes, MINIMAP_WIDTH, MINIMAP_HEIGHT),
+    () => createMinimapLayout(nodes, MAP_SIZE.width, MAP_SIZE.height),
     [nodes],
   );
-  const connectionPath = useMemo(
+  const links = useMemo(
     () => minimapConnectionPath(nodes, connections, layout),
     [connections, layout, nodes],
   );
-  const nodeRects = useMemo(
+  const shapes = useMemo(
     () =>
       nodes.map((node) => ({
         id: node.id,
-        rect: minimapNodeRect(node, layout),
-        color: getNodeDefinition(node.type)?.minimapColor || theme.node.muted,
+        bounds: minimapNodeRect(node, layout),
+        color: getNodeDefinition(node.type)?.minimapColor ?? theme.node.muted,
       })),
     [layout, nodes, theme.node.muted],
   );
-  const viewportRect = useMemo(
+  const frame = useMemo(
     () => minimapViewportRect(viewport, viewportSize, layout),
     [layout, viewport, viewportSize],
   );
 
-  const updateViewportFromEvent = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect || rect.width <= 0 || rect.height <= 0) return;
-      const x = ((event.clientX - rect.left) / rect.width) * MINIMAP_WIDTH;
-      const y = ((event.clientY - rect.top) / rect.height) * MINIMAP_HEIGHT;
+  const pointFromPointer = useCallback((event: React.PointerEvent) => {
+    const rect = surfaceRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+    const x = ((event.clientX - rect.left) / rect.width) * MAP_SIZE.width;
+    const y = ((event.clientY - rect.top) / rect.height) * MAP_SIZE.height;
+    return { x, y };
+  }, []);
+
+  const centerAt = useCallback(
+    (x: number, y: number) => {
       onViewportChange(
         viewportAtMinimapPoint({ x, y }, viewport, viewportSize, layout),
       );
@@ -72,82 +78,109 @@ export function Minimap({
     [layout, onViewportChange, viewport, viewportSize],
   );
 
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      draggingRef.current = true;
+      const point = pointFromPointer(event);
+      if (point) centerAt(point.x, point.y);
+    },
+    [centerAt, pointFromPointer],
+  );
+
+  const handlePointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (!draggingRef.current) return;
+      const point = pointFromPointer(event);
+      if (point) centerAt(point.x, point.y);
+    },
+    [centerAt, pointFromPointer],
+  );
+
+  const finishDrag = useCallback(() => {
+    draggingRef.current = false;
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const movement: Record<string, [number, number]> = {
+        ArrowLeft: [-KEYBOARD_NUDGE, 0],
+        ArrowRight: [KEYBOARD_NUDGE, 0],
+        ArrowUp: [0, -KEYBOARD_NUDGE],
+        ArrowDown: [0, KEYBOARD_NUDGE],
+      };
+      const [dx, dy] = movement[event.key] ?? [0, 0];
+      if (!dx && !dy) return;
+      event.preventDefault();
+      const currentCenter = {
+        x: frame.x + frame.width / 2,
+        y: frame.y + frame.height / 2,
+      };
+      const multiplier = event.shiftKey ? 3 : 1;
+      centerAt(
+        currentCenter.x + dx * multiplier * layout.scale,
+        currentCenter.y + dy * multiplier * layout.scale,
+      );
+    },
+    [centerAt, frame, layout.scale],
+  );
+
   return (
-    <div
+    <section
       className="absolute bottom-24 left-6 z-50 overflow-hidden rounded-lg border shadow-2xl backdrop-blur-sm"
       style={{
-        width: MINIMAP_WIDTH,
-        height: MINIMAP_HEIGHT,
+        width: MAP_SIZE.width,
+        height: MAP_SIZE.height,
         background: theme.toolbar.panel,
         borderColor: theme.toolbar.border,
       }}
+      aria-label={t("canvas.miniMapLabel")}
     >
       <div
-        ref={containerRef}
-        className="relative h-full w-full cursor-crosshair"
-        role="group"
+        ref={surfaceRef}
+        className="relative h-full w-full cursor-crosshair touch-none outline-none focus-visible:ring-2 focus-visible:ring-inset"
+        role="application"
         tabIndex={0}
-        aria-label="画布小地图，拖动或使用方向键移动视口"
-        onPointerDown={(event) => {
-          event.preventDefault();
-          event.currentTarget.setPointerCapture(event.pointerId);
-          setIsDragging(true);
-          updateViewportFromEvent(event);
-        }}
-        onPointerMove={(event) => {
-          if (isDragging) updateViewportFromEvent(event);
-        }}
-        onPointerUp={() => setIsDragging(false)}
-        onPointerCancel={() => setIsDragging(false)}
-        onLostPointerCapture={() => setIsDragging(false)}
-        onKeyDown={(event) => {
-          const step = event.shiftKey ? 120 : 48;
-          const offsets: Record<string, [number, number]> = {
-            ArrowLeft: [-step, 0],
-            ArrowRight: [step, 0],
-            ArrowUp: [0, -step],
-            ArrowDown: [0, step],
-          };
-          const offset = offsets[event.key];
-          if (!offset) return;
-          event.preventDefault();
-          onViewportChange({
-            ...viewport,
-            x: viewport.x + offset[0],
-            y: viewport.y + offset[1],
-          });
-        }}
+        aria-label={`${t("canvas.miniMapLabel")}. ${t("canvas.miniMapHint")}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onLostPointerCapture={finishDrag}
+        onKeyDown={handleKeyDown}
       >
         <svg
           className="pointer-events-none absolute inset-0 size-full"
-          viewBox={`0 0 ${MINIMAP_WIDTH} ${MINIMAP_HEIGHT}`}
+          viewBox={`0 0 ${MAP_SIZE.width} ${MAP_SIZE.height}`}
           aria-hidden="true"
         >
           <path
-            d={connectionPath}
+            d={links}
             fill="none"
             stroke={theme.node.muted}
             strokeOpacity={0.42}
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />
-          {nodeRects.map(({ id, rect, color }) => (
+          {shapes.map(({ id, bounds, color }) => (
             <rect
               key={id}
-              x={rect.x}
-              y={rect.y}
-              width={rect.width}
-              height={rect.height}
+              x={bounds.x}
+              y={bounds.y}
+              width={bounds.width}
+              height={bounds.height}
               rx={1}
               fill={color}
               opacity={0.82}
             />
           ))}
           <rect
-            x={viewportRect.x}
-            y={viewportRect.y}
-            width={viewportRect.width}
-            height={viewportRect.height}
+            x={frame.x}
+            y={frame.y}
+            width={frame.width}
+            height={frame.height}
             fill={`${theme.node.activeStroke}18`}
             stroke={theme.node.activeStroke}
             strokeWidth={1.5}
@@ -155,6 +188,6 @@ export function Minimap({
           />
         </svg>
       </div>
-    </div>
+    </section>
   );
 }

@@ -103,6 +103,30 @@ describe("WebDAV transport", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it.each(["%2e%2e/outside.json", "%252e%252e/outside.json", "safe%2f..%2fsecret"])(
+    "rejects encoded traversal before sending a request: %s",
+    async (path) => {
+      const fetch = vi.fn();
+      vi.stubGlobal("fetch", fetch);
+
+      await expect(downloadWebdavFile(config("safe"), path)).rejects.toThrow();
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a non-HTTP endpoint and URL credentials before sending a request", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      downloadWebdavFile({ ...config("safe"), url: "javascript:alert(1)" }, "file.json"),
+    ).rejects.toThrow();
+    await expect(
+      downloadWebdavFile({ ...config("safe"), url: "https://user:pass@dav.example/root" }, "file.json"),
+    ).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("aborts the active request and releases its timeout", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(

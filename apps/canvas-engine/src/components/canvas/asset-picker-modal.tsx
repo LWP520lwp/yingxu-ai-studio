@@ -27,12 +27,17 @@ export type { InsertAssetPayload };
 
 type Props = {
   open: boolean;
-  defaultTab?: string;
+  defaultTab?: AssetPickerKindFilter;
   onInsert: (payload: InsertAssetPayload) => void;
   onClose: () => void;
 };
 
-export function AssetPickerModal({ open, onInsert, onClose }: Props) {
+export function AssetPickerModal({
+  open,
+  defaultTab = "all",
+  onInsert,
+  onClose,
+}: Props) {
   const { t } = useTranslation();
   return (
     <Modal
@@ -42,9 +47,9 @@ export function AssetPickerModal({ open, onInsert, onClose }: Props) {
       footer={null}
       width="min(860px, calc(100vw - 24px))"
       destroyOnHidden
-      styles={{ body: { padding: "0 24px 24px", minHeight: 440 } }}
+      styles={{ body: { padding: "0 20px 20px", minHeight: 360 } }}
     >
-      <MyAssetsTab onInsert={onInsert} />
+      <MyAssetsTab defaultKind={defaultTab} onInsert={onInsert} />
     </Modal>
   );
 }
@@ -95,15 +100,17 @@ function PickerCard({
 }
 
 function MyAssetsTab({
+  defaultKind,
   onInsert,
 }: {
+  defaultKind: AssetPickerKindFilter;
   onInsert: (payload: InsertAssetPayload) => void;
 }) {
   const { t } = useTranslation();
   useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
   const assets = useAssetStore((state) => state.assets);
   const [keyword, setKeyword] = useState("");
-  const [kindFilter, setKindFilter] = useState<AssetPickerKindFilter>("all");
+  const [kindFilter, setKindFilter] = useState(defaultKind);
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(
@@ -119,6 +126,11 @@ function MyAssetsTab({
   useEffect(() => {
     setPage((value) => clampAssetPickerPage(value, filtered.length));
   }, [filtered.length]);
+
+  useEffect(() => {
+    setKindFilter(defaultKind);
+    setPage(1);
+  }, [defaultKind]);
 
   const handleInsert = (asset: Asset) => {
     onInsert(toInsertAssetPayload(asset));
@@ -163,7 +175,7 @@ function MyAssetsTab({
       </div>
 
       {visible.length ? (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           {visible.map((asset) => (
             <PickerCard
               key={asset.id}

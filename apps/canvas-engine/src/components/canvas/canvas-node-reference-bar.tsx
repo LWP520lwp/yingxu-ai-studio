@@ -9,7 +9,12 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { useState, useSyncExternalStore, type DragEventHandler } from "react";
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type DragEventHandler,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -302,11 +307,13 @@ function ReferenceToken({
 }: ReferenceTokenProps) {
   const { t } = useTranslation();
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
+  const [previewFailed, setPreviewFailed] = useState(false);
   useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
 
   const resource = getNodeDefinition(node.type)?.resource?.(node);
   const content = node.metadata?.content || resource?.url;
   const thumbnail = previewUrlFor(node.metadata?.storageKey) || content;
+  useEffect(() => setPreviewFailed(false), [thumbnail]);
   const kind = getReferenceKind(node, resource?.kind);
   const Icon = iconForKind(kind);
   const title = node.title || t("canvas.references.empty");
@@ -356,10 +363,20 @@ function ReferenceToken({
         <span
           className={`${frameSlot ? "size-12" : "size-9"} grid shrink-0 place-items-center overflow-hidden rounded-sm bg-black/5 dark:bg-white/5`}
         >
-          {kind === "image" && thumbnail ? (
-            <img src={thumbnail} alt="" className="size-full object-cover" />
+          {kind === "image" && thumbnail && !previewFailed ? (
+            <img
+              src={thumbnail}
+              alt=""
+              className="size-full object-cover"
+              onError={() => setPreviewFailed(true)}
+            />
           ) : kind === "video" && content ? (
-            <video src={content} className="size-full object-cover" muted />
+            <video
+              src={content}
+              className="size-full object-cover"
+              muted
+              onError={() => setPreviewFailed(true)}
+            />
           ) : (
             <Icon className="size-4 opacity-70" aria-hidden="true" />
           )}

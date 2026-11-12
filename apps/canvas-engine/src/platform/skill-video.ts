@@ -23,51 +23,70 @@ export type PreparedCanvasSkill = {
     requiresReference?: boolean;
 };
 
-export function canvasSkillPrompt(payload: { prompt?: unknown; defaults?: { prompt?: unknown } }) {
-    return typeof payload.defaults?.prompt === "string" ? payload.defaults.prompt : typeof payload.prompt === "string" ? payload.prompt : "";
+type SkillPromptPayload = { prompt?: unknown; defaults?: { prompt?: unknown } };
+
+export function canvasSkillPrompt(payload: SkillPromptPayload): string {
+    if (typeof payload.defaults?.prompt === "string") return payload.defaults.prompt;
+    return typeof payload.prompt === "string" ? payload.prompt : "";
 }
 
-export function textVideoPrompt(sourceNodeId: string, template = "") {
-    const token = `@[node:${sourceNodeId}]`;
-    const prompt = template.trim();
-    return prompt.includes(token) ? prompt : [prompt, token].filter(Boolean).join("\n\n");
+export function textVideoPrompt(sourceNodeId: string, template = ""): string {
+    const sourceReference = `@[node:${sourceNodeId}]`;
+    const instruction = template.trim();
+    if (instruction.includes(sourceReference)) return instruction;
+    return instruction ? `${instruction}\n\n${sourceReference}` : sourceReference;
 }
 
-function positiveNumber(value: unknown): value is number {
+function positive(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-function selectGenerationModel(models: PlatformModel[], fallback: string, requested?: string, preferred?: string, requiresReference = false) {
-    const available = models.filter((model) => model.available && (!requiresReference || model.caps?.supportsReferenceImages !== false));
-    const find = (id?: string) => available.find((model) => model.id === id?.replace(/^platform::/, ""));
-    return find(requested) || find(preferred) || find(fallback) || available[0];
+function chooseModel(
+    catalog: readonly PlatformModel[],
+    fallbackId: string,
+    requestedId?: string,
+    preferredId?: string,
+    needsReference = false,
+): PlatformModel | undefined {
+    const candidates = catalog.filter((model) => model.available && (!needsReference || model.caps?.supportsReferenceImages !== false));
+    const find = (value?: string) => {
+        const id = value?.replace(/^platform::/, "");
+        return id ? candidates.find((model) => model.id === id) : undefined;
+    };
+    return find(requestedId) ?? find(preferredId) ?? find(fallbackId) ?? candidates[0];
 }
 
-export const selectVideoModel = (models: PlatformModel[], requested?: string, preferred?: string, requiresReference = false) => selectGenerationModel(models, "muse-service-video", requested, preferred, requiresReference);
-export const selectImageModel = (models: PlatformModel[], requested?: string, preferred?: string, requiresReference = false) => selectGenerationModel(models, "muse-service-image", requested, preferred, requiresReference);
+export const selectVideoModel = (models: PlatformModel[], requested?: string, preferred?: string, requiresReference = false) =>
+    chooseModel(models, "muse-service-video", requested, preferred, requiresReference);
+export const selectImageModel = (models: PlatformModel[], requested?: string, preferred?: string, requiresReference = false) =>
+    chooseModel(models, "muse-service-image", requested, preferred, requiresReference);
 
 export function videoSkillMetadata(prepared: PreparedCanvasSkill, model: PlatformModel, sourceNodeId?: string, instruction = ""): CanvasNodeMetadata {
-    // A recipe's default prompt is its method, not user-authored scene content.
-    // Market-created video nodes therefore start empty (or with their source token).
+    // Keep recipe instructions separate from editable scene text. The source token is resolved on submit.
     const prompt = sourceNodeId ? textVideoPrompt(sourceNodeId, instruction) : instruction;
-    const width = positiveNumber(model.caps?.fixedWidth) ? model.caps.fixedWidth : prepared.defaults.width;
-    const height = positiveNumber(model.caps?.fixedHeight) ? model.caps.fixedHeight : prepared.defaults.height;
-    const duration = positiveNumber(model.caps?.fixedDuration) ? model.caps.fixedDuration : prepared.defaults.duration;
+    const width = positive(model.caps?.fixedWidth) ? model.caps.fixedWidth : prepared.defaults.width;
+    const height = positive(model.caps?.fixedHeight) ? model.caps.fixedHeight : prepared.defaults.height;
+    const duration = positive(model.caps?.fixedDuration) ? model.caps.fixedDuration : prepared.defaults.duration;
     return {
-        status: "idle", generationMode: "video", model: `platform::${model.id}`,
-        prompt, composerContent: prompt,
-        // Keep editable user text separate from the recipe, which is resolved once at submission.
-        videoSkillId: prepared.defaults.skillId || "", videoSkillVersion: prepared.defaults.skillVersion || "",
+        status: "idle",
+        generationMode: "video",
+        model: `platform::${model.id}`,
+        prompt,
+        composerContent: prompt,
+        videoSkillId: prepared.defaults.skillId || "",
+        videoSkillVersion: prepared.defaults.skillVersion || "",
         videoSkillInputMode: "instruction",
-        skillId: undefined, skillVersion: undefined,
-        ...(positiveNumber(width) && positiveNumber(height) ? { size: `${width}x${height}`, vquality: String(height) } : {}),
-        ...(positiveNumber(duration) ? { seconds: String(duration) } : {}),
+        skillId: undefined,
+        skillVersion: undefined,
+        ...(positive(width) && positive(height) ? { size: `${width}x${height}`, vquality: String(height) } : {}),
+        ...(positive(duration) ? { seconds: String(duration) } : {}),
         videoMode: prepared.requiresReference ? "reference" : "auto",
-        generateAudio: "auto", watermark: "auto",
+        generateAudio: "auto",
+        watermark: "auto",
     };
 }
 
-export async function prepareTextVideo(options: {
+type PrepareTextVideoOptions = {
     sourceNodeId: string;
     projectId: string;
     selected: CanvasVideoSkill | null;
@@ -75,38 +94,57 @@ export async function prepareTextVideo(options: {
     signal: AbortSignal;
     getSourceNode: () => CanvasNodeData | undefined;
     isCurrentProject: () => boolean;
-}) {
-    const init = getPlatformInit();
-    if (!init || init.project.id !== options.projectId || !options.isCurrentProject() || options.signal.aborted) throw platformAbortError();
-    const source = options.getSourceNode();
-    if (source?.type !== CanvasNodeType.Text) throw platformAbortError();
-    if (!(source.metadata?.content || source.metadata?.prompt || "").trim()) throw new Error("请先在文本框中输入视频内容");
+};
 
-    const controller = new AbortController();
-    const abort = () => controller.abort();
-    options.signal.addEventListener("abort", abort, { once: true });
-    const stopListening = onPlatformInit((current) => {
-        if (current.scopeId !== init.scopeId || current.project.id !== init.project.id) abort();
+function readSource(options: PrepareTextVideoOptions): CanvasNodeData {
+    const node = options.getSourceNode();
+    if (!node || node.id !== options.sourceNodeId || node.type !== CanvasNodeType.Text) throw platformAbortError();
+    if (!(node.metadata?.content || node.metadata?.prompt || "").trim()) throw new Error("请先在文本框中输入视频内容");
+    return node;
+}
+
+export async function prepareTextVideo(options: PrepareTextVideoOptions) {
+    const initial = getPlatformInit();
+    if (!initial || initial.project.id !== options.projectId || !options.isCurrentProject() || options.signal.aborted) throw platformAbortError();
+    const source = readSource(options);
+    const requestController = new AbortController();
+    const abortRequest = () => requestController.abort();
+    options.signal.addEventListener("abort", abortRequest, { once: true });
+    const stopWatching = onPlatformInit((current) => {
+        if (current.scopeId !== initial.scopeId || current.project.id !== initial.project.id) abortRequest();
     });
+
     try {
         const selected = options.selected;
-        const prepared: PreparedCanvasSkill = selected ? await platformRequest<PreparedCanvasSkill>("skills.prepare", {
-            id: selected.id, version: selected.version, install: !selected.installed,
-            sourceNodeId: source.id, text: `@[node:${source.id}]`,
-        }, { signal: controller.signal, timeoutMs: 20_000 }) : {
-            kind: "video", defaults: { prompt: `@[node:${source.id}]`, width: 1280, height: 720, duration: 8 }, requiresReference: false,
-        };
+        const prepared: PreparedCanvasSkill = selected
+            ? await platformRequest<PreparedCanvasSkill>("skills.prepare", {
+                id: selected.id,
+                version: selected.version,
+                install: !selected.installed,
+                sourceNodeId: source.id,
+                text: `@[node:${source.id}]`,
+            }, { signal: requestController.signal, timeoutMs: 20_000 })
+            : { kind: "video", defaults: { prompt: `@[node:${source.id}]`, width: 1280, height: 720, duration: 8 } };
+
         const current = getPlatformInit();
-        const currentSource = options.getSourceNode();
-        if (controller.signal.aborted || !options.isCurrentProject() || current?.scopeId !== init.scopeId || current.project.id !== init.project.id || currentSource?.id !== source.id || currentSource.type !== CanvasNodeType.Text) throw platformAbortError();
-        if (!(currentSource.metadata?.content || currentSource.metadata?.prompt || "").trim()) throw new Error("源文本已清空，请先输入视频内容");
+        const latestSource = readSource(options);
+        if (requestController.signal.aborted || !options.isCurrentProject() || current?.scopeId !== initial.scopeId || current.project.id !== initial.project.id || latestSource.id !== source.id) throw platformAbortError();
         if (prepared.kind !== "video" || !prepared.defaults) throw new Error("此 Skill 未返回有效的视频配置，请刷新 Skill 列表后重试");
         if (selected && (prepared.defaults.skillId !== selected.id || prepared.defaults.skillVersion !== selected.version)) throw new Error("Skill 版本已变化，请重新选择后准备视频");
+
         const model = selectVideoModel(current.models.video, prepared.defaults.model, options.preferredModel, prepared.requiresReference);
-        if (!model) throw new Error(prepared.requiresReference ? "暂无支持参考图的视频通道，请先在我的账号池接入 Muse" : "暂无可用的视频通道，请先在我的账号池接入账号");
-        return { source: currentSource, scopeId: current.scopeId, metadata: videoSkillMetadata(prepared, model, source.id, `@[node:${source.id}]`), requiresReference: Boolean(prepared.requiresReference) };
+        if (!model) {
+            const reason = prepared.requiresReference ? "暂无支持参考图的视频通道，请先在我的账号池接入 Muse" : "暂无可用的视频通道，请先在我的账号池接入账号";
+            throw new Error(reason);
+        }
+        return {
+            source: latestSource,
+            scopeId: current.scopeId,
+            metadata: videoSkillMetadata(prepared, model, source.id, `@[node:${source.id}]`),
+            requiresReference: Boolean(prepared.requiresReference),
+        };
     } finally {
-        stopListening();
-        options.signal.removeEventListener("abort", abort);
+        stopWatching();
+        options.signal.removeEventListener("abort", abortRequest);
     }
 }

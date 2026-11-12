@@ -5,223 +5,125 @@ import {
   resolveUpscaleDimensions,
 } from "@/lib/canvas/canvas-image-geometry";
 
-export type ImageCropRect = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-export type ImageAngleTransform = {
-  horizontalAngle: number;
-  pitchAngle: number;
-  cameraDistance: number;
-  wideAngle: boolean;
-};
-
+export type ImageCropRect = { x: number; y: number; width: number; height: number };
+export type ImageAngleTransform = { horizontalAngle: number; pitchAngle: number; cameraDistance: number; wideAngle: boolean };
 export type ImageUpscaleAlgorithm = "nearest" | "bilinear" | "high";
-
 export const MAX_UPSCALE_LONG_EDGE = 4096;
-
-export type ImageUpscaleParams = {
-  targetLongEdge: number;
-  algorithm: ImageUpscaleAlgorithm;
-};
-
-export type ImageSplitParams = {
-  rows: number;
-  columns: number;
-  horizontalLines?: number[];
-  verticalLines?: number[];
-};
-
-export type ImageSplitPiece = {
-  row: number;
-  column: number;
-  dataUrl: string;
-};
+export type ImageUpscaleParams = { targetLongEdge: number; algorithm: ImageUpscaleAlgorithm };
+export type ImageSplitParams = { rows: number; columns: number; horizontalLines?: number[]; verticalLines?: number[] };
+export type ImageSplitPiece = { row: number; column: number; dataUrl: string };
 
 export async function cropDataUrl(dataUrl: string, crop?: ImageCropRect) {
-  const image = await loadImage(dataUrl);
-  if (crop) {
-    const rect = normalizeCropRect(
-      {
+  const image = await loadSource(dataUrl);
+  const source = crop
+    ? normalizeCropRect({
         x: crop.x * image.width,
         y: crop.y * image.height,
         width: crop.width * image.width,
         height: crop.height * image.height,
-      },
-      image,
-    );
-    return drawCrop(image, rect.x, rect.y, rect.width, rect.height);
-  }
-  const size = Math.min(image.width, image.height);
-  const sx = Math.max(0, Math.floor((image.width - size) / 2));
-  const sy = Math.max(0, Math.floor((image.height - size) / 2));
-  return drawCrop(image, sx, sy, size, size);
+      }, image)
+    : centeredSquare(image.width, image.height);
+  return encodeCrop(image, source.x, source.y, source.width, source.height);
 }
 
-export async function splitDataUrl(
-  dataUrl: string,
-  params: ImageSplitParams,
-): Promise<ImageSplitPiece[]> {
-  const image = await loadImage(dataUrl);
-  const xCuts = normalizeSplitLines(
-    params.verticalLines,
-    image.width,
-    params.columns,
-  );
-  const yCuts = normalizeSplitLines(
-    params.horizontalLines,
-    image.height,
-    params.rows,
-  );
+export async function splitDataUrl(dataUrl: string, params: ImageSplitParams): Promise<ImageSplitPiece[]> {
+  const image = await loadSource(dataUrl);
+  const columns = boundedCount(params.columns);
+  const rows = boundedCount(params.rows);
+  const x = normalizeSplitLines(params.verticalLines, image.width, columns);
+  const y = normalizeSplitLines(params.horizontalLines, image.height, rows);
   const pieces: ImageSplitPiece[] = [];
 
-  for (let row = 0; row < yCuts.length - 1; row += 1) {
-    const sy = yCuts[row];
-    const sh = yCuts[row + 1] - sy;
-    for (let column = 0; column < xCuts.length - 1; column += 1) {
-      const sx = xCuts[column];
-      const sw = xCuts[column + 1] - sx;
-      pieces.push({ row, column, dataUrl: drawCrop(image, sx, sy, sw, sh) });
+  for (let row = 0; row + 1 < y.length; row += 1) {
+    for (let column = 0; column + 1 < x.length; column += 1) {
+      const left = x[column];
+      const top = y[row];
+      pieces.push({
+        row,
+        column,
+        dataUrl: encodeCrop(image, left, top, x[column + 1] - left, y[row + 1] - top),
+      });
     }
   }
-
   return pieces;
 }
 
-export async function transformAngleDataUrl(
-  dataUrl: string,
-  params: ImageAngleTransform,
-) {
-  const image = await loadImage(dataUrl);
-  const canvas = document.createElement("canvas");
-  const padding = Math.round(Math.max(image.width, image.height) * 0.18);
-  canvas.width = image.width + padding * 2;
-  canvas.height = image.height + padding * 2;
+export async function transformAngleDataUrl(dataUrl: string, params: ImageAngleTransform) {
+  const image = await loadSource(dataUrl);
+  const margin = Math.ceil(Math.max(image.width, image.height) * 0.2);
+  const canvas = makeCanvas(image.width + margin * 2, image.height + margin * 2);
   const context = canvas.getContext("2d");
   if (!context) return dataUrl;
-  context.clearRect(0, 0, canvas.width, canvas.height);
 
-  const horizontal = boundedAngle(params.horizontalAngle, -60, 60) / 60;
+  const yaw = boundedAngle(params.horizontalAngle, -60, 60) / 60;
   const pitch = boundedAngle(params.pitchAngle, -45, 45) / 45;
-  const distanceScale =
-    1.12 - boundedAngle(params.cameraDistance, 1, 10) * 0.035;
-  const wideScale = params.wideAngle ? 0.88 : 1;
-  const scale = Math.max(0.64, Math.min(1.1, distanceScale * wideScale));
-  const width = image.width * scale * (1 - Math.abs(horizontal) * 0.28);
-  const height = image.height * scale * (1 - Math.abs(pitch) * 0.18);
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  const skewX = horizontal * image.width * 0.18;
-  const skewY = pitch * image.height * 0.12;
-  const x = cx - width / 2 + horizontal * padding * 0.5;
-  const y = cy - height / 2 + pitch * padding * 0.45;
+  const distance = boundedAngle(params.cameraDistance, 1, 10);
+  const scale = clamp((1.13 - distance * 0.035) * (params.wideAngle ? 0.9 : 1), 0.62, 1.1);
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
 
   context.save();
-  context.setTransform(1, pitch * 0.08, horizontal * -0.1, 1, 0, 0);
-  context.drawImage(image, x + skewX, y + skewY, width, height);
+  context.translate(centerX + yaw * margin * 0.5, centerY + pitch * margin * 0.45);
+  context.transform(1, pitch * 0.075, -yaw * 0.095, 1, 0, 0);
+  context.scale(scale * (1 - Math.abs(yaw) * 0.26), scale * (1 - Math.abs(pitch) * 0.16));
+  context.drawImage(image, -image.width / 2, -image.height / 2);
   context.restore();
 
   if (params.wideAngle) {
-    const gradient = context.createRadialGradient(
-      cx,
-      cy,
-      Math.min(canvas.width, canvas.height) * 0.2,
-      cx,
-      cy,
-      Math.max(canvas.width, canvas.height) * 0.62,
-    );
-    gradient.addColorStop(0, "rgba(255,255,255,0)");
-    gradient.addColorStop(1, "rgba(0,0,0,0.18)");
-    context.fillStyle = gradient;
+    const vignette = context.createRadialGradient(centerX, centerY, Math.min(canvas.width, canvas.height) * 0.22, centerX, centerY, Math.max(canvas.width, canvas.height) * 0.65);
+    vignette.addColorStop(0, "rgba(255,255,255,0)");
+    vignette.addColorStop(1, "rgba(0,0,0,0.16)");
+    context.fillStyle = vignette;
     context.fillRect(0, 0, canvas.width, canvas.height);
   }
-
   return canvas.toDataURL("image/png");
 }
 
-export async function upscaleDataUrl(
-  dataUrl: string,
-  params: ImageUpscaleParams,
-) {
-  const image = await loadImage(dataUrl);
-  const { width, height } = resolveUpscaleSize(
-    image.width,
-    image.height,
-    params.targetLongEdge,
-  );
-  return params.algorithm === "high"
-    ? drawStepUpscale(image, width, height)
-    : drawResize(
-        image,
-        image.width,
-        image.height,
-        width,
-        height,
-        params.algorithm,
-      );
+export async function upscaleDataUrl(dataUrl: string, params: ImageUpscaleParams) {
+  const image = await loadSource(dataUrl);
+  const output = resolveUpscaleSize(image.width, image.height, params.targetLongEdge);
+  const canvas = params.algorithm === "high"
+    ? progressiveUpscale(image, output.width, output.height)
+    : resizeCanvas(image, image.width, image.height, output.width, output.height, params.algorithm);
+  return canvas.toDataURL("image/png");
 }
 
-export function resolveUpscaleSize(
-  width: number,
-  height: number,
-  targetLongEdge: number,
-) {
-  return resolveUpscaleDimensions(
-    width,
-    height,
-    targetLongEdge,
-    MAX_UPSCALE_LONG_EDGE,
-  );
+export function resolveUpscaleSize(width: number, height: number, targetLongEdge: number) {
+  return resolveUpscaleDimensions(width, height, targetLongEdge, MAX_UPSCALE_LONG_EDGE);
 }
 
-function drawCrop(
-  image: HTMLImageElement,
-  sx: number,
-  sy: number,
-  sw: number,
-  sh: number,
-) {
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, sw);
-  canvas.height = Math.max(1, sh);
+function centeredSquare(width: number, height: number) {
+  const edge = Math.min(width, height);
+  return { x: Math.floor((width - edge) / 2), y: Math.floor((height - edge) / 2), width: edge, height: edge };
+}
+
+function boundedCount(value: number) {
+  return Number.isFinite(value) ? Math.max(1, Math.min(64, Math.floor(value))) : 1;
+}
+
+function encodeCrop(image: HTMLImageElement, x: number, y: number, width: number, height: number) {
+  const canvas = makeCanvas(Math.max(1, width), Math.max(1, height));
   const context = canvas.getContext("2d");
   if (!context) return image.src;
-  context.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  context.drawImage(image, x, y, width, height, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/png");
 }
 
-function drawStepUpscale(
-  image: HTMLImageElement,
-  width: number,
-  height: number,
-) {
+function progressiveUpscale(image: HTMLImageElement, width: number, height: number) {
   let source: CanvasImageSource = image;
   let sourceWidth = image.width;
   let sourceHeight = image.height;
-
-  while (sourceWidth * 2 < width && sourceHeight * 2 < height) {
-    const nextWidth = sourceWidth * 2;
-    const nextHeight = sourceHeight * 2;
-    const next = drawResizeCanvas(
-      source,
-      sourceWidth,
-      sourceHeight,
-      nextWidth,
-      nextHeight,
-      "high",
-    );
-    source = next;
+  while (sourceWidth < width || sourceHeight < height) {
+    const nextWidth = Math.min(width, sourceWidth * 2);
+    const nextHeight = Math.min(height, sourceHeight * 2);
+    source = resizeCanvas(source, sourceWidth, sourceHeight, nextWidth, nextHeight, "high");
     sourceWidth = nextWidth;
     sourceHeight = nextHeight;
   }
-
-  return drawResize(source, sourceWidth, sourceHeight, width, height, "high");
+  return resizeCanvas(source, sourceWidth, sourceHeight, width, height, "high");
 }
 
-function drawResize(
+function resizeCanvas(
   source: CanvasImageSource,
   sourceWidth: number,
   sourceHeight: number,
@@ -229,49 +131,33 @@ function drawResize(
   height: number,
   algorithm: ImageUpscaleAlgorithm,
 ) {
-  return drawResizeCanvas(
-    source,
-    sourceWidth,
-    sourceHeight,
-    width,
-    height,
-    algorithm,
-  ).toDataURL("image/png");
-}
-
-function drawResizeCanvas(
-  source: CanvasImageSource,
-  sourceWidth: number,
-  sourceHeight: number,
-  width: number,
-  height: number,
-  algorithm: ImageUpscaleAlgorithm,
-) {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
+  const canvas = makeCanvas(width, height);
   const context = canvas.getContext("2d");
   if (!context) return canvas;
   context.imageSmoothingEnabled = algorithm !== "nearest";
   context.imageSmoothingQuality = algorithm === "bilinear" ? "medium" : "high";
-  context.drawImage(
-    source,
-    0,
-    0,
-    sourceWidth,
-    sourceHeight,
-    0,
-    0,
-    width,
-    height,
-  );
+  context.drawImage(source, 0, 0, sourceWidth, sourceHeight, 0, 0, width, height);
   return canvas;
 }
 
-function loadImage(dataUrl: string) {
-  return new Promise<HTMLImageElement>((resolve) => {
+function makeCanvas(width: number, height: number) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(width));
+  canvas.height = Math.max(1, Math.ceil(height));
+  return canvas;
+}
+
+function loadSource(dataUrl: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
-    image.onload = () => resolve(image);
+    image.onload = () => image.naturalWidth > 0 && image.naturalHeight > 0
+      ? resolve(image)
+      : reject(new Error("Image has no readable pixels"));
+    image.onerror = () => reject(new Error("Image data could not be decoded"));
     image.src = dataUrl;
   });
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }

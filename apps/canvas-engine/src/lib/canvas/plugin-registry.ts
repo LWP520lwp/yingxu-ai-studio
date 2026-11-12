@@ -1,75 +1,118 @@
 import { PLUGIN_REGISTRY_URL } from "@/constant/env";
+import i18n from "@/i18n";
 
-// An official registry item whose entry has been resolved to an absolute URL.
 export type OfficialPluginEntry = {
-    id: string;
-    name: string;
-    version: string;
-    description?: string;
-    icon?: string;
-    url: string;
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  icon?: string;
+  url: string;
 };
 
-type RawEntry = { id?: string; name?: string; version?: string; description?: string; icon?: string; entry?: string; url?: string };
-type RawManifest = { plugins?: RawEntry[] };
+type RegistryRecord = {
+  id?: unknown;
+  name?: unknown;
+  version?: unknown;
+  description?: unknown;
+  icon?: unknown;
+  entry?: unknown;
+  url?: unknown;
+};
 
-// Fetch the official registry and resolve relative entries against its URL for the existing URL installation flow.
-export async function fetchOfficialPlugins(registryUrl: string = PLUGIN_REGISTRY_URL): Promise<OfficialPluginEntry[]> {
-    const manifestUrl = toHttpUrl(registryUrl);
-    if (!manifestUrl) throw new Error(i18n.t("canvas.pluginErrors.registryFailed", { status: "invalid URL" }));
-    const response = await fetch(manifestUrl, { headers: { accept: "application/json" } });
-    if (!response.ok) throw new Error(i18n.t("canvas.pluginErrors.registryFailed", { status: response.status }));
-    let data: RawManifest;
-    try {
-        data = (await response.json()) as RawManifest;
-    } catch {
-        throw new Error(i18n.t("canvas.pluginErrors.registryFailed", { status: "invalid JSON" }));
-    }
-    const list = Array.isArray(data?.plugins) ? data.plugins : [];
-    const byId = new Map<string, OfficialPluginEntry>();
-    for (const item of list) {
-        if (!item || typeof item !== "object" || typeof item.id !== "string") continue;
-        const id = item.id.trim();
-        if (!id || byId.has(id)) continue;
-        const rawUrl = typeof item.url === "string" && item.url.trim() ? item.url : item.entry;
-        if (typeof rawUrl !== "string" || !rawUrl.trim()) continue;
-        const url = toHttpUrl(rawUrl, manifestUrl);
-        if (!url) continue;
-        byId.set(id, {
-            id,
-            name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : id,
-            version: typeof item.version === "string" && item.version.trim() ? item.version.trim() : "0.0.0",
-            description: typeof item.description === "string" ? item.description : undefined,
-            icon: typeof item.icon === "string" ? item.icon : undefined,
-            url,
-        });
-    }
-    return [...byId.values()];
+function httpUrl(input: string, base?: string) {
+  try {
+    const parsed = base ? new URL(input, base) : new URL(input);
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.username ||
+      parsed.password
+    )
+      return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
 }
 
-function toHttpUrl(value: string, base?: string): string | null {
-    try {
-        const url = base ? new URL(value, base) : new URL(value);
-        return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
-    } catch {
-        return null;
+export async function fetchOfficialPlugins(
+  registryUrl: string = PLUGIN_REGISTRY_URL,
+  signal?: AbortSignal,
+): Promise<OfficialPluginEntry[]> {
+  const endpoint = httpUrl(registryUrl);
+  if (!endpoint) throw registryError("invalid URL");
+
+  const response = await fetch(endpoint, {
+    headers: { accept: "application/json" },
+    signal,
+  });
+  if (!response.ok) throw registryError(response.status);
+
+  let records: unknown;
+  try {
+    records = ((await response.json()) as { plugins?: unknown })?.plugins;
+  } catch (error) {
+    if (signal?.aborted) {
+      throw signal.reason ?? error;
     }
+    throw registryError("invalid JSON");
+  }
+  if (!Array.isArray(records)) return [];
+
+  const unique = new Map<string, OfficialPluginEntry>();
+  for (const value of records) {
+    if (!value || typeof value !== "object") continue;
+    const item = value as RegistryRecord;
+    const id = typeof item.id === "string" ? item.id.trim() : "";
+    if (!id || unique.has(id)) continue;
+
+    const candidate =
+      typeof item.url === "string" && item.url.trim()
+        ? item.url.trim()
+        : typeof item.entry === "string"
+          ? item.entry.trim()
+          : "";
+    const url = candidate ? httpUrl(candidate, endpoint) : null;
+    if (!url) continue;
+
+    unique.set(id, {
+      id,
+      name: nonEmpty(item.name, id),
+      version: nonEmpty(item.version, "0.0.0"),
+      description:
+        typeof item.description === "string" ? item.description : undefined,
+      icon: typeof item.icon === "string" ? item.icon : undefined,
+      url,
+    });
+  }
+  return [...unique.values()];
 }
 
-// Compare semantic versions: positive means a is newer, negative means b is newer, and zero means equal.
-// Compare numeric major.minor.patch components only and ignore non-numeric parts such as prerelease labels.
-function compareSemver(a: string, b: string): number {
-    const parse = (v: string) => v.split(".").map((part) => parseInt(part, 10) || 0);
-    const [pa, pb] = [parse(a), parse(b)];
-    for (let i = 0; i < 3; i++) {
-        const diff = (pa[i] || 0) - (pb[i] || 0);
-        if (diff !== 0) return diff;
-    }
-    return 0;
+function nonEmpty(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-// Return whether the remote version is newer than the installed version.
-export function hasUpgrade(installedVersion: string, remoteVersion: string): boolean {
-    return compareSemver(remoteVersion, installedVersion) > 0;
+function registryError(status: string | number) {
+  return new Error(i18n.t("canvas.pluginErrors.registryFailed", { status }));
 }
-import i18n from "@/i18n";
+
+function numericRelease(value: string) {
+  const match = /^\s*v?(\d+(?:\.\d+){0,2})(?:[-+].*)?\s*$/i.exec(value);
+  if (!match) return null;
+  return match[1].split(".").map((part) => Number(part));
+}
+
+function compareRelease(left: string, right: string) {
+  const a = numericRelease(left);
+  const b = numericRelease(right);
+  if (!a || !b) return 0;
+  for (let index = 0; index < 3; index += 1) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference) return Math.sign(difference);
+  }
+  return 0;
+}
+
+export function hasUpgrade(installedVersion: string, remoteVersion: string) {
+  return compareRelease(remoteVersion, installedVersion) > 0;
+}

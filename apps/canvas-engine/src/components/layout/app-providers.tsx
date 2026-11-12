@@ -10,17 +10,21 @@ import { useTranslation } from "react-i18next";
 
 import type { AppLocale } from "@/i18n";
 import { getAntThemeConfig } from "@/lib/app-theme";
-import { useThemeStore, type ThemeName } from "@/stores/use-theme-store";
+import { useThemeStore } from "@/stores/use-theme-store";
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      retry: false,
-      refetchOnWindowFocus: false,
+function createApplicationQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 30_000,
+        retry: false,
+        refetchOnWindowFocus: false,
+      },
     },
-  },
-});
+  });
+}
+
+const queryClient = createApplicationQueryClient();
 
 type AppProvidersProps = { children: ReactNode };
 
@@ -29,59 +33,47 @@ export function AppProviders({ children }: AppProvidersProps) {
   const theme = useThemeStore((state) => state.theme);
   const dark = theme === "dark";
   const locale = resolveAppLocale(i18n.resolvedLanguage);
+  const title = t("meta.title");
+  const description = t("meta.description");
 
-  useDocumentAppearance(theme);
-  useDocumentLocale(locale, t("meta.title"), t("meta.description"));
+  useEffect(() => {
+    applyDocumentPresentation({ dark, theme, locale, title, description });
+  }, [dark, description, locale, theme, title]);
 
-  return (
-    <CanvasDesignSystemProvider dark={dark} locale={locale}>
-      <CanvasQueryProvider>{children}</CanvasQueryProvider>
-    </CanvasDesignSystemProvider>
-  );
-}
-
-function CanvasDesignSystemProvider({
-  children,
-  dark,
-  locale,
-}: AppProvidersProps & { dark: boolean; locale: AppLocale }) {
   return (
     <ConfigProvider
       locale={locale === "zh-CN" ? zhCN : enUS}
       theme={getAntThemeConfig(dark)}
     >
-      <App>{children}</App>
+      <QueryClientProvider client={queryClient}>
+        <App>{children}</App>
+      </QueryClientProvider>
     </ConfigProvider>
   );
 }
 
-function CanvasQueryProvider({ children }: AppProvidersProps) {
-  return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-}
-
-function useDocumentAppearance(theme: ThemeName) {
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", theme === "dark");
-    root.style.colorScheme = theme;
-  }, [theme]);
-}
-
-function useDocumentLocale(
-  locale: AppLocale,
-  title: string,
-  description: string,
-) {
-  useEffect(() => {
-    document.documentElement.lang = locale;
-    document.title = title;
-    document
-      .querySelector('meta[name="description"]')
-      ?.setAttribute("content", description);
-    dayjs.locale(locale === "zh-CN" ? "zh-cn" : "en");
-  }, [description, locale, title]);
+function applyDocumentPresentation({
+  dark,
+  theme,
+  locale,
+  title,
+  description,
+}: {
+  dark: boolean;
+  theme: "light" | "dark";
+  locale: AppLocale;
+  title: string;
+  description: string;
+}) {
+  const root = document.documentElement;
+  root.classList.toggle("dark", dark);
+  root.style.colorScheme = theme;
+  root.lang = locale;
+  document.title = title;
+  document
+    .querySelector('meta[name="description"]')
+    ?.setAttribute("content", description);
+  dayjs.locale(locale === "zh-CN" ? "zh-cn" : "en");
 }
 
 function resolveAppLocale(language: string | undefined): AppLocale {

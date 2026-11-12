@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
-import { Button, Modal, Segmented, Slider } from "antd";
+import { Button, Modal } from "antd";
 import { Camera, RotateCcw, WandSparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { boundedAngle } from "@/lib/canvas/canvas-image-geometry";
+import type { ImageAngleTransform } from "@/lib/canvas/canvas-image-data";
 
-export type CanvasImageAngleParams = {
-    horizontalAngle: number;
-    pitchAngle: number;
-    cameraDistance: number;
-    wideAngle: boolean;
-};
+export type CanvasImageAngleParams = ImageAngleTransform;
+
+const ANGLE_CONTROLS = [
+    { field: "horizontalAngle", label: "horizontal", min: -60, max: 60, step: 1, suffix: "deg" },
+    { field: "pitchAngle", label: "pitch", min: -45, max: 45, step: 1, suffix: "deg" },
+    { field: "cameraDistance", label: "distance", min: 1, max: 10, step: 0.1, suffix: "" },
+] as const;
 
 export const DEFAULT_IMAGE_ANGLE_PARAMS: CanvasImageAngleParams = {
     horizontalAngle: 0,
@@ -53,22 +55,30 @@ export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { d
 
                 <section className="flex flex-col justify-center gap-6 py-2" aria-label={t("canvas.editors.angleDescription")}>
                     <p className="text-sm leading-6 text-neutral-500">{t("canvas.editors.angleDescription")}</p>
-                    <div className="space-y-6">
-                        <AngleControl label={t("canvas.editors.horizontal")} value={params.horizontalAngle} min={-60} max={60} step={1} suffix="deg" onChange={(value) => update("horizontalAngle", value)} />
-                        <AngleControl label={t("canvas.editors.pitch")} value={params.pitchAngle} min={-45} max={45} step={1} suffix="deg" onChange={(value) => update("pitchAngle", value)} />
-                        <AngleControl label={t("canvas.editors.distance")} value={params.cameraDistance} min={1} max={10} step={0.1} onChange={(value) => update("cameraDistance", value)} />
+                    <div className="space-y-5">
+                        {ANGLE_CONTROLS.map(({ field, label, ...range }) => (
+                            <AngleControl key={field} {...range} label={t(`canvas.editors.${label}`)} value={params[field]} onChange={(value) => update(field, value)} />
+                        ))}
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-700">
                         <span className="text-sm font-medium">{t("canvas.editors.lens")}</span>
-                        <Segmented
-                            aria-label={t("canvas.editors.lens")}
-                            value={params.wideAngle ? "wide" : "standard"}
-                            options={[
-                                { label: t("canvas.editors.standard"), value: "standard" },
-                                { label: t("canvas.editors.wide"), value: "wide" },
-                            ]}
-                            onChange={(value) => update("wideAngle", value === "wide")}
-                        />
+                        <div className="flex gap-1 rounded-md border border-neutral-200 p-1 dark:border-neutral-700" role="group" aria-label={t("canvas.editors.lens")}>
+                            {[
+                                { value: false, label: t("canvas.editors.standard") },
+                                { value: true, label: t("canvas.editors.wide") },
+                            ].map((lens) => (
+                                <button
+                                    key={String(lens.value)}
+                                    type="button"
+                                    aria-pressed={params.wideAngle === lens.value}
+                                    className="min-h-9 rounded px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
+                                    style={params.wideAngle === lens.value ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
+                                    onClick={() => update("wideAngle", lens.value)}
+                                >
+                                    {lens.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                     <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-200 pt-4 dark:border-neutral-700">
                         <Button onClick={onClose}>{t("common.cancel")}</Button>
@@ -87,11 +97,33 @@ function AngleControl({ label, value, min, max, step, suffix = "", onChange }: {
         <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-medium">{label}</span>
-                <output className="min-w-14 text-right font-mono text-sm tabular-nums text-neutral-500">
-                    {formatAngleValue(value)}{suffix}
-                </output>
+                <label className="flex items-center gap-1 rounded border border-neutral-200 px-2 dark:border-neutral-700">
+                    <input
+                        aria-label={label}
+                        type="number"
+                        min={min}
+                        max={max}
+                        step={step}
+                        value={value}
+                        onChange={(event) => {
+                            const next = Number(event.target.value);
+                            if (Number.isFinite(next)) onChange(next);
+                        }}
+                        className="w-16 bg-transparent py-1 text-right font-mono text-sm tabular-nums outline-none"
+                    />
+                    <span className="text-xs text-neutral-500">{suffix}</span>
+                </label>
             </div>
-            <Slider aria-label={label} min={min} max={max} step={step} value={value} onChange={onChange} />
+            <input
+                aria-label={`${label} slider`}
+                type="range"
+                min={min}
+                max={max}
+                step={step}
+                value={value}
+                onChange={(event) => onChange(Number(event.target.value))}
+                className="h-2 w-full cursor-pointer accent-teal-700"
+            />
         </div>
     );
 }

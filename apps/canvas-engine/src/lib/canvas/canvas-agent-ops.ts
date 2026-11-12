@@ -2,168 +2,274 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 import { getNodeSpec, isRegisteredNodeType } from "@/lib/canvas/node-registry";
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata, type CanvasNodeTypeId, type ViewportTransform } from "@/types/canvas";
+import type { CanvasProject } from "./canvas-project-catalog";
+import {
+  CanvasNodeType,
+  type CanvasConnection,
+  type CanvasNodeData,
+  type CanvasNodeMetadata,
+  type CanvasNodeTypeId,
+  type ViewportTransform,
+} from "@/types/canvas";
 
 export type CanvasAgentOp =
-    | { type: "add_node"; id?: string; nodeType?: CanvasNodeTypeId; title?: string; position?: { x: number; y: number }; x?: number; y?: number; width?: number; height?: number; metadata?: CanvasNodeMetadata }
-    | { type: "update_node"; id: string; patch?: Partial<CanvasNodeData>; metadata?: CanvasNodeMetadata }
-    | { type: "delete_node"; id?: string; ids?: string[]; nodeType?: CanvasNodeTypeId }
-    | { type: "delete_connections"; id?: string; ids?: string[]; all?: boolean }
-    | { type: "connect_nodes"; id?: string; fromNodeId: string; toNodeId: string }
-    | { type: "set_viewport"; viewport: ViewportTransform }
-    | { type: "select_nodes"; ids: string[] }
-    | { type: "run_generation"; nodeId: string; mode?: "text" | "image" | "video" | "audio"; prompt?: string };
+  | { type: "add_node"; id?: string; nodeType?: CanvasNodeTypeId; title?: string; position?: { x: number; y: number }; x?: number; y?: number; width?: number; height?: number; metadata?: CanvasNodeMetadata }
+  | { type: "update_node"; id: string; patch?: Partial<CanvasNodeData>; metadata?: CanvasNodeMetadata }
+  | { type: "delete_node"; id?: string; ids?: string[]; nodeType?: CanvasNodeTypeId }
+  | { type: "delete_connections"; id?: string; ids?: string[]; all?: boolean }
+  | { type: "connect_nodes"; id?: string; fromNodeId: string; toNodeId: string }
+  | { type: "set_viewport"; viewport: ViewportTransform }
+  | { type: "select_nodes"; ids: string[] }
+  | { type: "run_generation"; nodeId: string; mode?: "text" | "image" | "video" | "audio"; prompt?: string };
 
-export type CanvasAgentSnapshot = {
-    projectId: string;
-    title: string;
-    nodes: CanvasNodeData[];
-    connections: CanvasConnection[];
-    selectedNodeIds: string[];
-    viewport: ViewportTransform;
+export type CanvasAgentSnapshot = Pick<CanvasProject, "title" | "nodes" | "connections" | "viewport"> & {
+  projectId: string;
+  selectedNodeIds: string[];
 };
 
-type CanvasState = Pick<CanvasAgentSnapshot, "nodes" | "connections" | "selectedNodeIds" | "viewport">;
+type WorkingGraph = {
+  nodes: CanvasNodeData[];
+  connections: CanvasConnection[];
+  selected: string[];
+  viewport: ViewportTransform;
+  nodeIndex: Map<string, number>;
+  nodeIds: Set<string>;
+  edgeIds: Set<string>;
+  edges: Set<string>;
+  dirtyNodes: boolean;
+  dirtyConnections: boolean;
+  dirtySelection: boolean;
+  dirtyViewport: boolean;
+};
+
+const VIEWPORT_MIN = 0.05;
+const VIEWPORT_MAX = 5;
 
 export function summarizeCanvasAgentOps(ops?: CanvasAgentOp[]) {
-    const counts = new Map<string, number>();
-    for (const op of Array.isArray(ops) ? ops : []) {
-        if (!op || typeof op.type !== "string") continue;
-        counts.set(op.type, (counts.get(op.type) || 0) + 1);
-    }
-    return [...counts].map(([type, count]) => `${opLabel(type)} ${count}`).join("，");
+  const totals = new Map<string, number>();
+  for (const operation of ops ?? []) {
+    if (!operation || typeof operation.type !== "string") continue;
+    totals.set(operation.type, (totals.get(operation.type) ?? 0) + 1);
+  }
+  return [...totals].map(([type, count]) => `${operationLabel(type)} ${count}`).join("，");
+}
+
+function operationLabel(type: string) {
+  return i18n.t(`canvas.agentOps.${type}`, { defaultValue: type });
 }
 
 function finite(value: number, fallback: number) {
-    return Number.isFinite(value) ? value : fallback;
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function positive(value: number, fallback: number) {
-    return Number.isFinite(value) && value > 0 ? value : fallback;
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-function uniqueId(preferred: string | undefined, exists: (id: string) => boolean) {
-    if (preferred && !exists(preferred)) return preferred;
-    let id = nanoid();
-    while (exists(id)) id = nanoid();
-    return id;
+function uniqueId(preferred: string | undefined, used: Set<string>) {
+  if (preferred && !used.has(preferred)) return preferred;
+  let generated = nanoid();
+  while (used.has(generated)) generated = nanoid();
+  return generated;
 }
 
-function createNode(state: CanvasState, op: Extract<CanvasAgentOp, { type: "add_node" }>, index: number): CanvasState {
-    const nodeType = op.nodeType && isRegisteredNodeType(op.nodeType) ? op.nodeType : CanvasNodeType.Text;
-    const spec = getNodeSpec(nodeType);
-    const id = uniqueId(op.id, (candidate) => state.nodes.some((node) => node.id === candidate));
-    const fallbackPosition = { x: index * 36, y: index * 36 };
-    const requestedPosition = op.position || { x: op.x ?? fallbackPosition.x, y: op.y ?? fallbackPosition.y };
-    const node: CanvasNodeData = {
-        id,
-        type: nodeType,
-        title: op.title?.trim() || spec.title,
-        position: { x: finite(requestedPosition.x, fallbackPosition.x), y: finite(requestedPosition.y, fallbackPosition.y) },
-        width: positive(op.width ?? spec.width, spec.width),
-        height: positive(op.height ?? spec.height, spec.height),
-        metadata: { ...spec.metadata, ...op.metadata },
-    };
-    return { ...state, nodes: [...state.nodes, node], selectedNodeIds: [node.id] };
+function indexSnapshot(snapshot: CanvasAgentSnapshot): WorkingGraph {
+  return {
+    nodes: snapshot.nodes,
+    connections: snapshot.connections,
+    selected: snapshot.selectedNodeIds,
+    viewport: snapshot.viewport,
+    nodeIndex: new Map(snapshot.nodes.map((node, index) => [node.id, index])),
+    nodeIds: new Set(snapshot.nodes.map((node) => node.id)),
+    edgeIds: new Set(snapshot.connections.map((edge) => edge.id)),
+    edges: new Set(snapshot.connections.map((edge) => `${edge.fromNodeId}\u0000${edge.toNodeId}`)),
+    dirtyNodes: false,
+    dirtyConnections: false,
+    dirtySelection: false,
+    dirtyViewport: false,
+  };
 }
 
-function updateNode(state: CanvasState, op: Extract<CanvasAgentOp, { type: "update_node" }>): CanvasState {
-    if (!op.id) return state;
-    const target = state.nodes.find((node) => node.id === op.id);
-    if (!target) return state;
-    const patch = op.patch || {};
-    const nextType = patch.type && isRegisteredNodeType(patch.type) ? patch.type : target.type;
-    const position = patch.position || target.position;
-    const updated: CanvasNodeData = {
-        ...target,
-        ...patch,
-        id: target.id,
-        type: nextType,
-        position: { x: finite(position.x, target.position.x), y: finite(position.y, target.position.y) },
-        width: positive(patch.width ?? target.width, target.width),
-        height: positive(patch.height ?? target.height, target.height),
-        metadata: { ...target.metadata, ...patch.metadata, ...op.metadata },
-    };
-    return { ...state, nodes: state.nodes.map((node) => node.id === op.id ? updated : node) };
+function mutableNodes(graph: WorkingGraph) {
+  if (!graph.dirtyNodes) {
+    graph.nodes = [...graph.nodes];
+    graph.dirtyNodes = true;
+  }
+  return graph.nodes;
 }
 
-function deleteNodes(state: CanvasState, op: Extract<CanvasAgentOp, { type: "delete_node" }>): CanvasState {
-    const requestedIds = op.ids ?? (op.id ? [op.id] : op.nodeType ? state.nodes.filter((node) => node.type === op.nodeType).map((node) => node.id) : []);
-    const removed = new Set(requestedIds);
-    if (!removed.size) return state;
-    const nodes = state.nodes.filter((node) => !removed.has(node.id));
-    const remainingIds = new Set(nodes.map((node) => node.id));
-    return {
-        ...state,
-        nodes,
-        connections: state.connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId)),
-        selectedNodeIds: state.selectedNodeIds.filter((id) => remainingIds.has(id)),
-    };
+function mutableConnections(graph: WorkingGraph) {
+  if (!graph.dirtyConnections) {
+    graph.connections = [...graph.connections];
+    graph.dirtyConnections = true;
+  }
+  return graph.connections;
 }
 
-function connectNodes(state: CanvasState, op: Extract<CanvasAgentOp, { type: "connect_nodes" }>): CanvasState {
-    if (!op.fromNodeId || !op.toNodeId || op.fromNodeId === op.toNodeId) return state;
-    const hasSource = state.nodes.some((node) => node.id === op.fromNodeId);
-    const hasTarget = state.nodes.some((node) => node.id === op.toNodeId);
-    const exists = state.connections.some((connection) => connection.fromNodeId === op.fromNodeId && connection.toNodeId === op.toNodeId);
-    if (!hasSource || !hasTarget || exists) return state;
-    const id = uniqueId(op.id, (candidate) => state.connections.some((connection) => connection.id === candidate));
-    return { ...state, connections: [...state.connections, { id, fromNodeId: op.fromNodeId, toNodeId: op.toNodeId }] };
+function insertNode(graph: WorkingGraph, operation: Extract<CanvasAgentOp, { type: "add_node" }>, sequence: number) {
+  const kind = operation.nodeType && isRegisteredNodeType(operation.nodeType)
+    ? operation.nodeType
+    : CanvasNodeType.Text;
+  const spec = getNodeSpec(kind);
+  const id = uniqueId(operation.id, graph.nodeIds);
+  const origin = sequence * 36;
+  const position = operation.position ?? { x: operation.x ?? origin, y: operation.y ?? origin };
+  const node: CanvasNodeData = {
+    id,
+    type: kind,
+    title: operation.title?.trim() || spec.title,
+    position: { x: finite(position.x, origin), y: finite(position.y, origin) },
+    width: positive(operation.width ?? spec.width, spec.width),
+    height: positive(operation.height ?? spec.height, spec.height),
+    metadata: { ...spec.metadata, ...operation.metadata },
+  };
+
+  graph.nodeIds.add(id);
+  graph.nodeIndex.set(id, graph.nodes.length);
+  mutableNodes(graph).push(node);
+  graph.selected = [id];
+  graph.dirtySelection = true;
 }
 
-function updateViewport(state: CanvasState, viewport: ViewportTransform): CanvasState {
-    return {
-        ...state,
-        viewport: {
-            x: finite(viewport.x, 0),
-            y: finite(viewport.y, 0),
-            k: Math.min(5, Math.max(0.05, finite(viewport.k, 1))),
-        },
-    };
+function reviseNode(graph: WorkingGraph, operation: Extract<CanvasAgentOp, { type: "update_node" }>) {
+  const index = graph.nodeIndex.get(operation.id);
+  if (index === undefined) return;
+  const current = graph.nodes[index];
+  const patch = operation.patch ?? {};
+  const kind = patch.type && isRegisteredNodeType(patch.type) ? patch.type : current.type;
+  const point = patch.position ?? current.position;
+  const updated: CanvasNodeData = {
+    ...current,
+    ...patch,
+    id: current.id,
+    type: kind,
+    position: { x: finite(point.x, current.position.x), y: finite(point.y, current.position.y) },
+    width: positive(patch.width ?? current.width, current.width),
+    height: positive(patch.height ?? current.height, current.height),
+    metadata: { ...current.metadata, ...patch.metadata, ...operation.metadata },
+  };
+  if (updated === current) return;
+  mutableNodes(graph)[index] = updated;
 }
 
-function applyOperation(state: CanvasState, op: CanvasAgentOp, index: number): CanvasState {
-    switch (op.type) {
-        case "add_node":
-            return createNode(state, op, index);
-        case "update_node":
-            return updateNode(state, op);
-        case "delete_node":
-            return deleteNodes(state, op);
-        case "delete_connections": {
-            if (op.all) return state.connections.length ? { ...state, connections: [] } : state;
-            const ids = new Set(op.ids ?? (op.id ? [op.id] : []));
-            if (!ids.size) return state;
-            const connections = state.connections.filter((connection) => !ids.has(connection.id));
-            return connections.length === state.connections.length ? state : { ...state, connections };
-        }
-        case "connect_nodes":
-            return connectNodes(state, op);
-        case "set_viewport":
-            return updateViewport(state, op.viewport);
-        case "select_nodes": {
-            const known = new Set(state.nodes.map((node) => node.id));
-            const ids = [...new Set(op.ids)].filter((id) => known.has(id));
-            return { ...state, selectedNodeIds: ids };
-        }
-        case "run_generation":
-            return state;
-    }
+function removeNodes(graph: WorkingGraph, operation: Extract<CanvasAgentOp, { type: "delete_node" }>) {
+  const requested = operation.ids ?? (operation.id
+    ? [operation.id]
+    : operation.nodeType
+      ? graph.nodes.filter((node) => node.type === operation.nodeType).map((node) => node.id)
+      : []);
+  const removing = new Set(requested.filter((id) => graph.nodeIds.has(id)));
+  if (!removing.size) return;
+
+  for (const id of removing) {
+    graph.nodeIds.delete(id);
+    graph.nodeIndex.delete(id);
+  }
+  const nodes = mutableNodes(graph).filter((node) => !removing.has(node.id));
+  graph.nodes = nodes;
+  graph.nodeIndex.clear();
+  nodes.forEach((node, index) => graph.nodeIndex.set(node.id, index));
+
+  const remainingEdges = graph.connections.filter((edge) =>
+    !removing.has(edge.fromNodeId) && !removing.has(edge.toNodeId),
+  );
+  if (remainingEdges.length !== graph.connections.length) {
+    graph.connections = mutableConnections(graph);
+    graph.connections = remainingEdges;
+    graph.edgeIds = new Set(remainingEdges.map((edge) => edge.id));
+    graph.edges = new Set(remainingEdges.map((edge) => `${edge.fromNodeId}\u0000${edge.toNodeId}`));
+  }
+
+  const selection = graph.selected.filter((id) => graph.nodeIds.has(id));
+  if (selection.length !== graph.selected.length) {
+    graph.selected = selection;
+    graph.dirtySelection = true;
+  }
 }
 
-export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasAgentOp[]) {
-    let state: CanvasState = {
-        nodes: snapshot.nodes,
-        connections: snapshot.connections,
-        selectedNodeIds: snapshot.selectedNodeIds,
-        viewport: snapshot.viewport,
-    };
-    for (const [index, op] of (Array.isArray(ops) ? ops : []).entries()) {
-        if (op && typeof op.type === "string") state = applyOperation(state, op, index);
-    }
-    return { ...snapshot, ...state };
+function removeConnections(graph: WorkingGraph, operation: Extract<CanvasAgentOp, { type: "delete_connections" }>) {
+  if (!graph.connections.length) return;
+  const ids = operation.all ? null : new Set(operation.ids ?? (operation.id ? [operation.id] : []));
+  if (ids && !ids.size) return;
+  const retained = operation.all
+    ? []
+    : graph.connections.filter((edge) => !ids!.has(edge.id));
+  if (retained.length === graph.connections.length) return;
+
+  graph.connections = retained;
+  graph.dirtyConnections = true;
+  graph.edgeIds = new Set(retained.map((edge) => edge.id));
+  graph.edges = new Set(retained.map((edge) => `${edge.fromNodeId}\u0000${edge.toNodeId}`));
 }
 
-function opLabel(type: string) {
-    return i18n.t(`canvas.agentOps.${type}`, { defaultValue: type });
+function addConnection(graph: WorkingGraph, operation: Extract<CanvasAgentOp, { type: "connect_nodes" }>) {
+  const { fromNodeId, toNodeId } = operation;
+  if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) return;
+  if (!graph.nodeIds.has(fromNodeId) || !graph.nodeIds.has(toNodeId)) return;
+  const pair = `${fromNodeId}\u0000${toNodeId}`;
+  if (graph.edges.has(pair)) return;
+
+  const id = uniqueId(operation.id, graph.edgeIds);
+  mutableConnections(graph).push({ id, fromNodeId, toNodeId });
+  graph.edgeIds.add(id);
+  graph.edges.add(pair);
+}
+
+function setViewport(graph: WorkingGraph, viewport: ViewportTransform) {
+  graph.viewport = {
+    x: finite(viewport.x, 0),
+    y: finite(viewport.y, 0),
+    k: Math.min(VIEWPORT_MAX, Math.max(VIEWPORT_MIN, finite(viewport.k, 1))),
+  };
+  graph.dirtyViewport = true;
+}
+
+function selectNodes(graph: WorkingGraph, ids: string[]) {
+  const selected = [...new Set(ids)].filter((id) => graph.nodeIds.has(id));
+  if (selected.length === graph.selected.length && selected.every((id, index) => id === graph.selected[index])) return;
+  graph.selected = selected;
+  graph.dirtySelection = true;
+}
+
+function applyOne(graph: WorkingGraph, operation: CanvasAgentOp, sequence: number) {
+  switch (operation.type) {
+    case "add_node":
+      insertNode(graph, operation, sequence);
+      return;
+    case "update_node":
+      reviseNode(graph, operation);
+      return;
+    case "delete_node":
+      removeNodes(graph, operation);
+      return;
+    case "delete_connections":
+      removeConnections(graph, operation);
+      return;
+    case "connect_nodes":
+      addConnection(graph, operation);
+      return;
+    case "set_viewport":
+      setViewport(graph, operation.viewport);
+      return;
+    case "select_nodes":
+      selectNodes(graph, operation.ids);
+      return;
+    case "run_generation":
+      return;
+  }
+}
+
+export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, operations?: CanvasAgentOp[]) {
+  const graph = indexSnapshot(snapshot);
+  for (const [sequence, operation] of (operations ?? []).entries()) {
+    if (operation && typeof operation.type === "string") applyOne(graph, operation, sequence);
+  }
+
+  return {
+    ...snapshot,
+    nodes: graph.dirtyNodes ? graph.nodes : snapshot.nodes,
+    connections: graph.dirtyConnections ? graph.connections : snapshot.connections,
+    selectedNodeIds: graph.dirtySelection ? graph.selected : snapshot.selectedNodeIds,
+    viewport: graph.dirtyViewport ? graph.viewport : snapshot.viewport,
+  };
 }

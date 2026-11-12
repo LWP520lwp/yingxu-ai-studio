@@ -58,6 +58,13 @@ describe("available defaults without rewriting saved node choices", () => {
         expect(resolveModelForCapability(defaultConfig, "platform::muse-image", "video")).toBe("platform::muse-service-video");
     });
 
+    it("does not select an image channel that the host marks unavailable", () => {
+        harness.init!.models.image = [{ id: "image-channel", available: true, caps: { supportsReferenceImages: true } }];
+        expect(resolveModelForCapability(defaultConfig, undefined, "image")).toBe("platform::image-channel");
+        harness.init!.models.image[0].available = false;
+        expect(resolveModelForCapability(defaultConfig, undefined, "image")).toBe("");
+    });
+
     it("leaves new image configuration empty when only video is available", () => {
         harness.init!.models.image.forEach((model) => { model.available = false; });
         const config = platformConfig(defaultConfig);

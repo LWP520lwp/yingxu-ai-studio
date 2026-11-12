@@ -5,12 +5,15 @@ import { unsupportedGeneration } from "@/platform/generation";
 
 type RequestOptions = { signal?: AbortSignal };
 
+/** Audio generation is intentionally delegated to provider capabilities exposed by the workbench. */
 export async function requestAudioGeneration(_config: AiConfig, _prompt: string, _options?: RequestOptions): Promise<Blob> {
-    return unsupportedGeneration("audio");
+    return await unsupportedGeneration("audio");
 }
 
-/** Upload/playback remain usable independently of the unavailable audio-generation capability. */
+/** Normalize provider output before it enters the shared asset store. */
 export function storeGeneratedAudio(blob: Blob, format = "mp3"): Promise<UploadedFile> {
-    const audio = blob.type.startsWith("audio/") ? blob : new Blob([blob], { type: audioMimeType(format) });
-    return uploadMediaFile(audio, "audio");
+    const normalized = blob.type.startsWith("audio/")
+        ? blob
+        : new Blob([blob], { type: audioMimeType(format) });
+    return uploadMediaFile(normalized, "audio");
 }

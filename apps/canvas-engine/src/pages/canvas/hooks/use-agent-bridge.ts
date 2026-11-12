@@ -1,96 +1,94 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-
+import { useEffect, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import i18n from "@/i18n";
+import { CanvasAgentSession } from "@/lib/agent-canvas-session";
 import { useAgentStore } from "@/stores/use-agent-store";
-import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
-import { executeAgentCanvasTransaction } from "@/lib/agent-canvas-bridge";
+import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import type { CanvasConnection, CanvasNodeData, ContextMenuState, ViewportTransform } from "@/types/canvas";
 
-type GenerateNodeRef = MutableRefObject<((nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<void>) | null>;
-
-type AgentBridgeParams = {
-    projectId: string;
-    title: string | undefined;
-    nodes: CanvasNodeData[];
-    connections: CanvasConnection[];
-    selectedNodeIds: Set<string>;
-    viewport: ViewportTransform;
-    nodesRef: MutableRefObject<CanvasNodeData[]>;
-    connectionsRef: MutableRefObject<CanvasConnection[]>;
-    selectedNodeIdsRef: MutableRefObject<Set<string>>;
-    viewportRef: MutableRefObject<ViewportTransform>;
-    generateNodeRef: GenerateNodeRef;
-    setNodes: Dispatch<SetStateAction<CanvasNodeData[]>>;
-    setConnections: Dispatch<SetStateAction<CanvasConnection[]>>;
-    setSelectedNodeIds: Dispatch<SetStateAction<Set<string>>>;
-    setSelectedConnectionId: Dispatch<SetStateAction<string | null>>;
-    setViewport: Dispatch<SetStateAction<ViewportTransform>>;
-    setContextMenu: Dispatch<SetStateAction<ContextMenuState | null>>;
+type ReactValue<T> = Dispatch<SetStateAction<T>>;
+type DocumentState = Pick<CanvasAgentSnapshot, "projectId" | "nodes" | "connections" | "viewport"> & {
+  title: string | undefined;
+  selectedNodeIds: Set<string>;
+};
+type LiveState = Pick<DocumentState, "nodes" | "connections" | "selectedNodeIds" | "viewport">;
+type StateRefs = { [K in keyof LiveState as `${K}Ref`]: MutableRefObject<LiveState[K]> };
+type StateWriters = { [K in keyof LiveState as `set${Capitalize<K>}`]: ReactValue<LiveState[K]> };
+type BridgeInput = DocumentState & StateRefs & StateWriters & {
+  generateNodeRef: MutableRefObject<((id: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<void>) | null>;
+  setSelectedConnectionId: ReactValue<string | null>;
+  setContextMenu: ReactValue<ContextMenuState | null>;
 };
 
-/**
- * Bridge between the canvas and local Agent: publish the current snapshot and apply/undo capabilities
- * to the Agent store for the local Codex panel. All members except applyAgentOps are internal.
- */
-export function useAgentBridge(params: AgentBridgeParams) {
-    const { projectId, title, nodes, connections, selectedNodeIds, viewport, nodesRef, connectionsRef, selectedNodeIdsRef, viewportRef, generateNodeRef, setNodes, setConnections, setSelectedNodeIds, setSelectedConnectionId, setViewport, setContextMenu } =
-        params;
-    const setAgentCanvasContext = useAgentStore((state) => state.setCanvasContext);
-    const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<CanvasAgentSnapshot | null>(null);
-    const projectTitle = title || i18n.t("canvas.project.untitled");
+function snapshot(input: BridgeInput): CanvasAgentSnapshot {
+  return {
+    projectId: input.projectId,
+    title: input.title?.trim() || i18n.t("canvas.project.untitled"),
+    nodes: input.nodesRef.current,
+    connections: input.connectionsRef.current,
+    selectedNodeIds: [...input.selectedNodeIdsRef.current],
+    viewport: input.viewportRef.current,
+  };
+}
 
-    const agentSnapshot = useMemo<CanvasAgentSnapshot>(() => ({ projectId, title: projectTitle, nodes, connections, selectedNodeIds: Array.from(selectedNodeIds), viewport }), [connections, projectTitle, nodes, projectId, selectedNodeIds, viewport]);
-    const applyAgentOps = useCallback(
-        (ops?: CanvasAgentOp[]) => {
-            const before = { projectId, title: projectTitle, nodes: nodesRef.current, connections: connectionsRef.current, selectedNodeIds: Array.from(selectedNodeIdsRef.current), viewport: viewportRef.current };
-            const transaction = executeAgentCanvasTransaction(before, ops);
-            const next = transaction.after;
-            if (!transaction.changed && !transaction.generation.length) return before;
-            nodesRef.current = next.nodes;
-            connectionsRef.current = next.connections;
-            selectedNodeIdsRef.current = new Set(next.selectedNodeIds);
-            viewportRef.current = next.viewport;
-            if (transaction.changed) {
-                setAgentUndoSnapshot(before);
-                setNodes(next.nodes);
-                setConnections(next.connections);
-                setSelectedNodeIds(new Set(next.selectedNodeIds));
-                setSelectedConnectionId(null);
-                setViewport(next.viewport);
-                setContextMenu(null);
-            }
-            if (transaction.generation.length) {
-                queueMicrotask(() =>
-                    transaction.generation.forEach(({ nodeId, mode, prompt }) =>
-                        void generateNodeRef.current?.(nodeId, mode, prompt),
-                    ),
-                );
-            }
-            return { ...next, projectId, title: projectTitle };
-        },
-        [projectTitle, projectId],
-    );
-    const undoAgentOps = useCallback(() => {
-        if (!agentUndoSnapshot) return null;
-        nodesRef.current = agentUndoSnapshot.nodes;
-        connectionsRef.current = agentUndoSnapshot.connections;
-        selectedNodeIdsRef.current = new Set(agentUndoSnapshot.selectedNodeIds);
-        viewportRef.current = agentUndoSnapshot.viewport;
-        setNodes(agentUndoSnapshot.nodes);
-        setConnections(agentUndoSnapshot.connections);
-        setSelectedNodeIds(new Set(agentUndoSnapshot.selectedNodeIds));
-        setSelectedConnectionId(null);
-        setViewport(agentUndoSnapshot.viewport);
-        setContextMenu(null);
-        setAgentUndoSnapshot(null);
-        return { ...agentUndoSnapshot, projectId, title: projectTitle };
-    }, [agentUndoSnapshot, projectTitle, projectId]);
+function commit(input: BridgeInput, value: CanvasAgentSnapshot) {
+  const selection = new Set(value.selectedNodeIds);
+  input.nodesRef.current = value.nodes;
+  input.connectionsRef.current = value.connections;
+  input.selectedNodeIdsRef.current = selection;
+  input.viewportRef.current = value.viewport;
+  input.setNodes(value.nodes);
+  input.setConnections(value.connections);
+  input.setSelectedNodeIds(selection);
+  input.setViewport(value.viewport);
+  input.setSelectedConnectionId(null);
+  input.setContextMenu(null);
+}
 
-    useEffect(() => {
-        setAgentCanvasContext({ snapshot: agentSnapshot, applyOps: applyAgentOps, undoOps: undoAgentOps, canUndo: Boolean(agentUndoSnapshot) });
-        return () => setAgentCanvasContext(null);
-    }, [agentSnapshot, applyAgentOps, agentUndoSnapshot, setAgentCanvasContext, undoAgentOps]);
+export function useAgentBridge(input: BridgeInput) {
+  const latest = useRef(input);
+  latest.current = input;
+  const [undoOwner, setUndoOwner] = useState<CanvasAgentSession | null>(null);
+  const session = useMemo(() => {
+    const projectId = input.projectId;
+    const owned = () => latest.current.projectId === projectId;
+    const controller = new CanvasAgentSession({
+      read: () => snapshot(latest.current),
+      write: (value) => { if (owned()) commit(latest.current, value); },
+      generate: ({ nodeId, mode, prompt }) => {
+        if (owned()) void latest.current.generateNodeRef.current?.(nodeId, mode, prompt);
+      },
+      historyChanged: (canUndo) => { if (owned()) setUndoOwner(canUndo ? controller : null); },
+    });
+    return controller;
+  }, [input.projectId]);
+  const current = useRef(session);
+  if (current.current !== session) {
+    current.current.retire();
+    current.current = session;
+  }
+  useEffect(() => {
+    session.activate();
+    return () => session.retire();
+  }, [session]);
 
-    return { applyAgentOps };
+  const context = useMemo(() => ({
+    snapshot: {
+      projectId: input.projectId,
+      title: input.title?.trim() || i18n.t("canvas.project.untitled"),
+      nodes: input.nodes,
+      connections: input.connections,
+      selectedNodeIds: [...input.selectedNodeIds],
+      viewport: input.viewport,
+    },
+    applyOps: session.apply.bind(session),
+    undoOps: session.undo.bind(session),
+    canUndo: undoOwner === session,
+  }), [input.projectId, input.title, input.nodes, input.connections, input.selectedNodeIds, input.viewport, session, undoOwner]);
+  useEffect(() => {
+    useAgentStore.getState().setCanvasContext(context);
+    return () => useAgentStore.getState().setCanvasContext(null);
+  }, [context]);
+  const applyAgentOps = useMemo(() => session.apply.bind(session), [session]);
+  return { applyAgentOps };
 }

@@ -4,21 +4,26 @@ import { normalizeLocalProxyUrl } from "@/stores/use-config-store";
 type ProxyIdentity = { proxy: string; version?: string | number };
 type ProxyCheckOptions = { signal?: AbortSignal; timeoutMs?: number };
 
-const DEFAULT_TIMEOUT_MS = 8_000;
+const DEFAULT_PROBE_DEADLINE_MS = 8_000;
 
-function isProxyIdentity(value: unknown): value is ProxyIdentity {
-  if (!value || typeof value !== "object") return false;
+function parseIdentity(value: unknown): ProxyIdentity | undefined {
+  if (!value || typeof value !== "object") return undefined;
   const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.proxy === "string" && candidate.proxy.trim().length > 0
-  );
+  if (typeof candidate.proxy !== "string" || !candidate.proxy.trim())
+    return undefined;
+  const version =
+    typeof candidate.version === "string" ||
+    typeof candidate.version === "number"
+      ? candidate.version
+      : undefined;
+  return { proxy: candidate.proxy.trim(), version };
 }
 
 function abortError() {
   return new DOMException("The operation was aborted", "AbortError");
 }
 
-/** Query the proxy's identity endpoint with a bounded, caller-cancellable check. */
+/** Performs a short identity probe without letting a stale request outlive its caller. */
 export async function testLocalProxy(
   proxyUrl: string,
   options: ProxyCheckOptions = {},
@@ -30,7 +35,7 @@ export async function testLocalProxy(
   const controller = new AbortController();
   const timeoutMs = Number.isFinite(options.timeoutMs)
     ? Math.max(1, options.timeoutMs!)
-    : DEFAULT_TIMEOUT_MS;
+    : DEFAULT_PROBE_DEADLINE_MS;
   const timer = setTimeout(
     () =>
       controller.abort(new DOMException("Request timed out", "TimeoutError")),
@@ -41,7 +46,7 @@ export async function testLocalProxy(
   options.signal?.addEventListener("abort", forwardAbort, { once: true });
 
   try {
-    const response = await fetch(`${base}/`, {
+    const response = await fetch(base.endsWith("/") ? base : `${base}/`, {
       cache: "no-store",
       signal: controller.signal,
     });
@@ -49,21 +54,18 @@ export async function testLocalProxy(
       throw controller.signal.reason ?? abortError();
     if (!response.ok) throw new Error(i18n.t("config.proxy.unreachable"));
 
-    let data: unknown;
+    let identity: ProxyIdentity | undefined;
     try {
-      data = await response.json();
+      identity = parseIdentity(await response.json());
     } catch {
       throw new Error(i18n.t("config.proxy.unreachable"));
     }
     if (controller.signal.aborted)
       throw controller.signal.reason ?? abortError();
-    if (!isProxyIdentity(data))
-      throw new Error(i18n.t("config.proxy.unreachable"));
+    if (!identity) throw new Error(i18n.t("config.proxy.unreachable"));
     const version =
-      typeof data.version === "string" || typeof data.version === "number"
-        ? String(data.version).trim()
-        : "";
-    return `${data.proxy.trim()} v${version || "?"}`;
+      identity.version == null ? "?" : String(identity.version).trim() || "?";
+    return `${identity.proxy} v${version}`;
   } catch (error) {
     if (options.signal?.aborted) throw options.signal.reason ?? abortError();
     if (controller.signal.aborted) {
@@ -74,6 +76,9 @@ export async function testLocalProxy(
         throw new Error(i18n.t("config.proxy.unreachable"));
       }
       throw controller.signal.reason ?? abortError();
+    }
+    if (error instanceof TypeError) {
+      throw new Error(i18n.t("config.proxy.unreachable"));
     }
     throw error;
   } finally {

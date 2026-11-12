@@ -1,24 +1,7 @@
 import i18n from "@/i18n";
+import type { RawPrompt } from "@/types/prompts";
 import type { PromptSource } from "./prompt-source-presets";
-
-export type RawPrompt = {
-  id: string;
-  title: string;
-  prompt: string;
-  description: string;
-  coverUrl: string;
-  referenceImageUrls: string[];
-  tags: string[];
-  preview: string;
-  createdAt: string;
-  updatedAt: string;
-  author?: string;
-  sourceUrl?: string;
-  imageMode?: string;
-  imageModel?: string;
-  imageSize?: string;
-  imageCount?: number;
-};
+export type { RawPrompt } from "@/types/prompts";
 
 type RunOptions = { signal?: AbortSignal };
 type JsonRecord = Record<string, unknown>;
@@ -88,12 +71,30 @@ function convertRecord(
   };
 }
 
-/** Keep the first valid row for each source-local id. */
+function extractPromptRecords(data: unknown): unknown[] {
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== "object") return [];
+  const envelope = data as Record<string, unknown>;
+  for (const key of ["prompts", "items", "data", "skills"]) {
+    if (Array.isArray(envelope[key])) return envelope[key] as unknown[];
+  }
+  return [];
+}
+
+/** Accept plain lists and common registry envelopes while keeping first IDs. */
 export function decodePromptSource(
   data: unknown,
   source: PromptSource,
 ): RawPrompt[] {
-  if (!Array.isArray(data)) {
+  const records = extractPromptRecords(data);
+  if (!Array.isArray(data) && (!data || typeof data !== "object")) {
+    throw new Error(
+      i18n.t("config.promptSources.runtime.invalidRoot", {
+        name: source.name,
+      }),
+    );
+  }
+  if (!Array.isArray(data) && records.length === 0) {
     throw new Error(
       i18n.t("config.promptSources.runtime.invalidRoot", {
         name: source.name,
@@ -102,7 +103,7 @@ export function decodePromptSource(
   }
 
   const byId = new Map<string, RawPrompt>();
-  data.forEach((value, index) => {
+  records.forEach((value, index) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
     const prompt = convertRecord(value as JsonRecord, source, index);
     if (prompt && !byId.has(prompt.id)) byId.set(prompt.id, prompt);

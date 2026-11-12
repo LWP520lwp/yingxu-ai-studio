@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import i18n, { changeAppLocale, readStoredLocale } from "@/i18n";
+import { LEGACY_STORAGE_KEYS } from "@/lib/legacy-data-compatibility";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -8,7 +9,7 @@ afterEach(() => {
 
 describe("locale preference storage", () => {
   it("migrates a valid legacy locale to the product-owned preference key", () => {
-    const values = new Map([["infinite-canvas:locale", "en-US"]]);
+    const values = new Map<string, string>([[LEGACY_STORAGE_KEYS.locale, "en-US"]]);
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
       setItem: (key: string, value: string) => values.set(key, value),
@@ -20,7 +21,7 @@ describe("locale preference storage", () => {
   it("prefers the current locale key and ignores unsupported values", () => {
     const values = new Map([
       ["yingxu-atlas:locale:v2", "zh-CN"],
-      ["infinite-canvas:locale", "en-US"],
+      [LEGACY_STORAGE_KEYS.locale, "en-US"],
     ]);
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
@@ -30,6 +31,20 @@ describe("locale preference storage", () => {
     expect(
       readStoredLocale({ getItem: () => "fr-FR", setItem: () => {} }),
     ).toBeNull();
+  });
+
+  it("recovers a valid old preference when the current key is corrupted", () => {
+    const values = new Map([
+      ["yingxu-atlas:locale:v2", "fr-FR"],
+      [LEGACY_STORAGE_KEYS.locale, "en-US"],
+    ]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    };
+
+    expect(readStoredLocale(storage)).toBe("en-US");
+    expect(values.get("yingxu-atlas:locale:v2")).toBe("en-US");
   });
 
   it("changes language when browser storage is unavailable", async () => {

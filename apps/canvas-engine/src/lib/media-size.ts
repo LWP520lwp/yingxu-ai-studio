@@ -15,42 +15,24 @@ export const mediaRatioOptions = [
 
 export const imageSizePresets: Record<string, Record<string, string>> = {
   "1k": {
-    "1:1": "1024x1024",
-    "2:3": "1024x1536",
-    "3:2": "1536x1024",
-    "4:3": "1024x768",
-    "3:4": "768x1024",
-    "16:9": "1536x864",
-    "9:16": "864x1536",
-    "21:9": "2016x864",
-    "9:21": "864x2016",
+    "1:1": "1024x1024", "2:3": "1024x1536", "3:2": "1536x1024",
+    "4:3": "1024x768", "3:4": "768x1024", "16:9": "1536x864",
+    "9:16": "864x1536", "21:9": "2016x864", "9:21": "864x2016",
   },
   "2k": {
-    "1:1": "2048x2048",
-    "2:3": "1360x2048",
-    "3:2": "2048x1360",
-    "4:3": "2048x1536",
-    "3:4": "1536x2048",
-    "16:9": "2048x1152",
-    "9:16": "1152x2048",
-    "21:9": "2688x1152",
-    "9:21": "1152x2688",
+    "1:1": "2048x2048", "2:3": "1360x2048", "3:2": "2048x1360",
+    "4:3": "2048x1536", "3:4": "1536x2048", "16:9": "2048x1152",
+    "9:16": "1152x2048", "21:9": "2688x1152", "9:21": "1152x2688",
   },
   "4k": {
-    "1:1": "2880x2880",
-    "2:3": "2336x3520",
-    "3:2": "3520x2336",
-    "4:3": "3312x2480",
-    "3:4": "2480x3312",
-    "16:9": "3840x2160",
-    "9:16": "2160x3840",
-    "21:9": "3840x1648",
-    "9:21": "1648x3840",
+    "1:1": "2880x2880", "2:3": "2336x3520", "3:2": "3520x2336",
+    "4:3": "3312x2480", "3:4": "2480x3312", "16:9": "3840x2160",
+    "9:16": "2160x3840", "21:9": "3840x1648", "9:21": "1648x3840",
   },
 };
 
 export type PixelSize = { width: number; height: number };
-export type MediaRatio = { width: number; height: number };
+export type MediaRatio = PixelSize;
 
 export const videoRatioOptions = [
   { value: "1:1", width: 1, height: 1 },
@@ -65,34 +47,26 @@ export const videoRatioOptions = [
 export const VIDEO_SECONDS_MIN = 4;
 export const VIDEO_SECONDS_MAX = 30;
 
+const scaleAliases: Readonly<Record<string, (typeof mediaScaleOptions)[number]>> = {
+  "1k": "1k", "1024": "1k", "2k": "2k", "2048": "2k",
+  "4k": "4k", "3840": "4k", auto: "auto",
+};
+
 export function parsePixelSize(value: string): PixelSize | null {
-  const match = /^\s*(\d+)\s*x\s*(\d+)\s*$/i.exec(value || "");
-  if (!match) return null;
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  return isPositiveSize(width, height) ? { width, height } : null;
+  const parts = /^\s*(\d+)\s*x\s*(\d+)\s*$/i.exec(value || "");
+  if (!parts) return null;
+  return positivePair(Number(parts[1]), Number(parts[2]));
 }
 
 export function parseAspectRatio(value: string): MediaRatio | null {
-  const match = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(
-    value || "",
-  );
-  if (!match) return null;
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  return isPositiveSize(width, height) ? { width, height } : null;
+  const parts = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(value || "");
+  if (!parts) return null;
+  return positivePair(Number(parts[1]), Number(parts[2]));
 }
 
 export function normalizeMediaScale(value: string | undefined) {
-  const scale = String(value || "")
-    .trim()
-    .toLowerCase();
-  if (scale === "2k" || scale === "2048") return "2k";
-  if (scale === "4k" || scale === "3840") return "4k";
-  if (scale === "auto") return "auto";
-  return mediaScaleOptions.includes(scale as (typeof mediaScaleOptions)[number])
-    ? scale
-    : "1k";
+  const key = String(value ?? "").trim().toLowerCase();
+  return scaleAliases[key] ?? "1k";
 }
 
 export function inferMediaScale(size: string, storedScale?: string) {
@@ -101,138 +75,98 @@ export function inferMediaScale(size: string, storedScale?: string) {
   const pixels = parsePixelSize(size);
   if (!pixels) return "auto";
 
-  const presetScale = Object.entries(imageSizePresets).find(([, presets]) =>
-    Object.values(presets).includes(`${pixels.width}x${pixels.height}`),
-  )?.[0];
-  if (presetScale) return presetScale;
-
-  const longSide = Math.max(pixels.width, pixels.height);
-  if (longSide >= 3072) return "4k";
-  if (longSide >= 1536) return "2k";
-  return "1k";
+  for (const scale of ["1k", "2k", "4k"] as const) {
+    if (Object.values(imageSizePresets[scale]).includes(`${pixels.width}x${pixels.height}`)) return scale;
+  }
+  const longEdge = Math.max(pixels.width, pixels.height);
+  return longEdge >= 3072 ? "4k" : longEdge >= 1536 ? "2k" : "1k";
 }
 
 export function inferMediaRatio(size: string, fallback = "1:1") {
   if (!size || size === "auto") return "auto";
   if (mediaRatioOptions.some((option) => option.value === size)) return size;
-
-  const dimensions = parsePixelSize(size) || parseAspectRatio(size);
-  if (!dimensions) return fallback;
-  return nearestRatio(
-    mediaRatioOptions,
-    dimensions.width / dimensions.height,
-    fallback,
-  );
+  const dimensions = parsePixelSize(size) ?? parseAspectRatio(size);
+  return dimensions
+    ? nearestRatio(mediaRatioOptions, dimensions.width / dimensions.height, fallback)
+    : fallback;
 }
 
 export function computeMediaSize(scale: string, ratio: string) {
   if (ratio === "auto" || !ratio) return "auto";
-  const normalizedScale = normalizeMediaScale(scale);
-  if (normalizedScale === "auto") return ratio;
-  return imageSizePresets[normalizedScale]?.[ratio] || "auto";
+  const selectedScale = normalizeMediaScale(scale);
+  return selectedScale === "auto" ? ratio : imageSizePresets[selectedScale]?.[ratio] ?? "auto";
 }
 
-export function readMediaDimensions(
-  size: string,
-  scale: string,
-  ratio: string,
-) {
-  const pixels = parsePixelSize(size);
-  if (pixels) return pixels;
-  const computed = computeMediaSize(
-    scale === "auto" ? "1k" : scale,
-    ratio === "auto" ? "1:1" : ratio,
-  );
-  return parsePixelSize(computed) || { width: 0, height: 0 };
+export function readMediaDimensions(size: string, scale: string, ratio: string) {
+  const explicit = parsePixelSize(size);
+  if (explicit) return explicit;
+  const fallback = computeMediaSize(scale === "auto" ? "1k" : scale, ratio === "auto" ? "1:1" : ratio);
+  return parsePixelSize(fallback) ?? { width: 0, height: 0 };
 }
 
 export function clampVideoSeconds(value: string) {
-  const numeric = Number(value);
-  const seconds =
-    Number.isFinite(numeric) && numeric !== 0 ? Math.floor(numeric) : 6;
-  return String(
-    Math.max(VIDEO_SECONDS_MIN, Math.min(VIDEO_SECONDS_MAX, seconds)),
-  );
+  const parsed = Number(value);
+  const seconds = Number.isFinite(parsed) && parsed !== 0 ? Math.floor(parsed) : 6;
+  return String(Math.min(VIDEO_SECONDS_MAX, Math.max(VIDEO_SECONDS_MIN, seconds)));
 }
 
 export function parseVideoResolution(value: string | undefined) {
-  const raw = String(value || "")
-    .trim()
-    .toLowerCase();
+  const raw = String(value ?? "").trim().toLowerCase();
   if (raw === "low") return "480";
   if (raw === "auto" || raw === "high" || raw === "medium") return "720";
-  const number = raw.replace(/p$/i, "");
-  return /^\d+$/.test(number) && Number(number) > 0
-    ? String(Number(number))
-    : "720";
+  const pixels = raw.replace(/p$/i, "");
+  return /^\d+$/.test(pixels) && Number(pixels) > 0 ? String(Number(pixels)) : "720";
 }
 
 export function inferVideoRatio(size: string) {
   if (!size || size === "auto") return "auto";
   if (videoRatioOptions.some((option) => option.value === size)) return size;
-  const dimensions = parsePixelSize(size) || parseAspectRatio(size);
-  if (!dimensions) return "16:9";
-  return nearestRatio(
-    videoRatioOptions,
-    dimensions.width / dimensions.height,
-    "16:9",
-  );
+  const dimensions = parsePixelSize(size) ?? parseAspectRatio(size);
+  return dimensions ? nearestRatio(videoRatioOptions, dimensions.width / dimensions.height, "16:9") : "16:9";
 }
 
 export function computeVideoSize(resolution: string, ratio: string) {
-  if (ratio === "auto" || !ratio) return "auto";
-  const parsed = parseAspectRatio(ratio);
-  if (!parsed) return "auto";
-  const pixels = Math.max(
-    1,
-    Math.floor(Number(parseVideoResolution(resolution)) || 720),
-  );
-  const landscape = parsed.width >= parsed.height;
-  const width = evenRound(
-    landscape ? (pixels * parsed.width) / parsed.height : pixels,
-  );
-  const height = evenRound(
-    landscape ? pixels : (pixels * parsed.height) / parsed.width,
-  );
+  if (!ratio || ratio === "auto") return "auto";
+  const aspect = parseAspectRatio(ratio);
+  if (!aspect) return "auto";
+  const edge = Math.max(1, Math.floor(Number(parseVideoResolution(resolution)) || 720));
+  const landscape = aspect.width >= aspect.height;
+  const width = landscape ? even(edge * aspect.width / aspect.height) : edge;
+  const height = landscape ? edge : even(edge * aspect.height / aspect.width);
   return `${width}x${height}`;
 }
 
-export function readVideoDimensions(
-  size: string,
-  resolution: string,
-  ratio: string,
-) {
-  const pixels = parsePixelSize(size);
-  if (pixels) return pixels;
-  const computed = computeVideoSize(
-    resolution,
-    ratio === "auto" ? "16:9" : ratio,
-  );
-  return parsePixelSize(computed) || { width: 0, height: 0 };
+export function readVideoDimensions(size: string, resolution: string, ratio: string) {
+  const explicit = parsePixelSize(size);
+  if (explicit) return explicit;
+  const fallback = computeVideoSize(resolution, ratio === "auto" ? "16:9" : ratio);
+  return parsePixelSize(fallback) ?? { width: 0, height: 0 };
 }
 
-function nearestRatio<
-  Option extends { value: string; width: number; height: number },
->(options: readonly Option[], target: number, fallback: string) {
-  let best = fallback;
-  let distance = Number.POSITIVE_INFINITY;
+function positivePair(width: number, height: number): PixelSize | null {
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+    ? { width, height }
+    : null;
+}
+
+function nearestRatio<Option extends { value: string; width: number; height: number }>(
+  options: readonly Option[],
+  target: number,
+  fallback: string,
+) {
+  let choice = fallback;
+  let smallestGap = Number.POSITIVE_INFINITY;
   for (const option of options) {
     if (!option.height) continue;
-    const nextDistance = Math.abs(option.width / option.height - target);
-    if (nextDistance < distance) {
-      best = option.value;
-      distance = nextDistance;
+    const gap = Math.abs(option.width / option.height - target);
+    if (gap < smallestGap) {
+      choice = option.value;
+      smallestGap = gap;
     }
   }
-  return best;
+  return choice;
 }
 
-function isPositiveSize(width: number, height: number) {
-  return (
-    Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
-  );
-}
-
-function evenRound(value: number) {
+function even(value: number) {
   return Math.max(2, Math.round(value / 2) * 2);
 }

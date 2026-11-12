@@ -1,8 +1,9 @@
 import { create } from "zustand";
 import { persist, type StorageValue } from "zustand/middleware";
 
-import { nanoid } from "nanoid";
 import i18n from "@/i18n";
+import { randomId } from "@/lib/utils";
+import { LEGACY_STORAGE_KEYS } from "@/lib/legacy-data-compatibility";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { createDebouncedPersistStorage } from "@/lib/canvas/canvas-persist-storage";
 import {
@@ -13,10 +14,9 @@ import {
     replaceCanvasCatalog,
     updateCanvasProject,
     type CanvasDeletedProject,
+    type CanvasProjectPatch,
     type CanvasProject,
 } from "@/lib/canvas/canvas-project-catalog";
-import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
-import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
 
 export type { CanvasProject, CanvasDeletedProject };
 
@@ -30,12 +30,11 @@ type CanvasStore = {
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
     replaceProjects: (projects: CanvasProject[], deletedProjects?: CanvasDeletedProject[]) => void;
-    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
+    updateProject: (id: string, patch: CanvasProjectPatch) => void;
 };
 
 const CANVAS_STORE_KEY = "yingxu-atlas:canvas_store:v2";
-const LEGACY_CANVAS_STORE_KEY = "infinite-canvas:canvas_store";
-const canvasStorage = createDebouncedPersistStorage<CanvasStore>(localForageStorage, LEGACY_CANVAS_STORE_KEY, 400);
+const canvasStorage = createDebouncedPersistStorage<CanvasStore>(localForageStorage, LEGACY_STORAGE_KEYS.canvas, 400);
 
 export const useCanvasStore = create<CanvasStore>()(
     persist(
@@ -45,14 +44,14 @@ export const useCanvasStore = create<CanvasStore>()(
             deletedProjects: [],
             createProject: (title = i18n.t("canvas.project.untitled")) => {
                 const now = new Date().toISOString();
-                const id = nanoid();
+                const id = randomId();
                 const project = createCanvasProject(id, title, now);
                 set((state) => ({ projects: [project, ...state.projects] }));
                 return id;
             },
             importProject: (source) => {
                 const now = new Date().toISOString();
-                const project = importCanvasProject(source, nanoid(), now, i18n.t("canvas.project.imported"));
+                const project = importCanvasProject(source, randomId(), now, i18n.t("canvas.project.imported"));
                 set((state) => ({ projects: [project, ...state.projects] }));
                 return project.id;
             },

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   stores: new Map<string, Map<string, unknown>>(),
+  reads: new Map<string, Promise<unknown>>(),
 }));
 
 vi.mock("@/lib/localforage-storage", () => ({
@@ -9,7 +10,10 @@ vi.mock("@/lib/localforage-storage", () => ({
     const store = harness.stores.get(name) || new Map<string, unknown>();
     harness.stores.set(name, store);
     return {
-      getItem: async <T>(key: string) => (store.get(key) as T) ?? null,
+      getItem: async <T>(key: string) => {
+        const delayed = harness.reads.get(`${name}/${key}`);
+        return delayed ? await delayed as T : (store.get(key) as T) ?? null;
+      },
       setItem: async <T>(key: string, value: T) => {
         store.set(key, value);
         return value;
@@ -43,14 +47,17 @@ import {
 } from "@/services/file-storage";
 import {
   deleteStoredImages,
+  ensureImagePreview,
   getImagePreviewRevision,
   previewUrlFor,
+  subscribeImagePreviews,
   setImageBlob,
   uploadImage,
 } from "@/services/image-storage";
 
 afterEach(() => {
-  harness.stores.clear();
+  for (const store of harness.stores.values()) store.clear();
+  harness.reads.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -100,14 +107,19 @@ describe("media storage services", () => {
     const image = await uploadImage(
       new Blob(["pixels"], { type: "image/png" }),
     );
+    const previewChanged = vi.fn();
+    const unsubscribe = subscribeImagePreviews(previewChanged);
     expect(image.storageKey).toMatch(/^image:/);
     expect(previewUrlFor(image.storageKey)).toBe("blob:preview");
     expect(getImagePreviewRevision()).toBe(1);
 
     await deleteStoredImages([image.storageKey!]);
+    unsubscribe();
     expect(revoke).toHaveBeenCalledWith("blob:image");
     expect(revoke).toHaveBeenCalledWith("blob:preview");
     expect(previewUrlFor(image.storageKey)).toBeUndefined();
+    expect(previewChanged).toHaveBeenCalledTimes(1);
+    expect(getImagePreviewRevision()).toBe(2);
   });
 
   it("replaces image bytes under an existing key without retaining stale previews", async () => {
@@ -186,5 +198,34 @@ describe("media storage services", () => {
       height: 1080,
       durationMs: 4250,
     });
+  });
+
+  it("shares thumbnail reads and ignores an earlier response after deletion", async () => {
+    let resolve!: (record: unknown) => void;
+    harness.reads.set("image_previews/image:retired", new Promise((done) => { resolve = done; }));
+    const create = vi.spyOn(URL, "createObjectURL");
+    const first = ensureImagePreview("image:retired");
+    const duplicate = ensureImagePreview("image:retired");
+    expect(duplicate).toBe(first);
+
+    await deleteStoredImages(["image:retired"]);
+    resolve({ version: 1, blob: new Blob(["old preview"]) });
+    await expect(first).resolves.toBeUndefined();
+    expect(create).not.toHaveBeenCalled();
+    expect(previewUrlFor("image:retired")).toBeUndefined();
+  });
+
+  it("keeps image references held by generation logs while removing abandoned files", async () => {
+    const { cleanupUnusedImages } = await import("@/services/image-storage");
+    const originals = harness.stores.get("image_files")!;
+    const previews = harness.stores.get("image_previews")!;
+    for (const key of ["image:project", "image:history", "image:unused"]) {
+      originals.set(key, new Blob([key]));
+      previews.set(key, { version: 1, blob: new Blob([key]) });
+    }
+    harness.stores.get("video_generation_logs")!.set("run", { references: [{ storageKey: "image:history" }] });
+    await cleanupUnusedImages({ storageKey: "image:project" });
+    expect([...originals.keys()].sort()).toEqual(["image:history", "image:project"]);
+    expect([...previews.keys()].sort()).toEqual(["image:history", "image:project"]);
   });
 });

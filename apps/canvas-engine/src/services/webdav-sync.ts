@@ -297,12 +297,15 @@ async function webdavFetch(
 }
 
 function buildWebdavUrl(config: WebdavSyncConfig, path: string) {
-  const baseUrl = config.url.trim().replace(/\/+$/, "");
-  const remotePath = [normalizePath(config.directory), normalizePath(path)]
-    .filter(Boolean)
-    .join("/");
-  if (!remotePath) return baseUrl;
-  return `${baseUrl}/${remotePath.split("/").map(encodeURIComponent).join("/")}`;
+  const endpoint = new URL(config.url.trim());
+  const suffix: string[] = [];
+  for (const input of [config.directory, path]) {
+    const normalized = normalizePath(input);
+    if (normalized) suffix.push(...normalized.split("/").map(encodeURIComponent));
+  }
+  if (!suffix.length) return endpoint.href.replace(/\/$/, "");
+  endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, "")}/${suffix.join("/")}`;
+  return endpoint.href;
 }
 
 function normalizePath(path: string) {
@@ -310,8 +313,28 @@ function normalizePath(path: string) {
     .trim()
     .replace(/^\/+|\/+$/g, "")
     .split("/");
-  if (parts.some((part) => part === "..")) {
-    throw new Error(webdavText("pathMissing"));
+  for (const part of parts) {
+    let decoded = part;
+    try {
+      for (let pass = 0; pass < 4; pass += 1) {
+        const next = decodeURIComponent(decoded);
+        if (next === decoded) break;
+        decoded = next;
+        if (pass === 3 && /%[\da-f]{2}/i.test(decoded)) {
+          throw new Error(webdavText("pathMissing"));
+        }
+      }
+    } catch {
+      throw new Error(webdavText("pathMissing"));
+    }
+    if (
+      decoded === ".." ||
+      decoded.includes("/") ||
+      decoded.includes("\\") ||
+      /[\u0000-\u001f\u007f]/.test(decoded)
+    ) {
+      throw new Error(webdavText("pathMissing"));
+    }
   }
   return parts.filter((part) => part && part !== ".").join("/");
 }
@@ -322,7 +345,23 @@ function directoryCacheKey(config: WebdavSyncConfig, parts: string[]) {
 }
 
 function assertWebdavConfig(config: WebdavSyncConfig) {
-  if (!config.url.trim()) throw new Error(webdavText("urlRequired"));
+  const rawUrl = config.url.trim();
+  if (!rawUrl) throw new Error(webdavText("urlRequired"));
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(webdavText("urlRequired"));
+  }
+  if (
+    !["http:", "https:"].includes(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    throw new Error(webdavText("urlRequired"));
+  }
 }
 
 async function throwWebdavError(

@@ -16,18 +16,24 @@ export type NodeContentRendererProps = {
   scale: number;
   renderNodeContent?: (node: CanvasNodeData) => ReactNode;
   pluginContext?: CanvasNodeContext | null;
-  onContentChange: (nodeId: string, content: string) => void;
-  onStopEditing: () => void;
+  commands: NodeContentCommands;
   mentionReferences: CanvasResourceReference[];
-  onRetry?: (node: CanvasNodeData) => void;
-  onToggleBatch?: () => void;
-  onSetBatchPrimary?: (itemId: string) => void;
-  onDuplicateBatchImage?: (imageId: string) => void;
-  onDownloadBatchImage?: (imageId: string) => void;
-  onRetryBatchImage?: (imageId: string) => void;
-  onDeleteBatchImage?: (imageId: string) => void;
-  onViewBatchImage?: (imageId: string) => void;
   groupChildCount: number;
+};
+
+export type NodeContentCommands = {
+  updateText: (content: string) => void;
+  stopTextEditing: () => void;
+  retryGeneration?: () => void;
+  toggleTextBatch?: () => void;
+  setPrimaryText?: (itemId: string) => void;
+  toggleImageBatch?: () => void;
+  setPrimaryImage?: (itemId: string) => void;
+  duplicateImage?: (itemId: string) => void;
+  downloadImage?: (itemId: string) => void;
+  retryImage?: (itemId: string) => void;
+  deleteImage?: (itemId: string) => void;
+  viewImage?: (itemId: string) => void;
 };
 
 export type BuiltinNodeRenderer = (

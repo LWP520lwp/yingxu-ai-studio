@@ -63,6 +63,40 @@ describe("canvas agent operation reducer", () => {
         expect(result.selectedNodeIds).toEqual(["a"]);
     });
 
+    it("keeps later operations consistent with indexes after a node and edge are removed", () => {
+        const before = snapshot({
+            connections: [
+                { id: "a-b", fromNodeId: "a", toNodeId: "b" },
+                { id: "b-config", fromNodeId: "b", toNodeId: "config" },
+            ],
+            selectedNodeIds: ["a", "b"],
+        });
+        const result = applyCanvasAgentOps(before, [
+            { type: "delete_node", id: "b" },
+            { type: "add_node", id: "b", title: "recreated" },
+            { type: "connect_nodes", id: "new-link", fromNodeId: "a", toNodeId: "b" },
+            { type: "connect_nodes", id: "duplicate-link", fromNodeId: "a", toNodeId: "b" },
+        ]);
+
+        expect(result.nodes.map((item) => item.id)).toEqual(["a", "config", "b"]);
+        expect(result.connections).toEqual([{ id: "new-link", fromNodeId: "a", toNodeId: "b" }]);
+        expect(result.selectedNodeIds).toEqual(["b"]);
+    });
+
+    it("preserves input collection identity for an empty or no-op transaction", () => {
+        const before = snapshot();
+        const result = applyCanvasAgentOps(before, [
+            { type: "delete_node", id: "missing" },
+            { type: "connect_nodes", fromNodeId: "a", toNodeId: "missing" },
+            { type: "select_nodes", ids: ["a"] },
+        ]);
+
+        expect(result.nodes).toBe(before.nodes);
+        expect(result.connections).toBe(before.connections);
+        expect(result.selectedNodeIds).toBe(before.selectedNodeIds);
+        expect(result.viewport).toBe(before.viewport);
+    });
+
     it("rejects self and dangling links and prevents connection ID collisions", () => {
         const result = applyCanvasAgentOps(snapshot(), [
             { type: "connect_nodes", fromNodeId: "a", toNodeId: "a" },

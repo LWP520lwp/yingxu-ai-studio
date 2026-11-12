@@ -103,4 +103,11 @@ describe("reviewable continuous storyboard canvas import", () => {
         expect(() => readStoryWorkflowPayload({ ...payload(), unused: "字".repeat(512_000) })).toThrow("500 Ki");
         expect(() => createStoryWorkflowImport(payload(), [], models(), { x: NaN, y: 0 })).toThrow("画布位置无效");
     });
+
+    it("allocates unique node and connection IDs across multiple imports", () => {
+        const first = build();
+        const allIds = new Set([...first.nodes.map((node) => node.id), ...first.connections.map((edge) => edge.id)]);
+        expect(allIds.size).toBe(first.nodes.length + first.connections.length);
+        expect(first.connections.every((edge) => allIds.has(edge.fromNodeId) && allIds.has(edge.toNodeId))).toBe(true);
+    });
 });

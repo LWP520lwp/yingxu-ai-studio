@@ -3,11 +3,16 @@ import { initReactI18next } from "react-i18next";
 
 import enUS from "@/i18n/locales/en-US";
 import zhCN from "@/i18n/locales/zh-CN";
+import { LEGACY_STORAGE_KEYS } from "@/lib/legacy-data-compatibility";
 
 export type AppLocale = "zh-CN" | "en-US";
 
 const LOCALE_STORAGE_KEY = "yingxu-atlas:locale:v2";
-const LEGACY_LOCALE_STORAGE_KEY = "infinite-canvas:locale";
+const APP_LOCALES = new Set<AppLocale>(["zh-CN", "en-US"]);
+
+function isAppLocale(value: string | null): value is AppLocale {
+  return value !== null && APP_LOCALES.has(value as AppLocale);
+}
 
 export function readStoredLocale(
   storage: Pick<Storage, "getItem" | "setItem"> | null,
@@ -15,16 +20,16 @@ export function readStoredLocale(
   if (!storage) return null;
   try {
     const current = storage.getItem(LOCALE_STORAGE_KEY);
-    const saved = current || storage.getItem(LEGACY_LOCALE_STORAGE_KEY);
-    if (saved !== "zh-CN" && saved !== "en-US") return null;
-    if (!current) {
-      try {
-        storage.setItem(LOCALE_STORAGE_KEY, saved);
-      } catch {
-        // Continue with the legacy value when storage is read-only.
-      }
+    if (isAppLocale(current)) return current;
+
+    const previous = storage.getItem(LEGACY_STORAGE_KEYS.locale);
+    if (!isAppLocale(previous)) return null;
+    try {
+      storage.setItem(LOCALE_STORAGE_KEY, previous);
+    } catch {
+      // A read-only store can still supply the old preference for this session.
     }
-    return saved;
+    return previous;
   } catch {
     return null;
   }
@@ -47,13 +52,14 @@ i18n.use(initReactI18next).init({
   },
   lng: readPreferredLocale() || "zh-CN",
   fallbackLng: "zh-CN",
-  supportedLngs: ["zh-CN", "en-US"],
+  supportedLngs: [...APP_LOCALES],
   initAsync: false,
   interpolation: { escapeValue: false },
   react: { useSuspense: false },
 });
 
 export function changeAppLocale(locale: AppLocale) {
+  if (!isAppLocale(locale)) return Promise.resolve(i18n);
   try {
     if (typeof localStorage !== "undefined")
       localStorage.setItem(LOCALE_STORAGE_KEY, locale);

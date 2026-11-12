@@ -114,7 +114,9 @@ export class CanvasPromptEditorController {
     const { theme, onImagePreview } = this.context;
     const chip = document.createElement("span");
     chip.contentEditable = "false";
-    chip.dataset.refLabel = reference.label;
+    const token = reference.valueToken || reference.label;
+    chip.dataset.refLabel = token;
+    chip.setAttribute("data-reference-label", reference.label);
     chip.setAttribute("aria-label", `${reference.label}: ${reference.title}`);
 
     if (reference.kind === "image" && reference.previewUrl) {

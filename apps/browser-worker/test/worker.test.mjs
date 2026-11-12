@@ -218,11 +218,12 @@ test("Muse generation separates pre-send rejection from post-send ambiguous veri
       if (source.includes("hasComposer")) return { body: rejectBeforeSend ? "" : clickCount ? "安全验证" : "", hasComposer: true, hasLogin: false, captcha: !rejectBeforeSend && clickCount > 0 };
       return [];
     },
-    locator(selector) {
-      const composer = selector === "textarea";
+    getByRole(role, options) {
+      const composer = role === "textbox";
+      const send = role === "button" && options?.name instanceof RegExp;
       return {
-        first() { return this; },
-        async count() { return composer || !rejectBeforeSend ? 1 : 0; },
+        last() { return this; },
+        async count() { return composer || send && !rejectBeforeSend ? 1 : 0; },
         async fill() {},
         async isEnabled() { return true; },
         async click() { clickCount++; },

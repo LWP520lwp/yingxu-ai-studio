@@ -121,6 +121,7 @@ describe("platform document initialization", () => {
 
     it("rejects corrupt native content instead of falling back to legacy or blank", async () => {
         expect(() => readNativeProject({ ...project(), nodes: [{ id: "broken" }] }, "project-one")).toThrow("无效节点");
+        expect(() => readNativeProject({ ...project(), connections: [{ id: "lost-edge", fromNodeId: "missing", toNodeId: "text-one" }] }, "project-one")).toThrow("无效连接");
         const context = init();
         context.snapshot = { projectId: "project-one", revision: 3, document: { id: "other" } };
         await expect(open(context)).rejects.toThrow();

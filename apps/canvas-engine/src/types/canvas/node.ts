@@ -16,11 +16,15 @@ export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
 export type CanvasGenerationMode = "text" | "image" | "video" | "audio";
 export type CanvasImageGenerationType = "generation" | "edit";
 
-export type CanvasNodeImage = {
+export type CanvasNodeText = {
   id: string;
+  content: string;
   status: CanvasNodeStatus;
   errorDetails?: string;
-  content: string;
+};
+
+/** Image and text batches share the same result lifecycle. */
+export type CanvasNodeImage = CanvasNodeText & {
   storageKey?: string;
   naturalWidth: number;
   naturalHeight: number;
@@ -28,42 +32,54 @@ export type CanvasNodeImage = {
   mimeType: string;
 };
 
-export type CanvasNodeText = {
-  id: string;
-  status: CanvasNodeStatus;
-  errorDetails?: string;
-  content: string;
-};
-
-export type CanvasNodeMetadata = {
+export type CanvasNodeContentMetadata = {
   content?: string;
   composerContent?: string;
   prompt?: string;
   status?: CanvasNodeStatus;
   errorDetails?: string;
   fontSize?: number;
+};
+
+export type CanvasNodeGenerationMetadata = {
   generationMode?: CanvasGenerationMode;
   skillId?: string;
   skillVersion?: string;
   videoSkillId?: string;
   videoSkillVersion?: string;
   videoSkillInputMode?: "instruction";
-  generationType?: CanvasImageGenerationType;
   model?: string;
   reasoningEffort?: "auto" | "low" | "medium" | "high" | "xhigh";
+  count?: number;
+  textCount?: number;
+};
+
+export type CanvasImageSettingsMetadata = {
+  generationType?: CanvasImageGenerationType;
   size?: string;
   quality?: string;
   background?: string;
-  count?: number;
-  textCount?: number;
+  freeResize?: boolean;
+};
+
+export type CanvasNodeTextCollectionMetadata = {
   texts?: CanvasNodeText[];
   primaryTextId?: string;
+};
+
+export type CanvasVideoSettingsMetadata = {
   seconds?: string;
   vquality?: string;
   generateAudio?: string;
   watermark?: string;
   videoMode?: string;
   videoFramesReversed?: boolean;
+  videoTaskId?: string;
+  videoTaskProvider?: "openai" | "gemini" | "platform";
+  videoTaskProjectId?: string;
+};
+
+export type CanvasStoryWorkflowMetadata = {
   storyWorkflow?: {
     schemaVersion: 1;
     segmentId: string;
@@ -81,27 +97,43 @@ export type CanvasNodeMetadata = {
     targetDuration?: 15;
     pendingVideo?: boolean;
   };
+};
+
+export type CanvasAudioSettingsMetadata = {
   audioVoice?: string;
   audioFormat?: string;
   audioSpeed?: string;
   audioInstructions?: string;
+};
+
+export type CanvasNodeMediaMetadata = {
   references?: string[];
   naturalWidth?: number;
   naturalHeight?: number;
-  freeResize?: boolean;
   images?: CanvasNodeImage[];
   primaryImageId?: string;
   storageKey?: string;
   mimeType?: string;
   bytes?: number;
   durationMs?: number;
-  videoTaskId?: string;
-  videoTaskProvider?: "openai" | "gemini" | "platform";
-  videoTaskProjectId?: string;
+};
+
+export type CanvasNodeGroupingMetadata = {
   groupId?: string;
   interactive?: boolean;
   composition?: CanvasComposition;
 };
+
+export type CanvasNodeMetadata =
+  & CanvasNodeContentMetadata
+  & CanvasNodeGenerationMetadata
+  & CanvasImageSettingsMetadata
+  & CanvasNodeTextCollectionMetadata
+  & CanvasVideoSettingsMetadata
+  & CanvasStoryWorkflowMetadata
+  & CanvasAudioSettingsMetadata
+  & CanvasNodeMediaMetadata
+  & CanvasNodeGroupingMetadata;
 
 export type CanvasNodeData = {
   id: string;

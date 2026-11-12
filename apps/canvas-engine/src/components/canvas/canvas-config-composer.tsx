@@ -1,35 +1,18 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type {
-  CSSProperties,
-  KeyboardEvent,
-  MouseEvent,
-  PointerEvent,
-} from "react";
-import { Button, Image } from "antd";
-import {
-  FileText,
-  Group,
-  Image as ImageIcon,
-  Music2,
-  Video,
-  X,
-} from "lucide-react";
+import { useMemo } from "react";
+import type { MouseEvent, PointerEvent } from "react";
+import { Button } from "antd";
+import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-
 import i18n from "@/i18n";
 import { canvasThemes } from "@/lib/canvas-theme";
-import {
-  CONFIG_REFERENCE_PATTERN,
-  filterComposerInputs,
-  mentionQueryBeforeCaret,
-  parseComposerTokens,
-  reduceComposerMention,
-} from "@/lib/canvas/canvas-config-composer";
+import { CONFIG_REFERENCE_PATTERN } from "@/lib/canvas/canvas-config-composer";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import type { NodeGenerationInput } from "./canvas-node-generation";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
+import { CanvasPromptChipInput } from "./canvas-prompt-chip-input";
 import type { CanvasNodeData } from "@/types/canvas";
+import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 
 type CanvasConfigComposerProps = {
   nodeId: string;
@@ -60,125 +43,40 @@ export function CanvasConfigComposer({
 }: CanvasConfigComposerProps) {
   const { t } = useTranslation();
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
-  const globalConfig = useEffectiveConfig();
-  const sourceNode = nodes.find((node) => node.id === nodeId);
-  const frameMode =
-    sourceNode?.metadata?.generationMode === "video" &&
-    (sourceNode.metadata.videoMode || globalConfig.videoMode) === "frames";
-  const editorRef = useRef<HTMLDivElement>(null);
-  const composingRef = useRef(false);
-  const [mention, dispatchMention] = useReducer(reduceComposerMention, null);
-  const activeIndex = mention?.activeIndex ?? 0;
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const tokens = useMemo(() => parseComposerTokens(value), [value]);
-  const referenceById = useMemo(
-    () => new Map(inputs.map((input) => [input.nodeId, input])),
-    [inputs],
-  );
-  const candidates = useMemo(() => {
-    if (!mention) return [];
-    return filterComposerInputs(inputs, mention.query, (input) =>
-      resourceLabel(input, inputs),
-    );
-  }, [inputs, mention]);
+  const defaults = useEffectiveConfig();
+  const currentNode = nodes.find((candidate) => candidate.id === nodeId);
+  const isVideo = currentNode?.metadata?.generationMode === "video";
+  const frameMode = isVideo && (currentNode.metadata?.videoMode || defaults.videoMode) === "frames";
+  const references = useMemo(() => inputs.map((input) => asReference(input, inputs)), [inputs, i18n.language]);
 
-  useEffect(() => {
-    if (document.activeElement === editorRef.current) return;
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.textContent = "";
-    tokens.forEach((token) => {
-      if (token.type === "text") {
-        editor.append(document.createTextNode(token.value));
-        return;
-      }
-      const input = referenceById.get(token.nodeId);
-      if (input)
-        editor.append(
-          createReferenceChip(input, inputs, theme, setImagePreview),
-        );
-    });
-  }, [inputs, referenceById, theme, tokens]);
-
-  const syncFromEditor = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const next = serializeEditor(editor);
-    onChange(next);
-    syncMention();
-  };
-
-  const syncMention = () => {
-    const query = mentionQueryBeforeCaret(textBeforeCaret());
-    if (query === null || !inputs.length) {
-      closeMention();
-      return;
-    }
-    dispatchMention({ type: "open", query });
-  };
-
-  const closeMention = () => {
-    dispatchMention({ type: "close" });
-  };
-
-  const insertReference = (input: NodeGenerationInput) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    removeActiveMention();
-    const chip = createReferenceChip(input, inputs, theme, setImagePreview);
-    const space = document.createTextNode(" ");
-    const selection = window.getSelection();
-    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-    if (range) {
-      range.insertNode(space);
-      range.insertNode(chip);
-      range.setStartAfter(space);
-      range.collapse(true);
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-    } else {
-      editor.append(chip, space);
-      placeCaretAtEnd(editor);
-    }
-    closeMention();
-    onChange(serializeEditor(editor));
-  };
-
-  const stopCanvasInteraction = (event: PointerEvent | MouseEvent) =>
-    event.stopPropagation();
+  const stopCanvas = (event: MouseEvent | PointerEvent) => event.stopPropagation();
 
   return (
-    <div
+    <section
       data-canvas-no-zoom
-      className="rounded-2xl border p-3 shadow-2xl backdrop-blur"
-      style={{
-        background: theme.toolbar.panel,
-        borderColor: theme.toolbar.border,
-        color: theme.node.text,
-      }}
-      onMouseDown={stopCanvasInteraction}
-      onPointerDown={stopCanvasInteraction}
+      aria-label={t("canvas.composer.title")}
+      className="w-[min(36rem,calc(100vw-2rem))] rounded-lg border p-3 shadow-xl"
+      style={{ background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
+      onMouseDown={stopCanvas}
+      onPointerDown={stopCanvas}
       onWheel={(event) => event.stopPropagation()}
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <div className="shrink-0 text-xs font-semibold">
-            {t("canvas.composer.title")}
-          </div>
-          <div className="truncate text-[11px] opacity-55">
-            {t("canvas.composer.description")}
-          </div>
+      <header className="mb-2 flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xs font-semibold">{t("canvas.composer.title")}</h2>
+          <p className="truncate text-[11px] opacity-60">{t("canvas.composer.description")}</p>
         </div>
         <Button
           size="small"
           type="text"
           className="!h-7 !w-7 !min-w-7 !p-0"
           icon={<X className="size-3.5" />}
-          aria-label="关闭提示词编辑器"
-          title="关闭提示词编辑器"
+          aria-label={t("common.close")}
+          title={t("common.close")}
           onClick={onClose}
         />
-      </div>
+      </header>
+
       <CanvasNodeReferenceBar
         nodeId={nodeId}
         nodes={nodes}
@@ -187,388 +85,43 @@ export function CanvasConfigComposer({
         onDisconnect={onDisconnectReference}
         onStartSelection={onStartReferenceSelection}
         frameMode={frameMode}
-        framesReversed={sourceNode?.metadata?.videoFramesReversed}
+        framesReversed={currentNode?.metadata?.videoFramesReversed}
         onSwapFrames={onSwapVideoFrames}
       />
-      <div className="relative rounded-xl">
-        {!value.trim() ? (
-          <div
-            className="pointer-events-none absolute left-3 top-2 text-sm leading-7"
-            style={{ color: theme.node.placeholder }}
-          >
-            {t("canvas.composer.placeholder")}
-          </div>
-        ) : null}
-        <div
-          ref={editorRef}
-          contentEditable
-          role="textbox"
-          aria-multiline="true"
-          aria-label="画布生成提示词"
-          suppressContentEditableWarning
-          className="thin-scrollbar min-h-28 max-h-72 w-full overflow-y-auto overscroll-contain whitespace-pre-wrap break-words px-3 py-2 text-sm leading-7 outline-none"
-          style={{ color: theme.node.text }}
-          onInput={() => {
-            if (!composingRef.current) syncFromEditor();
-          }}
-          onCompositionStart={() => {
-            composingRef.current = true;
-          }}
-          onCompositionEnd={() => {
-            composingRef.current = false;
-            syncFromEditor();
-          }}
-          onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-            event.stopPropagation();
-            if (composingRef.current || event.nativeEvent.isComposing) return;
-            if (mention && candidates.length) {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                dispatchMention({
-                  type: "move",
-                  direction: 1,
-                  itemCount: candidates.length,
-                });
-                return;
-              }
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                dispatchMention({
-                  type: "move",
-                  direction: -1,
-                  itemCount: candidates.length,
-                });
-                return;
-              }
-              if (event.key === "Enter") {
-                event.preventDefault();
-                insertReference(
-                  candidates[Math.min(activeIndex, candidates.length - 1)],
-                );
-                return;
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                closeMention();
-                return;
-              }
-            }
-            if (
-              (event.key === "Backspace" || event.key === "Delete") &&
-              deleteAdjacentReference(event.key)
-            ) {
-              event.preventDefault();
-              requestAnimationFrame(syncFromEditor);
-              return;
-            }
-            requestAnimationFrame(syncMention);
-          }}
-          onBlur={() => window.setTimeout(closeMention, 120)}
+
+      <div className="mt-2 rounded-md border px-3 py-2" style={{ borderColor: theme.toolbar.border }}>
+        <CanvasPromptChipInput
+          value={value}
+          references={references}
+          onChange={onChange}
+          className="thin-scrollbar min-h-28 max-h-72 w-full overflow-y-auto overscroll-contain whitespace-pre-wrap break-words text-sm leading-7 outline-none"
+          style={{ color: theme.node.text, cursor: "text" }}
+          placeholder={t("canvas.composer.placeholder")}
         />
-        {mention && candidates.length ? (
-          <MentionMenu
-            inputs={candidates}
-            allInputs={inputs}
-            activeIndex={Math.min(activeIndex, candidates.length - 1)}
-            theme={theme}
-            onSelect={insertReference}
-          />
-        ) : null}
       </div>
-      {imagePreview ? (
-        <Image
-          src={imagePreview}
-          alt={t("canvas.composer.imagePreview")}
-          style={{ display: "none" }}
-          preview={{
-            visible: true,
-            src: imagePreview,
-            onVisibleChange: (visible) => !visible && setImagePreview(null),
-          }}
-        />
-      ) : null}
-    </div>
+    </section>
   );
 }
 
-function MentionMenu({
-  inputs,
-  allInputs,
-  activeIndex,
-  theme,
-  onSelect,
-}: {
-  inputs: NodeGenerationInput[];
-  allInputs: NodeGenerationInput[];
-  activeIndex: number;
-  theme: (typeof canvasThemes)[keyof typeof canvasThemes];
-  onSelect: (input: NodeGenerationInput) => void;
-}) {
-  const selectedRef = useRef(false);
-  const activeItemRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    activeItemRef.current?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex, inputs]);
-
-  const selectInput = (input: NodeGenerationInput) => {
-    if (selectedRef.current) return;
-    selectedRef.current = true;
-    onSelect(input);
-  };
-
-  return (
-    <div
-      className="absolute left-2 top-[calc(100%+6px)] z-[90] max-h-56 w-64 overflow-y-auto rounded-xl border p-1 shadow-2xl"
-      style={{
-        background: theme.toolbar.panel,
-        borderColor: theme.toolbar.border,
-      }}
-    >
-      {inputs.map((input, index) => (
-        <button
-          key={input.nodeId}
-          ref={index === activeIndex ? activeItemRef : undefined}
-          type="button"
-          className="flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition"
-          style={{
-            background:
-              index === activeIndex ? theme.toolbar.activeBg : "transparent",
-            color:
-              index === activeIndex
-                ? theme.toolbar.activeText
-                : theme.node.text,
-          }}
-          onMouseDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            selectInput(input);
-          }}
-        >
-          <ResourcePreview input={input} />
-          <span className="min-w-0 flex-1">
-            <span className="block font-medium">
-              {resourceLabel(input, allInputs)}
-            </span>
-            <span className="block truncate opacity-65">
-              {input.type === "group"
-                ? i18n.t("canvas.node.nodeCount", {
-                    count: input.children.length,
-                  })
-                : input.text || input.title}
-            </span>
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function ResourcePreview({ input }: { input: NodeGenerationInput }) {
-  if (input.type === "group")
-    return (
-      <span className="grid size-9 shrink-0 place-items-center">
-        <Group className="size-4" />
-      </span>
-    );
-  if (input.type === "image" && input.image)
-    return (
-      <img
-        src={input.image.dataUrl}
-        alt=""
-        className="size-9 rounded-md object-cover"
-      />
-    );
-  if (input.type === "video" && input.video)
-    return (
-      <video
-        src={input.video.url}
-        className="size-9 rounded-md bg-black object-cover"
-        muted
-        preload="metadata"
-      />
-    );
-  const Icon =
-    input.type === "audio"
-      ? Music2
-      : input.type === "video"
-        ? Video
-        : input.type === "image"
-          ? ImageIcon
-          : FileText;
-  return (
-    <span className="grid size-9 shrink-0 place-items-center rounded-md bg-black/10">
-      <Icon className="size-4" />
-    </span>
-  );
-}
-
-function createReferenceChip(
+function asReference(
   input: NodeGenerationInput,
   inputs: NodeGenerationInput[],
-  theme: (typeof canvasThemes)[keyof typeof canvasThemes],
-  onImagePreview: (url: string) => void,
-) {
-  const wrapper = document.createElement("span");
-  wrapper.contentEditable = "false";
-  wrapper.dataset.referenceNodeId = input.nodeId;
-  wrapper.className =
-    "mx-px inline-flex h-7 max-w-40 items-center justify-center overflow-hidden rounded-md border px-1 text-xs leading-none align-middle";
-  Object.assign(wrapper.style, chipStyle(theme));
-  if (input.type === "image" && input.image) {
-    const image = document.createElement("img");
-    image.src = input.image.dataUrl;
-    image.alt = input.title;
-    image.className = "size-6 rounded object-cover";
-    wrapper.className =
-      "mx-px inline-flex size-6 items-center justify-center overflow-hidden rounded align-middle";
-    wrapper.appendChild(image);
-    wrapper.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      onImagePreview(input.image?.dataUrl || "");
-    });
-  } else {
-    wrapper.title =
-      input.type === "group" ? input.title : input.text || input.title;
-    const text = document.createElement("span");
-    text.className = "block truncate";
-    text.textContent =
-      input.type === "text" ? input.text || input.title : input.title;
-    wrapper.appendChild(text);
-  }
-  return wrapper;
-}
-
-function serializeEditor(editor: HTMLElement) {
-  return serializeNodes(editor.childNodes).replace(/\uFEFF/g, "");
-}
-
-function serializeNodes(nodes: NodeListOf<ChildNode>) {
-  let result = "";
-  nodes.forEach((node) => {
-    if (node.nodeType === Node.TEXT_NODE) result += node.textContent || "";
-    if (!(node instanceof HTMLElement)) return;
-    const nodeId = node.dataset.referenceNodeId;
-    if (nodeId) result += `@[node:${nodeId}]`;
-    else if (node.tagName === "BR") result += "\n";
-    else result += serializeNodes(node.childNodes);
-  });
-  return result;
-}
-
-function removeActiveMention() {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount) return;
-  const range = selection.getRangeAt(0);
-  const text = textBeforeCaret();
-  const match = /@([^\s@]*)$/.exec(text);
-  if (!match) return;
-  range.setStart(
-    range.startContainer,
-    Math.max(0, range.startOffset - (match[1] || "").length - 1),
-  );
-  range.deleteContents();
-}
-
-function deleteAdjacentReference(key: string) {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount || !selection.isCollapsed) return false;
-  const range = selection.getRangeAt(0);
-  const target = adjacentReferenceNode(range, key);
-  if (!target) return false;
-  const nextCaretNode = document.createTextNode("");
-  target.replaceWith(nextCaretNode);
-  range.setStart(nextCaretNode, 0);
-  range.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  return true;
-}
-
-function adjacentReferenceNode(range: Range, key: string) {
-  const container = range.startContainer;
-  const offset = range.startOffset;
-  const previous = key === "Backspace";
-  if (container.nodeType === Node.TEXT_NODE) {
-    const text = container.textContent || "";
-    if ((previous && offset > 0) || (!previous && offset < text.length))
-      return null;
-    return findReferenceSibling(container, previous);
-  }
-  const children = Array.from(container.childNodes);
-  return findReferenceSibling(
-    children[previous ? offset - 1 : offset] || container,
-    previous,
-    true,
-  );
-}
-
-function findReferenceSibling(
-  node: Node,
-  previous: boolean,
-  includeSelf = false,
-): HTMLElement | null {
-  let current: Node | null = includeSelf
-    ? node
-    : previous
-      ? node.previousSibling
-      : node.nextSibling;
-  while (
-    current &&
-    current.nodeType === Node.TEXT_NODE &&
-    !(current.textContent || "").trim()
-  )
-    current = previous ? current.previousSibling : current.nextSibling;
-  return current instanceof HTMLElement && current.dataset.referenceNodeId
-    ? current
-    : null;
-}
-
-function textBeforeCaret() {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount) return "";
-  const range = selection.getRangeAt(0).cloneRange();
-  const editor = closestEditor(range.startContainer);
-  if (!editor) return "";
-  range.setStart(editor, 0);
-  return range.toString();
-}
-
-function closestEditor(node: Node) {
-  const element = node instanceof Element ? node : node.parentElement;
-  return element?.closest("[contenteditable='true']") || null;
-}
-
-function placeCaretAtEnd(element: HTMLElement) {
-  const range = document.createRange();
-  range.selectNodeContents(element);
-  range.collapse(false);
-  const selection = window.getSelection();
-  selection?.removeAllRanges();
-  selection?.addRange(range);
-}
-
-function resourceLabel(
-  input: NodeGenerationInput,
-  inputs: NodeGenerationInput[],
-) {
-  const sameTypeInputs = inputs.filter((item) => item.type === input.type);
-  const index = Math.max(
-    0,
-    sameTypeInputs.findIndex((item) => item.nodeId === input.nodeId),
-  );
-  return i18n.t(`canvas.composer.resources.${input.type}`, {
-    index: index + 1,
-  });
-}
-
-function chipStyle(
-  theme: (typeof canvasThemes)[keyof typeof canvasThemes],
-): CSSProperties {
+): CanvasResourceReference {
+  const peerIndex = inputs.filter((candidate) => candidate.type === input.type).findIndex((candidate) => candidate.nodeId === input.nodeId);
+  const kind = input.type === "group" ? "text" : input.type;
+  const previewUrl = input.type === "image" ? input.image?.dataUrl : input.type === "video" ? input.video?.url : input.type === "audio" ? input.audio?.url : undefined;
+  const text = input.type === "group"
+    ? i18n.t("canvas.node.nodeCount", { count: input.children.length })
+    : input.text;
   return {
-    background: theme.toolbar.panel,
-    borderColor: theme.node.stroke,
-    color: theme.node.text,
+    id: input.nodeId,
+    nodeId: input.nodeId,
+    kind,
+    label: i18n.t(`canvas.composer.resources.${input.type}`, { index: Math.max(0, peerIndex) + 1 }),
+    valueToken: `@[node:${input.nodeId}]`,
+    title: input.title,
+    previewUrl,
+    text,
+    active: true,
   };
 }

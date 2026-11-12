@@ -83,6 +83,12 @@ describe("prompt source formats and requests", () => {
       url: "https://example.com/prompts.json",
     });
     expect(() => decodePromptSource({ prompts: [] }, source)).toThrow();
+    expect(
+      decodePromptSource(
+        { prompts: [{ id: "wrapped", title: "Wrapped", prompt: "body" }] },
+        source,
+      ),
+    ).toMatchObject([{ id: "wrapped", title: "Wrapped" }]);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("[]", { status: 200 })),
@@ -117,6 +123,9 @@ describe("prompt source formats and requests", () => {
   it("validates only HTTP(S) URLs and trims persisted fields", () => {
     expect(isHttpUrl("https://example.com/prompts.json")).toBe(true);
     expect(isHttpUrl("javascript:alert(1)")).toBe(false);
+    expect(isHttpUrl("https://user:secret@example.com/prompts.json")).toBe(
+      false,
+    );
     expect(
       validatePromptSourceDraft(
         createPromptSource({
