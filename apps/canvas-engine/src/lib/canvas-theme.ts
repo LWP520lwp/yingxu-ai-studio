@@ -6,7 +6,7 @@ export const canvasThemes = {
         canvas: {
             background: "#eef3f8",
             dot: "rgba(44,62,84,.22)",
-            line: "rgba(44,62,84,.10)",
+            line: "rgba(44,62,84,.16)",
             selectionStroke: "#0f766e",
             selectionFill: "rgba(15,118,110,.09)",
         },
@@ -34,7 +34,7 @@ export const canvasThemes = {
         canvas: {
             background: "#0b1120",
             dot: "rgba(145,169,199,.22)",
-            line: "rgba(145,169,199,.085)",
+            line: "rgba(145,169,199,.16)",
             selectionStroke: "#61e6d2",
             selectionFill: "rgba(97,230,210,.10)",
         },

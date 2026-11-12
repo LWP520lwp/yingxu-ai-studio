@@ -3,7 +3,8 @@ import { twMerge } from "tailwind-merge";
 import { nanoid } from "nanoid";
 
 export function cn(...inputs: ClassValue[]) {
-    return twMerge(clsx(inputs));
+  const resolved = clsx(inputs);
+  return resolved ? twMerge(resolved) : "";
 }
 
 /**
@@ -14,5 +15,5 @@ export function cn(...inputs: ClassValue[]) {
  * context.
  */
 export function randomId(): string {
-    return nanoid();
+  return nanoid();
 }

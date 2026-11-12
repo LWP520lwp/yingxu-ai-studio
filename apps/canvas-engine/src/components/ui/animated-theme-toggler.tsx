@@ -1,194 +1,132 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Moon, Sun } from "lucide-react";
 import { flushSync } from "react-dom";
+import { Moon, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
+import { themeRevealPaths, type ThemeRevealShape } from "@/lib/theme-transition";
 
-export type TransitionVariant = "circle" | "square" | "triangle" | "diamond" | "hexagon" | "rectangle" | "star";
+export type TransitionVariant = ThemeRevealShape;
 
 interface AnimatedThemeTogglerProps extends React.ComponentPropsWithoutRef<"button"> {
-    duration?: number;
-    variant?: TransitionVariant;
-    /** When true, the transition expands from the viewport center instead of the button center. */
-    fromCenter?: boolean;
-    theme?: "light" | "dark";
-    targetTheme?: "light" | "dark";
-    onThemeChange?: (theme: "light" | "dark") => void;
+  duration?: number;
+  variant?: TransitionVariant;
+  fromCenter?: boolean;
+  theme?: "light" | "dark";
+  targetTheme?: "light" | "dark";
+  onThemeChange?: (theme: "light" | "dark") => void;
 }
 
-function polygonCollapsed(cx: number, cy: number, vertexCount: number): string {
-    const pairs = Array.from({ length: vertexCount }, () => `${cx}px ${cy}px`).join(", ");
-    return `polygon(${pairs})`;
-}
+export function AnimatedThemeToggler({
+  children,
+  className,
+  duration = 420,
+  variant = "circle",
+  fromCenter = false,
+  theme,
+  targetTheme,
+  onThemeChange,
+  ...props
+}: AnimatedThemeTogglerProps) {
+  const { t } = useTranslation();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const themeRef = useRef(theme === "dark");
+  const transitionRevision = useRef(0);
+  const [isDark, setIsDark] = useState(themeRef.current);
 
-function getThemeTransitionClipPaths(variant: TransitionVariant, cx: number, cy: number, maxRadius: number, viewportWidth: number, viewportHeight: number): [string, string] {
-    switch (variant) {
-        case "circle":
-            return [`circle(0px at ${cx}px ${cy}px)`, `circle(${maxRadius}px at ${cx}px ${cy}px)`];
-        case "square": {
-            const halfW = Math.max(cx, viewportWidth - cx);
-            const halfH = Math.max(cy, viewportHeight - cy);
-            const halfSide = Math.max(halfW, halfH) * 1.05;
-            const end = [`${cx - halfSide}px ${cy - halfSide}px`, `${cx + halfSide}px ${cy - halfSide}px`, `${cx + halfSide}px ${cy + halfSide}px`, `${cx - halfSide}px ${cy + halfSide}px`].join(", ");
-            return [polygonCollapsed(cx, cy, 4), `polygon(${end})`];
-        }
-        case "triangle": {
-            const scale = maxRadius * 2.2;
-            const dx = (Math.sqrt(3) / 2) * scale;
-            const verts = [`${cx}px ${cy - scale}px`, `${cx + dx}px ${cy + 0.5 * scale}px`, `${cx - dx}px ${cy + 0.5 * scale}px`].join(", ");
-            return [polygonCollapsed(cx, cy, 3), `polygon(${verts})`];
-        }
-        case "diamond": {
-            // Slightly larger than the view-transition circle radius so axis-aligned coverage matches the circle reveal.
-            const R = maxRadius * Math.SQRT2;
-            const end = [`${cx}px ${cy - R}px`, `${cx + R}px ${cy}px`, `${cx}px ${cy + R}px`, `${cx - R}px ${cy}px`].join(", ");
-            return [polygonCollapsed(cx, cy, 4), `polygon(${end})`];
-        }
-        case "hexagon": {
-            const R = maxRadius * Math.SQRT2;
-            const verts: string[] = [];
-            for (let i = 0; i < 6; i++) {
-                const a = -Math.PI / 2 + (i * Math.PI) / 3;
-                verts.push(`${cx + R * Math.cos(a)}px ${cy + R * Math.sin(a)}px`);
-            }
-            return [polygonCollapsed(cx, cy, 6), `polygon(${verts.join(", ")})`];
-        }
-        case "rectangle": {
-            const halfW = Math.max(cx, viewportWidth - cx);
-            const halfH = Math.max(cy, viewportHeight - cy);
-            const end = [`${cx - halfW}px ${cy - halfH}px`, `${cx + halfW}px ${cy - halfH}px`, `${cx + halfW}px ${cy + halfH}px`, `${cx - halfW}px ${cy + halfH}px`].join(", ");
-            return [polygonCollapsed(cx, cy, 4), `polygon(${end})`];
-        }
-        case "star": {
-            // Small overscan so the last frames never leave a 1px seam before the transition group ends.
-            const R = maxRadius * Math.SQRT2 * 1.03;
-            const innerRatio = 0.42;
-            const starPolygon = (radius: number) => {
-                const verts: string[] = [];
-                for (let i = 0; i < 5; i++) {
-                    const outerA = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
-                    verts.push(`${cx + radius * Math.cos(outerA)}px ${cy + radius * Math.sin(outerA)}px`);
-                    const innerA = outerA + Math.PI / 5;
-                    verts.push(`${cx + radius * innerRatio * Math.cos(innerA)}px ${cy + radius * innerRatio * Math.sin(innerA)}px`);
-                }
-                return `polygon(${verts.join(", ")})`;
-            };
-            const startR = Math.max(2, R * 0.025);
-            return [starPolygon(startR), starPolygon(R)];
-        }
-        default:
-            return [`circle(0px at ${cx}px ${cy}px)`, `circle(${maxRadius}px at ${cx}px ${cy}px)`];
+  useEffect(() => {
+    if (theme !== undefined) {
+      themeRef.current = theme === "dark";
+      setIsDark(themeRef.current);
+      return;
     }
+
+    const sync = () => {
+      themeRef.current = document.documentElement.classList.contains("dark");
+      setIsDark(themeRef.current);
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return () => observer.disconnect();
+  }, [theme]);
+
+  const toggle = useCallback(() => {
+    const button = buttonRef.current;
+    if (!button) return;
+
+    const nextTheme = targetTheme ?? (themeRef.current ? "light" : "dark");
+    if (nextTheme === (themeRef.current ? "dark" : "light")) return;
+
+    const apply = () => {
+      const dark = nextTheme === "dark";
+      themeRef.current = dark;
+      setIsDark(dark);
+      document.documentElement.classList.toggle("dark", dark);
+      document.documentElement.style.colorScheme = nextTheme;
+      onThemeChange?.(nextTheme);
+    };
+
+    const revision = ++transitionRevision.current;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion || typeof document.startViewTransition !== "function") {
+      apply();
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    const width = viewport?.width ?? window.innerWidth;
+    const height = viewport?.height ?? window.innerHeight;
+    const rect = button.getBoundingClientRect();
+    const origin = fromCenter
+      ? { x: width / 2, y: height / 2 }
+      : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    const paths = themeRevealPaths(variant, origin.x, origin.y, width, height);
+    const root = document.documentElement;
+    const safeDuration = Math.max(0, Math.min(1600, duration));
+    root.dataset.themeReveal = "active";
+    root.style.setProperty("--theme-reveal-duration", `${safeDuration}ms`);
+    root.style.setProperty("--theme-reveal-start", paths[0]);
+
+    const clear = () => {
+      if (revision !== transitionRevision.current) return;
+      delete root.dataset.themeReveal;
+      root.style.removeProperty("--theme-reveal-duration");
+      root.style.removeProperty("--theme-reveal-start");
+    };
+
+    let transition: ViewTransition;
+    try {
+      transition = document.startViewTransition(() => flushSync(apply));
+    } catch {
+      clear();
+      apply();
+      return;
+    }
+    void transition.finished.then(clear, clear);
+    void transition.ready
+      .then(() => {
+        if (revision !== transitionRevision.current) return;
+        document.documentElement.animate(
+          { clipPath: paths },
+          {
+            duration: safeDuration,
+            easing: "cubic-bezier(.2,.75,.25,1)",
+            fill: "forwards",
+            pseudoElement: "::view-transition-new(root)",
+          },
+        );
+      })
+      .catch(clear);
+  }, [duration, fromCenter, onThemeChange, targetTheme, variant]);
+
+  return (
+    <button type="button" ref={buttonRef} onClick={toggle} className={cn(className)} {...props}>
+      {children ?? (isDark ? <Sun /> : <Moon />)}
+      <span className="sr-only">{props["aria-label"] || t("theme.toggle")}</span>
+    </button>
+  );
 }
-
-export const AnimatedThemeToggler = ({ children, className, duration = 400, variant, fromCenter = false, theme, targetTheme, onThemeChange, ...props }: AnimatedThemeTogglerProps) => {
-    const { t } = useTranslation();
-    const shape = variant ?? "circle";
-    const [isDark, setIsDark] = useState(false);
-    const buttonRef = useRef<HTMLButtonElement>(null);
-
-    useEffect(() => {
-        if (theme) {
-            setIsDark(theme === "dark");
-            return;
-        }
-
-        const updateTheme = () => {
-            setIsDark(document.documentElement.classList.contains("dark"));
-        };
-
-        updateTheme();
-
-        const observer = new MutationObserver(updateTheme);
-        observer.observe(document.documentElement, {
-            attributes: true,
-            attributeFilter: ["class"],
-        });
-
-        return () => observer.disconnect();
-    }, [theme]);
-
-    const toggleTheme = useCallback(() => {
-        const button = buttonRef.current;
-        if (!button) return;
-
-        const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
-        const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-
-        let x: number;
-        let y: number;
-        if (fromCenter) {
-            x = viewportWidth / 2;
-            y = viewportHeight / 2;
-        } else {
-            const { top, left, width, height } = button.getBoundingClientRect();
-            x = left + width / 2;
-            y = top + height / 2;
-        }
-
-        const maxRadius = Math.hypot(Math.max(x, viewportWidth - x), Math.max(y, viewportHeight - y));
-
-        const applyTheme = () => {
-            const nextTheme = targetTheme ?? (isDark ? "light" : "dark");
-            if (nextTheme === (isDark ? "dark" : "light")) return;
-            setIsDark(nextTheme === "dark");
-            document.documentElement.classList.toggle("dark", nextTheme === "dark");
-            document.documentElement.style.colorScheme = nextTheme;
-            onThemeChange?.(nextTheme);
-        };
-
-        if (typeof document.startViewTransition !== "function") {
-            applyTheme();
-            return;
-        }
-
-        const clipPath = getThemeTransitionClipPaths(shape, x, y, maxRadius, viewportWidth, viewportHeight);
-
-        const root = document.documentElement;
-        root.dataset.magicuiThemeVt = "active";
-        root.style.setProperty("--magicui-theme-toggle-vt-duration", `${duration}ms`);
-        // Pin the collapsed clip-path via CSS so Firefox does not paint the new
-        // theme unclipped between snapshot and the ready.then() JS animation.
-        root.style.setProperty("--magicui-theme-vt-clip-from", clipPath[0]);
-        const cleanup = () => {
-            delete root.dataset.magicuiThemeVt;
-            root.style.removeProperty("--magicui-theme-toggle-vt-duration");
-            root.style.removeProperty("--magicui-theme-vt-clip-from");
-        };
-
-        const transition = document.startViewTransition(() => {
-            flushSync(applyTheme);
-        });
-        if (typeof transition?.finished?.finally === "function") {
-            transition.finished.finally(cleanup);
-        } else {
-            cleanup();
-        }
-
-        const ready = transition?.ready;
-        if (ready && typeof ready.then === "function") {
-            ready.then(() => {
-                document.documentElement.animate(
-                    {
-                        clipPath,
-                    },
-                    {
-                        duration,
-                        // Star: linear avoids easing overshoot that fights polygon interpolation at t→1; VT group duration is synced above.
-                        easing: shape === "star" ? "linear" : "ease-in-out",
-                        fill: "forwards",
-                        pseudoElement: "::view-transition-new(root)",
-                    },
-                );
-            });
-        }
-    }, [shape, fromCenter, duration, isDark, targetTheme, onThemeChange]);
-
-    return (
-        <button type="button" ref={buttonRef} onClick={toggleTheme} className={cn(className)} {...props}>
-            {children ?? (isDark ? <Sun /> : <Moon />)}
-            <span className="sr-only">{props["aria-label"] || t("theme.toggle")}</span>
-        </button>
-    );
-};

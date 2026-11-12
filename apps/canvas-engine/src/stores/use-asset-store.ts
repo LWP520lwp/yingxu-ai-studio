@@ -1,115 +1,253 @@
 import { create } from "zustand";
-import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
-
+import {
+  persist,
+  type PersistStorage,
+  type StorageValue,
+} from "zustand/middleware";
 import { nanoid } from "nanoid";
+
+import {
+  decodeAssetStorageValue,
+  mapWithConcurrency,
+  normalizeAssetCollection,
+  reduceAssetCollection,
+  type PersistedAssetValue,
+} from "@/lib/asset-library-model";
 import { localForageStorage } from "@/lib/localforage-storage";
-import { cleanupUnusedImages, ensureImagePreview, previewUrlFor, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import {
+  cleanupUnusedImages,
+  ensureImagePreview,
+  previewUrlFor,
+  resolveImageUrl,
+  uploadImage,
+} from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
 
 export type AssetKind = "text" | "image" | "video";
 export type TextAsset = AssetBase<"text"> & { data: { content: string } };
-export type ImageAsset = AssetBase<"image"> & { data: { dataUrl: string; storageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
-export type VideoAsset = AssetBase<"video"> & { data: { url: string; storageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
+export type ImageAsset = AssetBase<"image"> & {
+  data: {
+    dataUrl: string;
+    storageKey?: string;
+    width: number;
+    height: number;
+    bytes: number;
+    mimeType: string;
+  };
+};
+export type VideoAsset = AssetBase<"video"> & {
+  data: {
+    url: string;
+    storageKey?: string;
+    width: number;
+    height: number;
+    bytes: number;
+    mimeType: string;
+  };
+};
 export type Asset = TextAsset | ImageAsset | VideoAsset;
 
 type AssetBase<T extends AssetKind> = {
-    id: string;
-    kind: T;
-    title: string;
-    coverUrl: string;
-    tags: string[];
-    source?: string;
-    note?: string;
-    createdAt: string;
-    updatedAt: string;
-    metadata?: Record<string, unknown>;
+  id: string;
+  kind: T;
+  title: string;
+  coverUrl: string;
+  tags: string[];
+  source?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+  metadata?: Record<string, unknown>;
 };
 
 type AssetStore = {
-    hydrated: boolean;
-    assets: Asset[];
-    addAsset: (asset: Omit<Asset, "id" | "createdAt" | "updatedAt">) => string;
-    updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
-    removeAsset: (id: string) => void;
-    replaceAssets: (assets: Asset[]) => void;
-    cleanupImages: (extra?: unknown) => void;
+  hydrated: boolean;
+  assets: Asset[];
+  addAsset: (asset: Omit<Asset, "id" | "createdAt" | "updatedAt">) => string;
+  updateAsset: (
+    id: string,
+    patch: Partial<Omit<Asset, "id" | "createdAt">>,
+  ) => void;
+  removeAsset: (id: string) => void;
+  replaceAssets: (assets: Asset[]) => void;
+  cleanupImages: (extra?: unknown) => void;
 };
 
-// 卡片用缩略图渲染，自定义封面（远程地址或单独上传的封面）保持原样。
 export function assetCoverUrl(asset: Asset) {
-    const own = asset.kind === "image" ? asset.data.dataUrl : "";
-    const cover = asset.coverUrl || own;
-    return asset.kind === "image" && cover === own ? previewUrlFor(asset.data.storageKey) || cover : cover;
+  const imageUrl = asset.kind === "image" ? asset.data.dataUrl : "";
+  const selectedCover = asset.coverUrl || imageUrl;
+  return asset.kind === "image" && selectedCover === imageUrl
+    ? previewUrlFor(asset.data.storageKey) || selectedCover
+    : selectedCover;
 }
 
 const ASSET_STORE_KEY = "yingxu-atlas:asset_store:v2";
 const LEGACY_ASSET_STORE_KEY = "infinite-canvas:asset_store";
+const HYDRATION_CONCURRENCY = 4;
 
 const assetStorage: PersistStorage<AssetStore> = {
-    getItem: async (name) => {
-        const value = (await localForageStorage.getItem(name)) ?? (await localForageStorage.getItem(LEGACY_ASSET_STORE_KEY));
-        if (!value) return null;
-        const parsed = JSON.parse(value) as StorageValue<AssetStore>;
-        parsed.state.assets = await Promise.all(
-            parsed.state.assets.map(async (asset) => {
-                if (asset.kind === "video" && asset.data.storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(asset.data.storageKey, asset.data.url) } };
-                if (asset.kind !== "image") return asset;
-                if (asset.data.storageKey) {
-                    void ensureImagePreview(asset.data.storageKey);
-                    return {
-                        ...asset,
-                        coverUrl: asset.coverUrl.startsWith("blob:") ? await resolveImageUrl(asset.data.storageKey, asset.coverUrl) : asset.coverUrl,
-                        data: { ...asset.data, dataUrl: await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl) },
-                    };
-                }
-                if (!asset.data.dataUrl.startsWith("data:image/")) return asset;
-                const image = await uploadImage(asset.data.dataUrl);
-                return { ...asset, coverUrl: asset.coverUrl.startsWith("data:image/") ? image.url : asset.coverUrl, data: { ...asset.data, dataUrl: image.url, storageKey: image.storageKey, bytes: image.bytes, mimeType: image.mimeType } };
-            }),
-        );
-        return parsed;
-    },
-    setItem: (name, value) => localForageStorage.setItem(name, JSON.stringify(value)),
-    removeItem: (name) => localForageStorage.removeItem(name),
+  getItem: async (name) => {
+    const current = await readStorageValue(name);
+    const persisted =
+      current ?? (await readStorageValue(LEGACY_ASSET_STORE_KEY));
+    if (!persisted) return null;
+
+    const assets = normalizeAssetCollection(persisted.state.assets);
+    const hydratedAssets = await mapWithConcurrency(
+      assets,
+      HYDRATION_CONCURRENCY,
+      hydrateStoredAsset,
+    );
+
+    return {
+      ...persisted,
+      state: { ...persisted.state, assets: hydratedAssets },
+    } as StorageValue<AssetStore>;
+  },
+  setItem: (name, value) =>
+    localForageStorage.setItem(name, JSON.stringify(value)),
+  removeItem: (name) => localForageStorage.removeItem(name),
 };
 
-export const useAssetStore = create<AssetStore>()(
-    persist(
-        (set, get) => ({
-            hydrated: false,
-            assets: [],
-            addAsset: (asset) => {
-                const now = new Date().toISOString();
-                const id = nanoid();
-                set((state) => ({ assets: [{ ...asset, id, createdAt: now, updatedAt: now } as Asset, ...state.assets] }));
-                return id;
-            },
-            updateAsset: (id, patch) =>
-                set((state) => ({
-                    assets: state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset)),
-                })),
-            removeAsset: (id) =>
-                set((state) => {
-                    const assets = state.assets.filter((asset) => asset.id !== id);
-                    get().cleanupImages({ assets });
-                    return { assets };
-                }),
-            replaceAssets: (assets) => set({ assets }),
-            cleanupImages: (extra) => {
-                window.setTimeout(async () => {
-                    const { useCanvasStore } = await import("@/stores/canvas/use-canvas-store");
-                    await cleanupUnusedImages({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
-                    await cleanupUnusedMedia({ assets: get().assets, projects: useCanvasStore.getState().projects, extra });
-                }, 0);
-            },
-        }),
-        {
-            name: ASSET_STORE_KEY,
-            storage: assetStorage,
-            partialize: (state) => ({ assets: state.assets }) as StorageValue<AssetStore>["state"],
-            onRehydrateStorage: () => () => {
-                useAssetStore.setState({ hydrated: true });
-            },
+async function readStorageValue(
+  key: string,
+): Promise<PersistedAssetValue | null> {
+  try {
+    const serialized = await localForageStorage.getItem(key);
+    return decodeAssetStorageValue(serialized);
+  } catch {
+    return null;
+  }
+}
+
+async function hydrateStoredAsset(asset: Asset): Promise<Asset> {
+  if (asset.kind === "video" && asset.data.storageKey) {
+    try {
+      return {
+        ...asset,
+        data: {
+          ...asset.data,
+          url: await resolveMediaUrl(asset.data.storageKey, asset.data.url),
         },
-    ),
+      };
+    } catch {
+      return asset;
+    }
+  }
+
+  if (asset.kind !== "image") return asset;
+
+  if (asset.data.storageKey) {
+    void ensureImagePreview(asset.data.storageKey).catch(() => undefined);
+    try {
+      const [dataUrl, coverUrl] = await Promise.all([
+        resolveImageUrl(asset.data.storageKey, asset.data.dataUrl),
+        asset.coverUrl.startsWith("blob:")
+          ? resolveImageUrl(asset.data.storageKey, asset.coverUrl)
+          : Promise.resolve(asset.coverUrl),
+      ]);
+      return { ...asset, coverUrl, data: { ...asset.data, dataUrl } };
+    } catch {
+      return asset;
+    }
+  }
+
+  if (!asset.data.dataUrl.startsWith("data:image/")) return asset;
+  try {
+    const image = await uploadImage(asset.data.dataUrl);
+    return {
+      ...asset,
+      coverUrl: asset.coverUrl.startsWith("data:image/")
+        ? image.url
+        : asset.coverUrl,
+      data: {
+        ...asset.data,
+        dataUrl: image.url,
+        storageKey: image.storageKey,
+        bytes: image.bytes,
+        mimeType: image.mimeType,
+      },
+    };
+  } catch {
+    return asset;
+  }
+}
+
+export const useAssetStore = create<AssetStore>()(
+  persist(
+    (set, get) => ({
+      hydrated: false,
+      assets: [],
+      addAsset: (asset) => {
+        const now = new Date().toISOString();
+        const id = nanoid();
+        const record = {
+          ...asset,
+          id,
+          createdAt: now,
+          updatedAt: now,
+        } as Asset;
+        set((state) => ({
+          assets: reduceAssetCollection(state.assets, {
+            type: "insert",
+            asset: record,
+          }),
+        }));
+        return id;
+      },
+      updateAsset: (id, patch) => {
+        set((state) => {
+          const assets = reduceAssetCollection(state.assets, {
+            type: "update",
+            id,
+            patch,
+            updatedAt: new Date().toISOString(),
+          });
+          return assets === state.assets ? state : { assets };
+        });
+      },
+      removeAsset: (id) => {
+        let removed = false;
+        set((state) => {
+          const assets = reduceAssetCollection(state.assets, {
+            type: "remove",
+            id,
+          });
+          removed = assets !== state.assets;
+          return removed ? { assets } : state;
+        });
+        if (removed) get().cleanupImages({ assets: get().assets });
+      },
+      replaceAssets: (assets) =>
+        set({ assets: normalizeAssetCollection(assets) }),
+      cleanupImages: (extra) => {
+        globalThis.setTimeout(() => {
+          void (async () => {
+            const { useCanvasStore } =
+              await import("@/stores/canvas/use-canvas-store");
+            const usedData = {
+              assets: get().assets,
+              projects: useCanvasStore.getState().projects,
+              extra,
+            };
+            await Promise.all([
+              cleanupUnusedImages(usedData),
+              cleanupUnusedMedia(usedData),
+            ]);
+          })().catch((error) => {
+            console.warn("Asset media cleanup failed", error);
+          });
+        }, 0);
+      },
+    }),
+    {
+      name: ASSET_STORE_KEY,
+      storage: assetStorage,
+      partialize: (state) =>
+        ({ assets: state.assets }) as StorageValue<AssetStore>["state"],
+      onRehydrateStorage: () => () => {
+        useAssetStore.setState({ hydrated: true });
+      },
+    },
+  ),
 );

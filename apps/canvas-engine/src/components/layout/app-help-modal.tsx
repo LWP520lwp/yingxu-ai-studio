@@ -1,16 +1,108 @@
 import { Button, Modal } from "antd";
-import { ArrowUpRight, Atom, BookOpen, Clapperboard, MousePointer2, Sparkles } from "lucide-react";
+import {
+  ArrowUpRight,
+  Atom,
+  BookOpen,
+  Boxes,
+  MousePointer2,
+  Settings2,
+  Sparkles,
+} from "lucide-react";
+
 import { DOCS_URL } from "@/constant/env";
 
-export function AppHelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-    return <Modal title={<span className="flex items-center gap-2"><BookOpen size={18} />映序使用帮助</span>} open={open} onCancel={onClose} footer={<Button onClick={onClose}>继续创作</Button>} width={560} centered>
-        <div className="space-y-5 py-3 text-sm leading-7">
-            <section><h3 className="mb-1 flex items-center gap-2 font-semibold"><MousePointer2 size={16} />AI 创作画布</h3><p className="text-stone-500">双击空白新建节点，点击节点打开操作工具。连接节点两侧的圆点，将文字、参考图与生成配置组合起来。拖动空白平移，滚轮缩放，Shift 拖动框选。</p></section>
-            <section><h3 className="mb-1 flex items-center gap-2 font-semibold"><Sparkles size={16} />Skill 与生成服务</h3><p className="text-stone-500">在 Skill 市场选择并安装技能；文字节点可以选择视频 Skill，准备生成配置。创作设置中管理渠道与模型，账号池中接入账号并查看可用额度。</p></section>
-            <section><h3 className="mb-1 flex items-center gap-2 font-semibold"><Atom size={16} />科普短视频</h3><p className="text-stone-500">在独立的科普制作模块中整理主题、资料和解说，校对分镜与来源后生成配音和视频，也可将成片送入 Agent 剪辑继续调整。</p></section>
-            <section><h3 className="mb-1 flex items-center gap-2 font-semibold"><Clapperboard size={16} />Agent 剪辑</h3><p className="text-stone-500">从主页进入 Agent 剪辑，左侧导入或生成素材、使用 Agent 规划剪辑，右侧通过视频预览与多轨时间线调整成片。</p></section>
-            <p className="border-t border-stone-200 pt-3 text-xs text-stone-500 dark:border-stone-800">画布菜单中的「主页」返回本项目工作台，「项目」打开项目列表。画布右下角显示项目同步状态。</p>
-            {DOCS_URL ? <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm underline">部署文档（外部网站）<ArrowUpRight size={14} /></a> : null}
-        </div>
-    </Modal>;
+type AppHelpModalProps = {
+  open: boolean;
+  onClose: () => void;
+};
+
+const helpSections = [
+  {
+    title: "创作画布",
+    icon: MousePointer2,
+    description:
+      "双击空白处添加节点；使用抓手平移画布、Shift 拖动框选，再连接端口组合文字、图像、视频与生成配置。",
+  },
+  {
+    title: "科普短视频",
+    icon: Atom,
+    description:
+      "整理主题和资料，生成解说与分镜；确认内容后制作动态片段、配音、字幕和成片。",
+  },
+  {
+    title: "Skill 市场",
+    icon: Sparkles,
+    description:
+      "在工作台的 Skill 市场浏览、导入和管理创作方案；画布节点插件可扩展节点能力。",
+  },
+  {
+    title: "模型与账号",
+    icon: Settings2,
+    description:
+      "创作设置用于配置生成渠道与模型；账号菜单中的账号池用于管理账号并查看可用额度。",
+  },
+] as const;
+
+export function AppHelpModal({ open, onClose }: AppHelpModalProps) {
+  return (
+    <Modal
+      title={
+        <span className="flex items-center gap-2 text-base font-semibold">
+          <BookOpen className="size-[18px] text-emerald-600 dark:text-emerald-400" />
+          <span>映序使用帮助</span>
+        </span>
+      }
+      open={open}
+      onCancel={onClose}
+      footer={
+        <Button type="primary" onClick={onClose}>
+          继续创作
+        </Button>
+      }
+      width="min(620px, calc(100vw - 24px))"
+      centered
+      destroyOnHidden
+      styles={{ body: { padding: "8px 24px 20px" } }}
+    >
+      <div className="divide-y divide-stone-200 dark:divide-stone-800">
+        {helpSections.map(({ title, icon: Icon, description }) => (
+          <section
+            key={title}
+            className="grid grid-cols-[32px_minmax(0,1fr)] gap-x-3 py-4 first:pt-2 last:pb-3"
+          >
+            <span className="grid size-8 place-items-center rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+              <Icon className="size-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                {title}
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-stone-600 dark:text-stone-400">
+                {description}
+              </p>
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-stone-200 pt-4 dark:border-stone-800">
+        <p className="flex min-w-0 items-center gap-2 text-xs text-stone-500 dark:text-stone-400">
+          <Boxes className="size-3.5 shrink-0" aria-hidden="true" />
+          <span>画布顶部的主页与项目入口会返回草稿库。</span>
+        </p>
+        {DOCS_URL ? (
+          <a
+            href={DOCS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex shrink-0 items-center gap-1 text-sm font-medium text-emerald-700 underline decoration-emerald-700/40 underline-offset-4 hover:decoration-current focus-visible:outline-2 focus-visible:outline-offset-2 dark:text-emerald-300"
+          >
+            部署文档
+            <ArrowUpRight className="size-3.5" aria-hidden="true" />
+            <span className="sr-only">（在新标签页打开）</span>
+          </a>
+        ) : null}
+      </div>
+    </Modal>
+  );
 }

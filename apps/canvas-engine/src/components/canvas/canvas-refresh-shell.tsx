@@ -1,4 +1,6 @@
-export function CanvasRefreshShell() {
+type CanvasRefreshShellProps = { error?: string; retryLabel?: string; onRetry?: () => void };
+
+export function CanvasRefreshShell({ error, retryLabel = "重试", onRetry }: CanvasRefreshShellProps) {
     return (
         <main className="relative h-full min-h-0 overflow-hidden bg-background text-foreground">
             <div
@@ -29,6 +31,17 @@ export function CanvasRefreshShell() {
                 <div className="h-4 w-10 rounded bg-current opacity-10" />
                 <div className="size-8 rounded-md bg-current opacity-10" />
             </div>
+
+            {error ? (
+                <div className="absolute inset-0 z-[60] flex items-center justify-center bg-background/70 p-6 backdrop-blur-sm" role="alert">
+                    <div className="max-w-lg text-center">
+                        <p className="mb-4 text-sm text-foreground">{error}</p>
+                        <button type="button" className="rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted" onClick={onRetry}>
+                            {retryLabel}
+                        </button>
+                    </div>
+                </div>
+            ) : null}
         </main>
     );
 }

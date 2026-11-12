@@ -1,13 +1,5 @@
 import type { CanvasConnection, CanvasNodeData, Position, ViewportTransform } from "@/types/canvas";
 
-/**
- * Domain model for an editable workbench document.
- *
- * The canvas UI should deal in these commands instead of mutating a store or
- * serialising React state directly. Keeping this boundary small makes the
- * document format portable between the embedded canvas, the web shell and a
- * future native editor.
- */
 export type WorkbenchDocument = {
     id: string;
     title: string;
@@ -28,19 +20,39 @@ export type WorkbenchDocumentCommand =
 
 export type DocumentIssue = { path: string; message: string };
 
-const finite = (value: unknown, fallback: number) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
-const copy = <T,>(value: T): T => structuredClone(value);
+const DEFAULT_TITLE = "未命名创作";
+const MIN_ZOOM = 0.05;
+const MAX_ZOOM = 4;
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+    return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function clone<T>(value: T): T {
+    if (typeof structuredClone === "function") return structuredClone(value);
+    return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function finishCommand(document: WorkbenchDocument, next: WorkbenchDocument): WorkbenchDocument {
+    const issues = validateWorkbenchDocument(next);
+    if (issues.length) throw new Error(`画布文档校验失败：${issues[0].message}`);
+    return { ...next, revision: document.revision + 1 };
+}
 
 export function createWorkbenchDocument(input: Partial<WorkbenchDocument> & Pick<WorkbenchDocument, "id">): WorkbenchDocument {
-    const nodes = copy(input.nodes || []);
-    const connections = copy(input.connections || []);
     const document: WorkbenchDocument = {
         id: input.id,
-        title: input.title?.trim() || "未命名创作",
-        revision: Math.max(0, Math.floor(finite(input.revision, 0))),
+        title: typeof input.title === "string" ? input.title.trim() || DEFAULT_TITLE : DEFAULT_TITLE,
+        revision: Math.max(0, Math.floor(finiteNumber(input.revision, 0))),
         viewport: normalizeViewport(input.viewport),
-        nodes,
-        connections,
+        nodes: clone(input.nodes || []),
+        connections: clone(input.connections || []),
     };
     const issues = validateWorkbenchDocument(document);
     if (issues.length) throw new Error(`画布文档校验失败：${issues[0].message}`);
@@ -49,79 +61,123 @@ export function createWorkbenchDocument(input: Partial<WorkbenchDocument> & Pick
 
 export function normalizeViewport(value?: Partial<ViewportTransform>): ViewportTransform {
     return {
-        x: finite(value?.x, 0),
-        y: finite(value?.y, 0),
-        k: Math.min(4, Math.max(0.05, finite(value?.k, 1))),
+        x: finiteNumber(value?.x, 0),
+        y: finiteNumber(value?.y, 0),
+        k: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, finiteNumber(value?.k, 1))),
     };
 }
 
 export function validateWorkbenchDocument(document: WorkbenchDocument): DocumentIssue[] {
     const issues: DocumentIssue[] = [];
-    if (!document.id.trim()) issues.push({ path: "id", message: "文档标识不能为空" });
+    if (!isRecord(document)) return [{ path: "", message: "画布文档格式无效" }];
+    if (typeof document.id !== "string" || !document.id.trim()) issues.push({ path: "id", message: "文档标识不能为空" });
+    if (!Array.isArray(document.nodes)) issues.push({ path: "nodes", message: "节点列表格式无效" });
+    if (!Array.isArray(document.connections)) issues.push({ path: "connections", message: "连接列表格式无效" });
+    if (!Array.isArray(document.nodes) || !Array.isArray(document.connections)) return issues;
+
     const nodeIds = new Set<string>();
-    document.nodes.forEach((node, index) => {
-        if (!node.id.trim()) issues.push({ path: `nodes.${index}.id`, message: "节点标识不能为空" });
-        if (nodeIds.has(node.id)) issues.push({ path: `nodes.${index}.id`, message: "节点标识重复" });
-        nodeIds.add(node.id);
-        if (!Number.isFinite(node.position.x) || !Number.isFinite(node.position.y)) issues.push({ path: `nodes.${index}.position`, message: "节点位置必须是有限数字" });
-        if (!Number.isFinite(node.width) || node.width <= 0 || !Number.isFinite(node.height) || node.height <= 0) issues.push({ path: `nodes.${index}`, message: "节点尺寸必须是正数" });
+    document.nodes.forEach((value, index) => {
+        const path = `nodes.${index}`;
+        if (!isRecord(value)) {
+            issues.push({ path, message: "节点格式无效" });
+            return;
+        }
+        const nodeId = value.id;
+        if (typeof nodeId !== "string" || !nodeId.trim()) {
+            issues.push({ path: `${path}.id`, message: "节点标识不能为空" });
+        } else if (nodeIds.has(nodeId)) {
+            issues.push({ path: `${path}.id`, message: "节点标识重复" });
+        } else {
+            nodeIds.add(nodeId);
+        }
+        if (!isRecord(value.position) || !Number.isFinite(value.position.x) || !Number.isFinite(value.position.y)) {
+            issues.push({ path: `${path}.position`, message: "节点位置必须是有限数字" });
+        }
+        if (!Number.isFinite(value.width) || Number(value.width) <= 0 || !Number.isFinite(value.height) || Number(value.height) <= 0) {
+            issues.push({ path, message: "节点尺寸必须是正数" });
+        }
     });
+
     const connectionIds = new Set<string>();
-    const pairs = new Set<string>();
-    document.connections.forEach((connection, index) => {
-        if (!connection.id.trim() || connectionIds.has(connection.id)) issues.push({ path: `connections.${index}.id`, message: "连接标识为空或重复" });
-        connectionIds.add(connection.id);
-        if (!nodeIds.has(connection.fromNodeId) || !nodeIds.has(connection.toNodeId)) issues.push({ path: `connections.${index}`, message: "连接引用了不存在的节点" });
-        if (connection.fromNodeId === connection.toNodeId) issues.push({ path: `connections.${index}`, message: "节点不能连接到自身" });
-        const pair = `${connection.fromNodeId}\u0000${connection.toNodeId}`;
-        if (pairs.has(pair)) issues.push({ path: `connections.${index}`, message: "相同方向的连接只能保留一条" });
-        pairs.add(pair);
+    const directedPairs = new Set<string>();
+    document.connections.forEach((value, index) => {
+        const path = `connections.${index}`;
+        if (!isRecord(value)) {
+            issues.push({ path, message: "连接格式无效" });
+            return;
+        }
+        const connectionId = value.id;
+        if (typeof connectionId !== "string" || !connectionId.trim() || connectionIds.has(connectionId)) {
+            issues.push({ path: `${path}.id`, message: "连接标识为空或重复" });
+        } else {
+            connectionIds.add(connectionId);
+        }
+        const from = value.fromNodeId;
+        const to = value.toNodeId;
+        if (typeof from !== "string" || typeof to !== "string" || !nodeIds.has(from) || !nodeIds.has(to)) {
+            issues.push({ path, message: "连接引用了不存在的节点" });
+        }
+        if (typeof from === "string" && from === to) issues.push({ path, message: "节点不能连接到自身" });
+        if (typeof from === "string" && typeof to === "string") {
+            const pair = `${from}\u0000${to}`;
+            if (directedPairs.has(pair)) issues.push({ path, message: "相同方向的连接只能保留一条" });
+            directedPairs.add(pair);
+        }
     });
     return issues;
 }
 
 export function reduceWorkbenchDocument(document: WorkbenchDocument, command: WorkbenchDocumentCommand): WorkbenchDocument {
-    const next = copy(document);
+    let next: WorkbenchDocument;
     switch (command.type) {
         case "rename":
-            next.title = command.title.trim() || next.title;
+            next = { ...document, title: command.title.trim() || document.title };
             break;
         case "viewport":
-            next.viewport = normalizeViewport({ ...next.viewport, ...command.viewport });
+            next = { ...document, viewport: normalizeViewport({ ...document.viewport, ...command.viewport }) };
             break;
         case "add-node":
-            if (next.nodes.some((node) => node.id === command.node.id)) throw new Error("节点标识已存在");
-            next.nodes.push(copy(command.node));
+            if (document.nodes.some(({ id }) => id === command.node.id)) throw new Error("节点标识已存在");
+            next = { ...document, nodes: [...document.nodes, clone(command.node)] };
             break;
         case "patch-node": {
-            const index = next.nodes.findIndex((node) => node.id === command.nodeId);
+            const index = document.nodes.findIndex(({ id }) => id === command.nodeId);
             if (index < 0) throw new Error("节点不存在");
-            next.nodes[index] = { ...next.nodes[index], ...copy(command.patch), id: command.nodeId };
+            const nodes = document.nodes.slice();
+            nodes[index] = { ...nodes[index], ...clone(command.patch), id: command.nodeId };
+            next = { ...document, nodes };
             break;
         }
         case "remove-nodes": {
-            const removed = new Set(command.nodeIds);
-            next.nodes = next.nodes.filter((node) => !removed.has(node.id));
-            next.connections = next.connections.filter((edge) => !removed.has(edge.fromNodeId) && !removed.has(edge.toNodeId));
+            const removedIds = new Set(command.nodeIds);
+            next = {
+                ...document,
+                nodes: document.nodes.filter(({ id }) => !removedIds.has(id)),
+                connections: document.connections.filter((edge) => !removedIds.has(edge.fromNodeId) && !removedIds.has(edge.toNodeId)),
+            };
             break;
         }
-        case "connect":
-            if (!next.nodes.some((node) => node.id === command.connection.fromNodeId) || !next.nodes.some((node) => node.id === command.connection.toNodeId)) throw new Error("连接引用了不存在的节点");
-            if (command.connection.fromNodeId === command.connection.toNodeId) throw new Error("节点不能连接到自身");
-            if (next.connections.some((edge) => edge.fromNodeId === command.connection.fromNodeId && edge.toNodeId === command.connection.toNodeId)) return document;
-            next.connections.push(copy(command.connection));
+        case "connect": {
+            const { fromNodeId, toNodeId } = command.connection;
+            const existingIds = new Set(document.nodes.map(({ id }) => id));
+            if (!existingIds.has(fromNodeId) || !existingIds.has(toNodeId)) throw new Error("连接引用了不存在的节点");
+            if (fromNodeId === toNodeId) throw new Error("节点不能连接到自身");
+            if (document.connections.some((edge) => edge.fromNodeId === fromNodeId && edge.toNodeId === toNodeId)) return document;
+            next = { ...document, connections: [...document.connections, clone(command.connection)] };
             break;
+        }
         case "remove-connections": {
-            const removed = new Set(command.connectionIds);
-            next.connections = next.connections.filter((edge) => !removed.has(edge.id));
+            const removedIds = new Set(command.connectionIds);
+            next = { ...document, connections: document.connections.filter(({ id }) => !removedIds.has(id)) };
             break;
         }
     }
-    const issues = validateWorkbenchDocument(next);
-    if (issues.length) throw new Error(`画布文档校验失败：${issues[0].message}`);
-    return { ...next, revision: document.revision + 1 };
+    return finishCommand(document, next);
 }
 
 export function nodeCenter(node: Pick<CanvasNodeData, "position" | "width" | "height">): Position {
-    return { x: node.position.x + node.width / 2, y: node.position.y + node.height / 2 };
+    return {
+        x: node.position.x + node.width / 2,
+        y: node.position.y + node.height / 2,
+    };
 }

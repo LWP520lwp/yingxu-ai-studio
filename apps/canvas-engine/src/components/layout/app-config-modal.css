@@ -1,85 +1,691 @@
-.ff-config-modal { --ff-config-line: var(--border); --ff-config-surface: var(--secondary); --ff-config-muted: var(--muted-foreground); --ff-config-accent: var(--primary); }
-.ff-config-modal .ant-modal-content { padding: 24px; border: 1px solid var(--ff-config-line); background: var(--card); }
-.ff-config-modal .ant-modal-header { background: var(--card); }
-.ff-config-title { display: flex; align-items: center; gap: 11px; padding-bottom: 12px; }
-.ff-config-title-icon { display: flex; align-items: center; justify-content: center; width: 42px; height: 42px; border: 1px solid var(--ff-config-line); border-radius: 10px; color: var(--ff-config-accent); background: var(--ff-config-surface); }
-.ff-config-center { container-type: inline-size; }
-.ff-config-filebar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 15px 0 18px; border-bottom: 1px solid var(--ff-config-line); }
-.ff-config-filebar strong { font-size: 13px; font-weight: 600; }
-.ff-config-filebar p { margin: 4px 0 0; color: var(--ff-config-muted); font-size: 12px; }
-.ff-config-tabs { padding-top: 20px; min-height: 420px; }
-.ff-config-tabs > .ant-tabs-nav { min-width: 170px; }
-.ff-config-tabs > .ant-tabs-nav .ant-tabs-tab { padding: 12px 14px !important; margin: 0 8px 7px 0 !important; border: 1px solid transparent; border-radius: 8px; text-align: left; }
-.ff-config-tabs > .ant-tabs-nav .ant-tabs-tab:hover { background: var(--ff-config-surface); }
-.ff-config-tabs > .ant-tabs-nav .ant-tabs-tab-active { background: var(--accent); border-color: color-mix(in srgb, var(--primary) 28%, transparent); }
-.ff-config-tabs > .ant-tabs-nav .ant-tabs-ink-bar { display: none; }
-.ff-config-tabs > .ant-tabs-content-holder { min-width: 0; border-left: 1px solid var(--ff-config-line); }
-.ff-config-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane { padding-left: 25px !important; }
-.ff-config-nav-label { display: flex; align-items: flex-start; gap: 10px; color: inherit; }
-.ff-config-nav-label > svg { flex-shrink: 0; margin-top: 3px; }
-.ff-config-nav-label strong { display: block; font-weight: 550; font-size: 13px; }
-.ff-config-nav-label small { display: block; margin-top: 4px; color: var(--ff-config-muted); font-size: 11px; font-weight: 400; }
-.ff-config-section { min-width: 0; padding-bottom: 5px; }
-.ff-config-section-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
-.ff-config-section-heading h3 { margin: 0; font-size: 17px; font-weight: 650; text-wrap: balance; }
-.ff-config-section-heading p { margin: 7px 0 0; color: var(--ff-config-muted); font-size: 12px; line-height: 1.7; text-wrap: pretty; }
-.ff-config-builtin { display: flex; gap: 12px; align-items: center; padding: 16px; border: 1px solid var(--ff-config-line); border-radius: 10px; background: var(--ff-config-surface); }
-.ff-config-service-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 37px; height: 37px; border: 1px solid var(--ff-config-line); border-radius: 10px; color: var(--ff-config-accent); }
-.ff-config-builtin strong, .ff-config-channel strong { font-weight: 600; font-size: 13px; }
-.ff-config-builtin p, .ff-config-channel p { margin: 5px 0 0; color: var(--ff-config-muted); font-size: 11px; line-height: 1.6; }
-.ff-config-list-heading { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 10px; font-size: 12px; color: var(--ff-config-muted); }
-.ff-config-list-heading b { display: inline-block; margin-left: 5px; min-width: 18px; line-height: 18px; text-align: center; border-radius: 4px; background: var(--ff-config-surface); font-weight: 500; }
-.ff-config-channel-list { display: grid; gap: 10px; }
-.ff-config-quota, .ff-config-model-directory { margin-top: 12px; padding: 14px; border: 1px solid var(--ff-config-line); border-radius: 10px; }
-.ff-config-quota-heading, .ff-config-model-heading, .ff-config-quota-account-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-.ff-config-quota-heading > strong, .ff-config-model-heading > strong { font-size: 12px; font-weight: 600; }
-.ff-config-quota-heading > span, .ff-config-model-heading > span { color: var(--ff-config-muted); font-size: 10px; }
-.ff-config-quota-collapse { margin: 8px -8px 0; }
-.ff-config-quota-collapse .ant-collapse-header { padding-inline: 8px !important; }
-.ff-config-quota-collapse .ant-collapse-content-box { padding-top: 0 !important; }
-.ff-config-quota-account { padding-bottom: 5px; }
-.ff-config-quota-account-title > span { font-size: 11px; }
-.ff-config-quota-account-title small { display: inline-block; margin-left: 8px; color: var(--ff-config-muted); font-variant-numeric: tabular-nums; }
-.ff-config-quota-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0 4px; }
-.ff-config-quota-metrics > div:last-child { grid-column: 1 / -1; }
-.ff-config-quota-metrics dt { color: var(--ff-config-muted); font-size: 10px; }
-.ff-config-quota-metrics dd { margin: 4px 0 0; font-size: 15px; font-weight: 550; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.ff-config-quota-times { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; color: var(--ff-config-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
-.ff-config-quota-unavailable { margin: 10px 0 0; color: var(--ff-config-muted); font-size: 11px; line-height: 1.7; }
-.ff-config-model-row { display: flex; align-items: center; gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--ff-config-line); }
-.ff-config-model-row:last-child { padding-bottom: 0; border-bottom: 0; }
-.ff-config-model-row > div { flex: 1; min-width: 0; }
-.ff-config-model-row strong { display: block; font-size: 11px; font-weight: 500; overflow-wrap: anywhere; }
-.ff-config-model-row code { display: block; margin-top: 4px; color: var(--ff-config-muted); font-size: 10px; overflow-wrap: anywhere; }
-.ff-config-model-capability { flex-shrink: 0; color: var(--ff-config-muted); font-size: 10px; }
-.ff-config-channel-models { padding: 0 14px 12px; }
-.ff-config-channel { border: 1px solid var(--ff-config-line); border-radius: 10px; overflow: hidden; }
-.ff-config-channel-main { display: flex; align-items: center; gap: 11px; padding: 14px; }
-.ff-config-protocol { font-size: 10px; color: var(--ff-config-muted); padding: 2px 6px; border: 1px solid var(--ff-config-line); border-radius: 4px; }
-.ff-config-channel-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--ff-config-line); background: var(--ff-config-surface); }
-.ff-config-channel-footer span { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; color: var(--ff-config-muted); }
-.ff-config-empty { padding: 5px 14px 20px; margin-bottom: 12px; border: 1px dashed var(--ff-config-line); border-radius: 10px; text-align: center; }
-.ff-config-empty p { margin: -3px auto 16px; max-width: 360px; font-size: 12px; color: var(--ff-config-muted); line-height: 1.8; }
-.ff-config-note { display: flex; align-items: flex-start; gap: 6px; margin: 18px 0 0; font-size: 11px; line-height: 1.7; color: var(--ff-config-muted); }
-.ff-config-note svg { flex-shrink: 0; margin-top: 2px; }
-.ff-config-preference-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.ff-config-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--ff-config-line); }
-.ff-config-footer > span { display: inline-flex; align-items: center; gap: 6px; color: var(--ff-config-muted); font-size: 11px; }
-@container (max-width: 680px) {
-    .ff-config-tabs { display: block; min-height: 320px; }
-    .ff-config-tabs > .ant-tabs-nav { min-width: 0; width: 100%; margin: 0 0 18px; padding-bottom: 10px; border-bottom: 1px solid var(--ff-config-line); }
-    .ff-config-tabs > .ant-tabs-nav .ant-tabs-nav-list { flex-direction: row; flex-wrap: wrap; gap: 5px; }
-    .ff-config-tabs > .ant-tabs-nav .ant-tabs-nav-wrap { overflow: visible; }
-    .ff-config-tabs > .ant-tabs-nav .ant-tabs-tab { padding: 8px 10px !important; margin: 0 !important; }
-    .ff-config-tabs > .ant-tabs-nav .ant-tabs-nav-operations { display: none; }
-    .ff-config-tabs > .ant-tabs-content-holder { border-left: 0; }
-    .ff-config-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane { padding-left: 0 !important; }
-    .ff-config-nav-label { gap: 6px; align-items: center; }
-    .ff-config-nav-label > svg { margin-top: 0; }
-    .ff-config-nav-label small { display: none; }
+.ff-config-modal {
+  --ff-config-line: var(--border, #dce2e8);
+  --ff-config-surface: color-mix(
+    in srgb,
+    var(--card, #fff) 88%,
+    var(--foreground, #18212b) 12%
+  );
+  --ff-config-muted: var(--muted-foreground, #5e6c7b);
+  --ff-config-accent: var(--primary, #236d56);
+  --ff-config-accent-text: var(--accent-foreground, #1d604b);
+  --ff-config-accent-soft: var(--accent, #e3f3ec);
+  --ff-config-focus: var(--ring, #28745c);
+  --ff-config-danger: var(--destructive, #b42318);
+  max-width: calc(100vw - 28px);
+  margin-inline: auto;
+  color: var(--foreground, #18212b);
 }
-@container (max-width: 400px) {
-    .ff-config-preference-grid { grid-template-columns: minmax(0, 1fr); }
-    .ff-config-channel-main, .ff-config-builtin { padding: 11px; }
-    .ff-config-protocol { display: none; }
+
+.ff-config-modal .ant-modal-content {
+  overflow: hidden;
+  padding: clamp(16px, 2.5vw, 24px);
+  border: 1px solid var(--ff-config-line);
+  border-radius: 12px;
+  background: var(--card, #fff);
+  box-shadow: 0 24px 72px rgb(15 23 42 / 18%);
+}
+
+.ff-config-modal .ant-modal-header {
+  margin-bottom: 0;
+  background: transparent;
+}
+
+.ff-config-modal .ant-modal-body {
+  min-width: 0;
+}
+
+.ff-config-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: 12px;
+}
+
+.ff-config-title-icon {
+  display: grid;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--ff-config-line);
+  border-radius: 10px;
+  color: var(--ff-config-accent);
+  background: var(--ff-config-surface);
+}
+
+.ff-config-center {
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.ff-config-filebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 14px 0 17px;
+  border-bottom: 1px solid var(--ff-config-line);
+}
+
+.ff-config-filebar strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.ff-config-filebar p {
+  margin: 4px 0 0;
+  color: var(--ff-config-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ff-config-tabs {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  min-height: 420px;
+  padding-top: 18px;
+}
+
+.ff-config-tabs > .ant-tabs-nav {
+  flex: 0 0 204px;
+  min-width: 170px;
+}
+
+.ff-config-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+  gap: 5px;
+}
+
+.ff-config-tabs > .ant-tabs-nav .ant-tabs-tab {
+  margin: 0 !important;
+  padding: 11px 12px !important;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  text-align: left;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.ff-config-tabs > .ant-tabs-nav .ant-tabs-tab:hover {
+  background: var(--ff-config-surface);
+}
+
+.ff-config-tabs > .ant-tabs-nav .ant-tabs-tab-active {
+  border-color: color-mix(in srgb, var(--ff-config-accent) 24%, transparent);
+  background: var(--ff-config-accent-soft);
+}
+
+.ff-config-tabs > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--ff-config-accent-text);
+}
+
+.ff-config-tabs > .ant-tabs-nav .ant-tabs-ink-bar {
+  display: none;
+}
+
+.ff-config-tabs > .ant-tabs-content-holder {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-left: 1px solid var(--ff-config-line);
+}
+
+.ff-config-tabs
+  > .ant-tabs-content-holder
+  > .ant-tabs-content
+  > .ant-tabs-tabpane {
+  min-width: 0;
+  padding-left: 22px !important;
+}
+
+.ff-config-nav-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  color: inherit;
+}
+
+.ff-config-nav-label > svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.ff-config-nav-label strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.ff-config-nav-label small {
+  display: block;
+  margin-top: 3px;
+  color: var(--ff-config-muted);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.ff-config-section {
+  min-width: 0;
+  padding-bottom: 5px;
+}
+
+.ff-config-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-bottom: 20px;
+}
+
+.ff-config-section-heading h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  text-wrap: balance;
+}
+
+.ff-config-section-heading p {
+  max-width: 64ch;
+  margin: 6px 0 0;
+  color: var(--ff-config-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.ff-config-builtin {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--ff-config-line);
+  border-radius: 9px;
+  background: var(--ff-config-surface);
+}
+
+.ff-config-service-icon {
+  display: grid;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid var(--ff-config-line);
+  border-radius: 9px;
+  color: var(--ff-config-accent);
+  background: var(--card, #fff);
+}
+
+.ff-config-builtin strong,
+.ff-config-channel strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ff-config-builtin p,
+.ff-config-channel p {
+  margin: 4px 0 0;
+  color: var(--ff-config-muted);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.ff-config-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 19px 0 9px;
+  color: var(--ff-config-muted);
+  font-size: 12px;
+}
+
+.ff-config-list-heading b {
+  display: inline-grid;
+  min-width: 20px;
+  min-height: 20px;
+  margin-left: 5px;
+  padding-inline: 4px;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--ff-config-surface);
+  color: var(--foreground, #18212b);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.ff-config-channel-list {
+  display: grid;
+  gap: 9px;
+}
+
+.ff-config-quota,
+.ff-config-model-directory {
+  min-width: 0;
+  margin-top: 11px;
+  padding: 13px;
+  border: 1px solid var(--ff-config-line);
+  border-radius: 9px;
+  background: var(--card, #fff);
+}
+
+.ff-config-quota-heading,
+.ff-config-model-heading,
+.ff-config-quota-account-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+}
+
+.ff-config-quota-heading > strong,
+.ff-config-model-heading > strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.ff-config-quota-heading > span,
+.ff-config-model-heading > span {
+  color: var(--ff-config-muted);
+  font-size: 10px;
+}
+
+.ff-config-quota-collapse {
+  margin: 7px -7px 0;
+}
+
+.ff-config-quota-collapse .ant-collapse-header {
+  padding-inline: 7px !important;
+}
+
+.ff-config-quota-collapse .ant-collapse-content-box {
+  padding-top: 0 !important;
+}
+
+.ff-config-quota-account {
+  padding-bottom: 5px;
+}
+
+.ff-config-quota-account-title > span {
+  min-width: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.ff-config-quota-account-title small {
+  display: inline-block;
+  margin-left: 8px;
+  color: var(--ff-config-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ff-config-quota-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+  margin: 13px 0 5px;
+}
+
+.ff-config-quota-metrics > div:last-child {
+  grid-column: 1 / -1;
+}
+
+.ff-config-quota-metrics dt {
+  color: var(--ff-config-muted);
+  font-size: 10px;
+}
+
+.ff-config-quota-metrics dd {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.ff-config-quota-times {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  color: var(--ff-config-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ff-config-quota-unavailable {
+  margin: 9px 0 0;
+  color: var(--ff-config-muted);
+  font-size: 11px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.ff-config-model-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--ff-config-line);
+}
+
+.ff-config-model-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.ff-config-model-row > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ff-config-model-row strong {
+  display: block;
+  font-size: 11px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.ff-config-model-row code {
+  display: block;
+  margin-top: 3px;
+  color: var(--ff-config-muted);
+  font-size: 10px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ff-config-model-capability {
+  flex: 0 0 auto;
+  color: var(--ff-config-muted);
+  font-size: 10px;
+}
+
+.ff-config-channel-models {
+  min-width: 0;
+  padding: 0 13px 11px;
+}
+
+.ff-config-channel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ff-config-line);
+  border-radius: 9px;
+  background: var(--card, #fff);
+}
+
+.ff-config-channel-main {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 13px;
+}
+
+.ff-config-protocol {
+  padding: 2px 6px;
+  border: 1px solid var(--ff-config-line);
+  border-radius: 5px;
+  color: var(--ff-config-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.ff-config-channel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 11px;
+  border-top: 1px solid var(--ff-config-line);
+  background: var(--ff-config-surface);
+}
+
+.ff-config-channel-footer > div {
+  min-width: 0;
+}
+
+.ff-config-channel-footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ff-config-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.ff-config-empty {
+  margin-bottom: 11px;
+  padding: 8px 13px 18px;
+  border: 1px dashed var(--ff-config-line);
+  border-radius: 9px;
+  text-align: center;
+}
+
+.ff-config-empty p {
+  max-width: 42ch;
+  margin: 0 auto 15px;
+  color: var(--ff-config-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.ff-config-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 16px 0 0;
+  color: var(--ff-config-muted);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.ff-config-note svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--ff-config-accent);
+}
+
+.ff-config-preference-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ff-config-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 9px 14px;
+  margin-top: 19px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ff-config-line);
+}
+
+.ff-config-footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ff-config-muted);
+  font-size: 11px;
+}
+
+.ff-config-footer > span svg {
+  flex: 0 0 auto;
+  color: var(--ff-config-accent);
+}
+
+.ff-config-modal
+  :is(button, input, textarea, select, [role="tab"], [tabindex]):focus-visible {
+  outline: 2px solid var(--ff-config-focus);
+  outline-offset: 2px;
+}
+
+.ff-config-modal .ant-select-focused .ant-select-selector,
+.ff-config-modal .ant-input-affix-wrapper-focused,
+.ff-config-modal .ant-input:focus,
+.ff-config-modal .ant-input-focused {
+  outline: 2px solid var(--ff-config-focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.ff-config-modal :is(button, input, textarea, select):disabled,
+.ff-config-modal [aria-disabled="true"],
+.ff-config-modal .ant-btn-disabled,
+.ff-config-modal .ant-select-disabled .ant-select-selector,
+.ff-config-modal .ant-switch-disabled {
+  cursor: not-allowed;
+}
+
+.ff-config-modal :is(button, input, textarea, select):disabled,
+.ff-config-modal [aria-disabled="true"],
+.ff-config-modal .ant-btn-disabled,
+.ff-config-modal .ant-select-disabled,
+.ff-config-modal .ant-switch-disabled {
+  opacity: 0.58;
+}
+
+.ff-config-modal .ant-btn-disabled:hover,
+.ff-config-modal .ant-tabs-tab-disabled:hover {
+  color: inherit;
+  border-color: transparent;
+  background: transparent;
+}
+
+@container (max-width: 680px) {
+  .ff-config-tabs {
+    display: block;
+    min-height: 320px;
+  }
+
+  .ff-config-tabs > .ant-tabs-nav {
+    width: 100%;
+    min-width: 0;
+    margin: 0 0 15px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--ff-config-line);
+  }
+
+  .ff-config-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 5px;
+    transform: none !important;
+  }
+
+  .ff-config-tabs > .ant-tabs-nav .ant-tabs-nav-wrap {
+    overflow: visible;
+  }
+
+  .ff-config-tabs > .ant-tabs-nav .ant-tabs-tab {
+    padding: 8px 9px !important;
+  }
+
+  .ff-config-tabs > .ant-tabs-nav .ant-tabs-nav-operations {
+    display: none;
+  }
+
+  .ff-config-tabs > .ant-tabs-content-holder {
+    border-left: 0;
+  }
+
+  .ff-config-tabs
+    > .ant-tabs-content-holder
+    > .ant-tabs-content
+    > .ant-tabs-tabpane {
+    padding-left: 0 !important;
+  }
+
+  .ff-config-nav-label {
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ff-config-nav-label > svg {
+    margin-top: 0;
+  }
+
+  .ff-config-nav-label small {
+    display: none;
+  }
+}
+
+@container (max-width: 460px) {
+  .ff-config-preference-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .ff-config-section-heading {
+    align-items: flex-start;
+    margin-bottom: 15px;
+  }
+
+  .ff-config-channel-main,
+  .ff-config-builtin {
+    padding: 10px;
+  }
+
+  .ff-config-channel-models {
+    padding-inline: 10px;
+  }
+
+  .ff-config-channel-footer {
+    align-items: flex-start;
+  }
+
+  .ff-config-protocol {
+    display: none;
+  }
+
+  .ff-config-quota,
+  .ff-config-model-directory {
+    padding: 10px;
+  }
+
+  .ff-config-quota-metrics {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .ff-config-quota-metrics > div:last-child {
+    grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-config-tabs > .ant-tabs-nav .ant-tabs-tab {
+    transition: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .ff-config-modal
+    :is(button, input, textarea, select, [role="tab"]):focus-visible {
+    outline-color: Highlight;
+  }
+
+  .ff-config-tabs > .ant-tabs-nav .ant-tabs-tab-active,
+  .ff-config-channel,
+  .ff-config-builtin,
+  .ff-config-quota,
+  .ff-config-model-directory {
+    border-color: CanvasText;
+  }
 }

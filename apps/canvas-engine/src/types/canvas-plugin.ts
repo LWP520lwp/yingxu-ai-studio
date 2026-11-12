@@ -87,7 +87,7 @@ export type CanvasPluginHost = {
     ai: CanvasPluginAi;
     // Opens or closes the custom panel below a specified node.
     openPanel: (nodeId: string) => void;
-    closePanel: () => void;
+    closePanel: (nodeId?: string) => void;
 };
 
 // Configuration for reusing the host's built-in generation panel; see SDK CanvasBuiltinPanelConfig.

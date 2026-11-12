@@ -25,8 +25,6 @@ vi.mock("@/services/file-storage", () => ({ uploadMediaFile: harness.uploadMedia
 vi.mock("@/lib/localforage-storage", () => ({
     localForageStorage: { getItem: async () => null, setItem: async () => undefined, removeItem: async () => undefined },
 }));
-vi.mock("@/i18n", () => ({ default: { t: (key: string) => key } }));
-
 import { createPlatformGeneration, generatePlatformImages, waitForPlatformGeneration, type PlatformGenerationTask } from "./generation";
 import { createVideoGenerationTask, pollVideoGenerationTask, storeGeneratedVideo, waitForVideoGenerationTask } from "@/services/api/video";
 import { requestGeneration, requestImageQuestion } from "@/services/api/image";

@@ -1,118 +1,313 @@
-import { useEffect, useRef } from "react";
-import { ImageIcon, List, Music2, Settings2, Video, X } from "lucide-react";
+import {
+  createElement,
+  useEffect,
+  useMemo,
+  useRef,
+  type ReactNode,
+} from "react";
+import {
+  ImageIcon,
+  List,
+  Music2,
+  Settings2,
+  Video,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { canvasThemes } from "@/lib/canvas-theme";
+import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { listNodeDefinitions, useNodeRegistryVersion } from "@/lib/canvas/node-registry";
+import {
+  listNodeDefinitions,
+  useNodeRegistryVersion,
+} from "@/lib/canvas/node-registry";
 import { getNodeSpec } from "@/constant/canvas";
-import { CanvasNodeType, type ConnectionHandle, type Position } from "@/types/canvas";
+import {
+  CanvasNodeType,
+  type ConnectionHandle,
+  type Position,
+} from "@/types/canvas";
+import type { CanvasNodeDefinition } from "@/types/canvas-plugin";
 
 export type PendingConnectionCreate = {
-    connection: ConnectionHandle;
-    position: Position;
+  connection: ConnectionHandle;
+  position: Position;
 };
 
+type BuiltinCreateType =
+  | CanvasNodeType.Image
+  | CanvasNodeType.Text
+  | CanvasNodeType.Config
+  | CanvasNodeType.Video
+  | CanvasNodeType.Audio;
+
+type Translate = (key: string) => string;
+
+type CreateMenuEntry<T extends string = string> = {
+  id: string;
+  type: T;
+  icon: ReactNode;
+  title: string;
+  description?: string;
+};
+
+type ConnectionCommandDefinition = {
+  type: BuiltinCreateType;
+  icon: LucideIcon;
+  titleKey: string;
+  descriptionKey?: string;
+};
+
+const CONNECTION_COMMANDS: readonly ConnectionCommandDefinition[] = [
+  {
+    type: CanvasNodeType.Text,
+    icon: List,
+    titleKey: "canvas.createMenu.text",
+    descriptionKey: "canvas.createMenu.textDescription",
+  },
+  {
+    type: CanvasNodeType.Image,
+    icon: ImageIcon,
+    titleKey: "canvas.createMenu.image",
+  },
+  {
+    type: CanvasNodeType.Video,
+    icon: Video,
+    titleKey: "canvas.createMenu.video",
+  },
+  {
+    type: CanvasNodeType.Audio,
+    icon: Music2,
+    titleKey: "canvas.createMenu.audio",
+  },
+  {
+    type: CanvasNodeType.Config,
+    icon: Settings2,
+    titleKey: "canvas.createMenu.config",
+    descriptionKey: "canvas.createMenu.configDescription",
+  },
+];
+
+export function buildConnectionCreateEntries(
+  translate: Translate,
+): CreateMenuEntry<BuiltinCreateType>[] {
+  return CONNECTION_COMMANDS.map(
+    ({ type, icon, titleKey, descriptionKey }) => ({
+      id: type,
+      type,
+      icon: createElement(icon, { className: "size-4" }),
+      title: translate(titleKey),
+      ...(descriptionKey ? { description: translate(descriptionKey) } : {}),
+    }),
+  );
+}
+
+export function visibleCreateMenuDefinitions(
+  definitions: readonly CanvasNodeDefinition[],
+): CanvasNodeDefinition[] {
+  return definitions.filter(
+    (definition) => definition.showInCreateMenu !== false,
+  );
+}
+
+function inverseZoom(scale: number) {
+  return Number.isFinite(scale) && scale > 0 ? 1 / scale : 1;
+}
+
 export function ConnectionCreateMenu({
-    pending,
-    scale = 1,
-    onCreate,
-    onClose,
+  pending,
+  scale = 1,
+  onCreate,
+  onClose,
 }: {
-    pending: PendingConnectionCreate;
-    scale?: number;
-    onCreate: (type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Config | CanvasNodeType.Video | CanvasNodeType.Audio) => void;
-    onClose: () => void;
+  pending: PendingConnectionCreate;
+  scale?: number;
+  onCreate: (type: BuiltinCreateType) => void;
+  onClose: () => void;
 }) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const { t } = useTranslation();
-    return (
-        <div
-            className="absolute z-[120] w-[240px] rounded-2xl border p-2 shadow-2xl backdrop-blur"
-            data-connection-create-menu
-            style={{ left: pending.position.x, top: pending.position.y, transform: `scale(${1 / scale})`, transformOrigin: "top left", background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
-            onMouseDown={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-        >
-            <div className="mb-1.5 flex items-center justify-between px-1">
-                <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
-                    {t("canvas.createMenu.fromNode")}
-                </span>
-                <button type="button" className="grid size-7 place-items-center rounded-lg text-base opacity-55 transition hover:bg-white/10 hover:opacity-100" onClick={onClose} aria-label={t("canvas.createMenu.close")}>
-                    ×
-                </button>
-            </div>
-            <div className="grid gap-0.5">
-                <ConnectionCreateOption theme={theme} icon={<List className="size-4" />} title={t("canvas.createMenu.text")} description={t("canvas.createMenu.textDescription")} onClick={() => onCreate(CanvasNodeType.Text)} />
-                <ConnectionCreateOption theme={theme} icon={<ImageIcon className="size-4" />} title={t("canvas.createMenu.image")} onClick={() => onCreate(CanvasNodeType.Image)} />
-                <ConnectionCreateOption theme={theme} icon={<Video className="size-4" />} title={t("canvas.createMenu.video")} onClick={() => onCreate(CanvasNodeType.Video)} />
-                <ConnectionCreateOption theme={theme} icon={<Music2 className="size-4" />} title={t("canvas.createMenu.audio")} onClick={() => onCreate(CanvasNodeType.Audio)} />
-                <ConnectionCreateOption theme={theme} icon={<Settings2 className="size-4" />} title={t("canvas.createMenu.config")} description={t("canvas.createMenu.configDescription")} onClick={() => onCreate(CanvasNodeType.Config)} />
-            </div>
-        </div>
-    );
+  const theme = canvasThemes[useThemeStore((state) => state.theme)];
+  const { t } = useTranslation();
+  const entries = buildConnectionCreateEntries((key) => t(key));
+
+  return (
+    <div
+      className="absolute z-[120] w-[240px] rounded-2xl border p-2 shadow-2xl backdrop-blur"
+      data-connection-create-menu
+      style={{
+        left: pending.position.x,
+        top: pending.position.y,
+        transform: `scale(${inverseZoom(scale)})`,
+        transformOrigin: "top left",
+        background: theme.node.panel,
+        borderColor: theme.node.stroke,
+        color: theme.node.text,
+      }}
+      onMouseDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <MenuHeading
+        theme={theme}
+        label={t("canvas.createMenu.fromNode")}
+        onClose={onClose}
+      />
+      <div className="grid gap-0.5">
+        {entries.map((entry) => (
+          <ConnectionCreateOption
+            key={entry.id}
+            theme={theme}
+            icon={entry.icon}
+            title={entry.title}
+            description={entry.description}
+            onClick={() => onCreate(entry.type)}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 
-export function ConnectionCreateOption({ theme, icon, title, description, onClick }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; icon: React.ReactNode; title: string; description?: string; onClick?: () => void }) {
-    return (
-        <button
-            type="button"
-            className="flex h-12 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2 text-left transition"
-            style={{ color: theme.node.text }}
-            onClick={onClick}
-            onMouseEnter={(event) => (event.currentTarget.style.background = theme.node.fill)}
-            onMouseLeave={(event) => (event.currentTarget.style.background = "transparent")}
-        >
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg" style={{ background: theme.node.fill, color: theme.node.muted }}>
-                {icon}
-            </span>
-            <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2 text-sm font-medium leading-5">{title}</span>
-                {description ? (
-                    <span className="mt-0.5 block truncate text-xs" style={{ color: theme.node.muted }}>
-                        {description}
-                    </span>
-                ) : null}
-            </span>
-        </button>
-    );
+export function ConnectionCreateOption({
+  theme,
+  icon,
+  title,
+  description,
+  onClick,
+}: {
+  theme: CanvasTheme;
+  icon: ReactNode;
+  title: string;
+  description?: string;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex h-12 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2 text-left transition focus-visible:outline-2 focus-visible:outline-offset-1"
+      style={{ color: theme.node.text, outlineColor: theme.node.activeStroke }}
+      onClick={onClick}
+      onMouseEnter={(event) =>
+        (event.currentTarget.style.background = theme.node.fill)
+      }
+      onMouseLeave={(event) =>
+        (event.currentTarget.style.background = "transparent")
+      }
+    >
+      <span
+        className="grid size-9 shrink-0 place-items-center rounded-lg"
+        style={{ background: theme.node.fill, color: theme.node.muted }}
+        aria-hidden="true"
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-2 text-sm font-medium leading-5">
+          {title}
+        </span>
+        {description ? (
+          <span
+            className="mt-0.5 block truncate text-xs"
+            style={{ color: theme.node.muted }}
+          >
+            {description}
+          </span>
+        ) : null}
+      </span>
+    </button>
+  );
 }
 
-export function NodeCreateMenu({ position, scale = 1, onCreate, onClose }: { position: Position; scale?: number; onCreate: (type: string) => void; onClose: () => void }) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const { t } = useTranslation();
-    useNodeRegistryVersion();
-    const menuRef = useRef<HTMLDivElement>(null);
-    const definitions = listNodeDefinitions().filter((def) => def.showInCreateMenu !== false);
-    // Close automatically when clicking outside the menu.
-    useEffect(() => {
-        const handlePointerDown = (event: PointerEvent) => {
-            if (menuRef.current && !menuRef.current.contains(event.target as Node)) onClose();
-        };
-        document.addEventListener("pointerdown", handlePointerDown, true);
-        return () => document.removeEventListener("pointerdown", handlePointerDown, true);
-    }, [onClose]);
-    return (
-        <div
-            ref={menuRef}
-            className="absolute z-[120] max-h-[70vh] w-[240px] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur thin-scrollbar"
-            data-canvas-no-zoom
-            style={{ left: position.x, top: position.y, transform: `scale(${1 / scale})`, transformOrigin: "top left", background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
-            onPointerDown={(event) => event.stopPropagation()}
-        >
-            <div className="mb-1.5 flex items-center justify-between px-1">
-                <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
-                    {t("canvas.createMenu.select")}
-                </span>
-                <button type="button" className="grid size-7 place-items-center rounded-lg opacity-55 transition hover:opacity-100" onClick={onClose} aria-label={t("canvas.createMenu.close")}>
-                    <X className="size-4" />
-                </button>
-            </div>
-            <div className="grid gap-0.5">
-                {definitions.map((def) => (
-                    <ConnectionCreateOption key={def.type} theme={theme} icon={def.icon} title={getNodeSpec(def.type).title} description={def.description} onClick={() => onCreate(def.type)} />
-                ))}
-            </div>
-        </div>
-    );
+export function NodeCreateMenu({
+  position,
+  scale = 1,
+  onCreate,
+  onClose,
+}: {
+  position: Position;
+  scale?: number;
+  onCreate: (type: string) => void;
+  onClose: () => void;
+}) {
+  const theme = canvasThemes[useThemeStore((state) => state.theme)];
+  const { t } = useTranslation();
+  const registryVersion = useNodeRegistryVersion((state) => state.version);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const definitions = useMemo(
+    () => visibleCreateMenuDefinitions(listNodeDefinitions()),
+    [registryVersion],
+  );
+
+  useEffect(() => {
+    const dismissWhenOutside = (event: PointerEvent) => {
+      const menu = menuRef.current;
+      if (menu && !menu.contains(event.target as Node)) onClose();
+    };
+    document.addEventListener("pointerdown", dismissWhenOutside, true);
+    return () =>
+      document.removeEventListener("pointerdown", dismissWhenOutside, true);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="absolute z-[120] max-h-[70vh] w-[240px] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur thin-scrollbar"
+      data-canvas-no-zoom
+      style={{
+        left: position.x,
+        top: position.y,
+        transform: `scale(${inverseZoom(scale)})`,
+        transformOrigin: "top left",
+        background: theme.node.panel,
+        borderColor: theme.node.stroke,
+        color: theme.node.text,
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <MenuHeading
+        theme={theme}
+        label={t("canvas.createMenu.select")}
+        onClose={onClose}
+      />
+      <div className="grid gap-0.5">
+        {definitions.map((definition) => (
+          <ConnectionCreateOption
+            key={definition.type}
+            theme={theme}
+            icon={definition.icon}
+            title={getNodeSpec(definition.type).title}
+            description={definition.description}
+            onClick={() => onCreate(definition.type)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MenuHeading({
+  theme,
+  label,
+  onClose,
+}: {
+  theme: CanvasTheme;
+  label: string;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="mb-1.5 flex items-center justify-between px-1">
+      <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
+        {label}
+      </span>
+      <button
+        type="button"
+        className="grid size-7 place-items-center rounded-lg opacity-55 transition hover:bg-white/10 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-1"
+        style={{ outlineColor: theme.node.activeStroke }}
+        onClick={onClose}
+        aria-label={t("canvas.createMenu.close")}
+      >
+        <X className="size-4" />
+      </button>
+    </div>
+  );
 }

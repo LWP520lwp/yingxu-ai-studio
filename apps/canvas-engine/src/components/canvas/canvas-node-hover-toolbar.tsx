@@ -1,6 +1,29 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { App, Button, Modal, Segmented, Select, Tooltip } from "antd";
-import { Download, Ellipsis, FolderPlus, Image as ImageIcon, Info, MessageSquare, Minus, Music2, Plus, RefreshCw, Settings2, Trash2, Ungroup, Upload, Video } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { App, Button, Modal, Segmented, Select } from "antd";
+import {
+  Download,
+  Ellipsis,
+  FolderPlus,
+  Image as ImageIcon,
+  Info,
+  MessageSquare,
+  Minus,
+  Music2,
+  Plus,
+  RefreshCw,
+  Settings2,
+  Trash2,
+  Ungroup,
+  Upload,
+  Video,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -8,407 +31,632 @@ import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { formatBytes, getDataUrlByteSize } from "@/lib/image-utils";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "@/types/canvas";
+import {
+  CanvasNodeType,
+  type CanvasNodeData,
+  type ViewportTransform,
+} from "@/types/canvas";
 import type { CanvasNodeToolbarItem } from "@/types/canvas-plugin";
-import { getPlatformInit, onPlatformInit, platformRequest } from "@/platform/rpc";
+import {
+  getPlatformInit,
+  onPlatformInit,
+  platformRequest,
+} from "@/platform/rpc";
 import type { CanvasVideoSkill } from "@/platform/skill-video";
-import { ImageToolSettingsModal, type ImageToolbarSettingsTool } from "./canvas-image-toolbar-settings-modal";
-import { IMAGE_QUICK_TOOLS_STORAGE_KEY, buildImageToolbarTools, defaultImageQuickToolIds, readImageQuickToolsConfig, type ImageQuickToolId } from "./canvas-image-toolbar-tools";
+import {
+  ImageToolSettingsModal,
+  type ImageToolbarSettingsTool,
+} from "./canvas-image-toolbar-settings-modal";
+import {
+  IMAGE_QUICK_TOOLS_STORAGE_KEY,
+  buildImageToolbarTools,
+  defaultImageQuickToolIds,
+  readImageQuickToolsConfig,
+  type ImageQuickToolId,
+} from "./canvas-image-toolbar-tools";
 
 type CanvasNodeHoverToolbarProps = {
-    node: CanvasNodeData | null;
-    viewport: ViewportTransform;
-    canvasWidth: number;
-    projectId: string;
-    onKeep: (nodeId: string) => void;
-    onLeave: () => void;
-    onInfo: (node: CanvasNodeData) => void;
-    onDecreaseFont: (node: CanvasNodeData) => void;
-    onIncreaseFont: (node: CanvasNodeData) => void;
-    onToggleDialog: (node: CanvasNodeData) => void;
-    onGenerateImage: (node: CanvasNodeData) => void;
-    onPrepareVideo: (node: CanvasNodeData, skill: CanvasVideoSkill | null, signal: AbortSignal) => Promise<void>;
-    onUpload: (node: CanvasNodeData) => void;
-    onDownload: (node: CanvasNodeData) => void;
-    onSaveAsset: (node: CanvasNodeData) => void;
-    onMaskEdit: (node: CanvasNodeData) => void;
-    onCrop: (node: CanvasNodeData) => void;
-    onSplit: (node: CanvasNodeData) => void;
-    onUpscale: (node: CanvasNodeData) => void;
-    onSuperResolve: (node: CanvasNodeData) => void;
-    onAngle: (node: CanvasNodeData) => void;
-    onViewImage: (node: CanvasNodeData) => void;
-    onReversePrompt: (node: CanvasNodeData) => void;
-    onRetry: (node: CanvasNodeData) => void;
-    onToggleFreeResize: (node: CanvasNodeData) => void;
-    onDelete: (node: CanvasNodeData) => void;
-    onUngroup?: (node: CanvasNodeData) => void;
-    extraTools?: CanvasNodeToolbarItem[];
+  node: CanvasNodeData | null;
+  viewport: ViewportTransform;
+  canvasWidth: number;
+  projectId: string;
+  onKeep: (nodeId: string) => void;
+  onLeave: () => void;
+  onInfo: (node: CanvasNodeData) => void;
+  onDecreaseFont: (node: CanvasNodeData) => void;
+  onIncreaseFont: (node: CanvasNodeData) => void;
+  onToggleDialog: (node: CanvasNodeData) => void;
+  onGenerateImage: (node: CanvasNodeData) => void;
+  onPrepareVideo: (
+    node: CanvasNodeData,
+    skill: CanvasVideoSkill | null,
+    signal: AbortSignal,
+  ) => Promise<void>;
+  onUpload: (node: CanvasNodeData) => void;
+  onDownload: (node: CanvasNodeData) => void;
+  onSaveAsset: (node: CanvasNodeData) => void;
+  onMaskEdit: (node: CanvasNodeData) => void;
+  onCrop: (node: CanvasNodeData) => void;
+  onSplit: (node: CanvasNodeData) => void;
+  onUpscale: (node: CanvasNodeData) => void;
+  onSuperResolve: (node: CanvasNodeData) => void;
+  onAngle: (node: CanvasNodeData) => void;
+  onViewImage: (node: CanvasNodeData) => void;
+  onReversePrompt: (node: CanvasNodeData) => void;
+  onRetry: (node: CanvasNodeData) => void;
+  onToggleFreeResize: (node: CanvasNodeData) => void;
+  onDelete: (node: CanvasNodeData) => void;
+  onUngroup?: (node: CanvasNodeData) => void;
+  extraTools?: CanvasNodeToolbarItem[];
 };
 
-type ToolbarTool = {
-    id: string;
-    title: string;
-    label: string;
-    icon: ReactNode;
-    onClick: () => void;
-    active?: boolean;
-    danger?: boolean;
-};
+type Action = CanvasNodeToolbarItem;
+type Preferences = { ids: ImageQuickToolId[]; showLabels: boolean };
 
-export function CanvasNodeHoverToolbar({
-    node,
-    viewport,
-    canvasWidth,
-    projectId,
-    onKeep,
-    onLeave,
-    onInfo,
-    onDecreaseFont,
-    onIncreaseFont,
-    onToggleDialog,
-    onGenerateImage,
-    onPrepareVideo,
-    onUpload,
-    onDownload,
-    onSaveAsset,
-    onMaskEdit,
-    onCrop,
-    onSplit,
-    onUpscale,
-    onSuperResolve,
-    onAngle,
-    onViewImage,
-    onReversePrompt,
-    onRetry,
-    onToggleFreeResize,
-    onDelete,
-    onUngroup,
-    extraTools = [],
-}: CanvasNodeHoverToolbarProps) {
-    const [quickImageToolIds, setQuickImageToolIds] = useState<ImageQuickToolId[]>(defaultImageQuickToolIds);
-    const [showImageToolLabels, setShowImageToolLabels] = useState(false);
-    const [draftImageToolIds, setDraftImageToolIds] = useState<ImageQuickToolId[]>(defaultImageQuickToolIds);
-    const [draftShowImageToolLabels, setDraftShowImageToolLabels] = useState(false);
-    const [imageToolSettingsOpen, setImageToolSettingsOpen] = useState(false);
-    const [platformScope, setPlatformScope] = useState(() => getPlatformInit()?.scopeId || "");
-    const [videoSkills, setVideoSkills] = useState<CanvasVideoSkill[]>([]);
-    const [selectedVideoSkillId, setSelectedVideoSkillId] = useState<string | null>(null);
-    const [videoSkillsLoading, setVideoSkillsLoading] = useState(false);
-    const [videoSkillsError, setVideoSkillsError] = useState("");
-    const [videoSkillsReload, setVideoSkillsReload] = useState(0);
-    const [videoPreparing, setVideoPreparing] = useState(false);
-    const [skillDropdownOpen, setSkillDropdownOpen] = useState(false);
-    const videoPreparationRef = useRef<AbortController | null>(null);
-    const toolbarRef = useRef<HTMLDivElement>(null);
-    const [toolbarSize, setToolbarSize] = useState({ width: 0, height: 48 });
-    const { message } = App.useApp();
-    const { t } = useTranslation();
-    const copyText = useCopyText();
-
-    useEffect(() => {
-        try {
-            const stored = window.localStorage.getItem(IMAGE_QUICK_TOOLS_STORAGE_KEY);
-            if (!stored) return;
-            const parsed = JSON.parse(stored) as unknown;
-            const config = readImageQuickToolsConfig(parsed);
-            setQuickImageToolIds(config.ids);
-            setShowImageToolLabels(config.showLabels);
-        } catch {
-            window.localStorage.removeItem(IMAGE_QUICK_TOOLS_STORAGE_KEY);
-        }
-    }, []);
-
-    useEffect(() => {
-        setImageToolSettingsOpen(false);
-    }, [node?.id]);
-
-    useEffect(() => onPlatformInit((init) => setPlatformScope(init.scopeId)), []);
-
-    useEffect(() => {
-        videoPreparationRef.current?.abort();
-        videoPreparationRef.current = null;
-        setSelectedVideoSkillId(null);
-        setVideoPreparing(false);
-        setSkillDropdownOpen(false);
-        setVideoSkills([]);
-        setVideoSkillsError("");
-        setVideoSkillsLoading(false);
-        if (node?.type !== CanvasNodeType.Text) return;
-        const controller = new AbortController();
-        setVideoSkillsLoading(true);
-        void platformRequest<{ skills: CanvasVideoSkill[] }>("skills.list", {}, { signal: controller.signal, timeoutMs: 20_000 })
-            .then((result) => {
-                if (controller.signal.aborted) return;
-                setVideoSkills(Array.isArray(result.skills) ? result.skills.filter((skill) => typeof skill.id === "string" && typeof skill.name === "string" && typeof skill.version === "string") : []);
-            })
-            .catch((error: unknown) => {
-                if (!controller.signal.aborted) setVideoSkillsError(error instanceof Error ? error.message : "Skill 列表加载失败");
-            })
-            .finally(() => { if (!controller.signal.aborted) setVideoSkillsLoading(false); });
-        return () => {
-            controller.abort();
-            videoPreparationRef.current?.abort();
-        };
-    }, [node?.id, node?.type, platformScope, projectId, videoSkillsReload]);
-
-    useLayoutEffect(() => {
-        const toolbar = toolbarRef.current;
-        if (!toolbar) return;
-        const measure = () => setToolbarSize({ width: toolbar.offsetWidth, height: toolbar.offsetHeight });
-        measure();
-        const observer = new ResizeObserver(measure);
-        observer.observe(toolbar);
-        return () => observer.disconnect();
-    }, [node?.id]);
-
-    if (!node) return null;
-
-    const activeNode = node;
-    const toolbarMaxWidth = Math.max(120, Math.min(760, canvasWidth - 24));
-    const halfWidth = Math.min(toolbarSize.width || toolbarMaxWidth, toolbarMaxWidth) / 2;
-    const left = Math.max(halfWidth + 12, Math.min(canvasWidth - halfWidth - 12, viewport.x + (node.position.x + node.width / 2) * viewport.k));
-    const top = Math.max(toolbarSize.height + 12, viewport.y + node.position.y * viewport.k - 14);
-    const isImage = node.type === CanvasNodeType.Image;
-    const isVideo = node.type === CanvasNodeType.Video;
-    const isAudio = node.type === CanvasNodeType.Audio;
-    const hasImage = isImage && Boolean(node.metadata?.content);
-    const hasVideo = isVideo && Boolean(node.metadata?.content);
-    const hasAudio = isAudio && Boolean(node.metadata?.content);
-    const isText = node.type === CanvasNodeType.Text;
-    const isConfig = node.type === CanvasNodeType.Config;
-    const canRetry = node.metadata?.status === "error" && !(isVideo && Boolean(node.metadata?.videoTaskId) && !hasVideo);
-    const canQueryVideoTask = isVideo && Boolean(node.metadata?.videoTaskId) && !hasVideo && node.metadata?.status !== "loading";
-    const quickImageToolIdSet = new Set(quickImageToolIds);
-    const copyImagePrompt = (target: CanvasNodeData) => {
-        const prompt = target.metadata?.prompt?.trim();
-        if (!prompt) {
-            message.warning(t("canvas.nodeToolbar.noPrompt"));
-            return;
-        }
-        copyText(prompt, t("common.promptCopied"));
-    };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onMaskEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
-    const selectedVideoSkill = videoSkills.find((skill) => skill.id === selectedVideoSkillId) || null;
-
-    async function prepareVideo() {
-        if (videoPreparationRef.current) return;
-        const controller = new AbortController();
-        videoPreparationRef.current = controller;
-        setVideoPreparing(true);
-        onKeep(activeNode.id);
-        try {
-            await onPrepareVideo(activeNode, selectedVideoSkill, controller.signal);
-        } catch (error) {
-            if (!controller.signal.aborted && !(error instanceof Error && error.name === "AbortError")) message.error(error instanceof Error ? error.message : "视频配置准备失败，请重试");
-        } finally {
-            if (videoPreparationRef.current === controller) {
-                videoPreparationRef.current = null;
-                if (!controller.signal.aborted) setVideoPreparing(false);
-            }
-        }
-    }
-
-    function openImageToolSettings() {
-        onKeep(activeNode.id);
-        setDraftImageToolIds(quickImageToolIds);
-        setDraftShowImageToolLabels(showImageToolLabels);
-        setImageToolSettingsOpen(true);
-    }
-
-    const baseToolbarTools: ToolbarTool[] = [
-        { id: "info", title: t("canvas.nodeToolbar.infoTitle"), label: t("canvas.nodeToolbar.info"), icon: <Info className="size-4" />, onClick: () => onInfo(node) },
-        ...(node.type === CanvasNodeType.Group && onUngroup ? [{ id: "ungroup", title: t("canvas.nodeToolbar.ungroupTitle"), label: t("canvas.nodeToolbar.ungroup"), icon: <Ungroup className="size-4" />, onClick: () => onUngroup(node) }] : []),
-        { id: "delete", title: t("canvas.nodeToolbar.removeTitle"), label: t("common.delete"), icon: <Trash2 className="size-4" />, onClick: () => onDelete(node), danger: true },
-    ];
-    const nodeToolbarTools: ToolbarTool[] = [
-        ...(canQueryVideoTask ? [{ id: "queryVideoTask", title: t("canvas.nodeToolbar.queryVideoTaskTitle"), label: t("canvas.nodeToolbar.queryVideoTask"), icon: <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
-        ...(canRetry ? [{ id: "retry", title: t("canvas.nodeToolbar.retryTitle"), label: t("canvas.node.retry"), icon: <RefreshCw className="size-4" />, onClick: () => onRetry(node) }] : []),
-        ...(hasImage || hasVideo || isText ? [{ id: "saveAsset", title: t("common.addToAssets"), label: t("canvas.nodeToolbar.saveAsset"), icon: <FolderPlus className="size-4" />, onClick: () => onSaveAsset(node) }] : []),
-        ...(hasImage || hasVideo || hasAudio ? [{ id: "download", title: t(hasAudio ? "canvas.nodeToolbar.downloadAudio" : hasVideo ? "canvas.nodeToolbar.downloadVideo" : "canvas.nodeToolbar.downloadImage"), label: t("common.download"), icon: <Download className="size-4" />, onClick: () => onDownload(node) }] : []),
-        ...(isVideo ? [{ id: "edit", title: t("common.edit"), label: t("common.edit"), icon: <MessageSquare className="size-4" />, onClick: () => onToggleDialog(node) }] : []),
-        ...(isText ? [{ id: "generateImage", title: t("canvas.node.generateImage"), label: t("canvas.node.generate"), icon: <ImageIcon className="size-4" />, onClick: () => onGenerateImage(node) }] : []),
-        ...(isConfig ? [{ id: "config", title: t("canvas.configNode.title"), label: t("canvas.configNode.title"), icon: <Settings2 className="size-4" />, onClick: () => onToggleDialog(node) }] : []),
-        ...(isText ? [{ id: "decreaseFont", title: t("canvas.nodeToolbar.decreaseFont"), label: t("canvas.nodeToolbar.zoomOut"), icon: <Minus className="size-4" />, onClick: () => onDecreaseFont(node) }] : []),
-        ...(isText ? [{ id: "increaseFont", title: t("canvas.nodeToolbar.increaseFont"), label: t("canvas.nodeToolbar.zoomIn"), icon: <Plus className="size-4" />, onClick: () => onIncreaseFont(node) }] : []),
-        ...(isImage && !hasImage ? [{ id: "uploadImage", title: t("canvas.nodeToolbar.uploadImage"), label: t("canvas.nodeToolbar.uploadImage"), icon: <Upload className="size-4" />, onClick: () => onUpload(node) }] : []),
-        ...(isVideo ? [{ id: "uploadVideo", title: t(hasVideo ? "canvas.nodeToolbar.replaceVideo" : "canvas.nodeToolbar.uploadVideo"), label: t(hasVideo ? "canvas.nodeToolbar.replaceVideo" : "canvas.nodeToolbar.uploadVideo"), icon: <Video className="size-4" />, onClick: () => onUpload(node) }] : []),
-        ...(isAudio ? [{ id: "uploadAudio", title: t(hasAudio ? "canvas.nodeToolbar.replaceAudio" : "canvas.nodeToolbar.uploadAudio"), label: t(hasAudio ? "canvas.nodeToolbar.replaceAudio" : "canvas.nodeToolbar.uploadAudio"), icon: <Music2 className="size-4" />, onClick: () => onUpload(node) }] : []),
-        ...(hasImage ? imageTools.map((tool) => ({ id: tool.id, title: tool.title, label: tool.label, icon: tool.icon, active: tool.active, onClick: tool.onClick })) : []),
-    ];
-    const toolbarTools = hasImage ? [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => quickImageToolIdSet.has(tool.id as ImageQuickToolId)) : [...baseToolbarTools, ...nodeToolbarTools, ...extraTools];
-    const selectableImageToolbarTools = [...baseToolbarTools, ...nodeToolbarTools].filter((tool) => tool.id !== "retry") as ImageToolbarSettingsTool[];
-
-    const closeImageToolSettings = () => {
-        setImageToolSettingsOpen(false);
-        onLeave();
-    };
-
-    const setDraftImageToolVisible = (id: ImageQuickToolId, visible: boolean) => {
-        setDraftImageToolIds((current) => {
-            const selected = new Set(current);
-            if (visible) selected.add(id);
-            else selected.delete(id);
-            return selectableImageToolbarTools.filter((tool) => selected.has(tool.id)).map((tool) => tool.id);
-        });
-    };
-
-    const saveImageToolSettings = () => {
-        const config = { ids: draftImageToolIds, showLabels: draftShowImageToolLabels };
-        setQuickImageToolIds(config.ids);
-        setShowImageToolLabels(config.showLabels);
-        window.localStorage.setItem(IMAGE_QUICK_TOOLS_STORAGE_KEY, JSON.stringify(config));
-        closeImageToolSettings();
-    };
-
-    return (
-        <>
-            <div
-                ref={toolbarRef}
-                className="absolute z-[70] flex w-max -translate-x-1/2 -translate-y-full flex-wrap items-center overflow-visible rounded-[18px] border border-black/10 bg-white text-[15px] text-[#242529] shadow-[0_8px_28px_rgba(15,23,42,.12)]"
-                data-node-toolbar={node.id}
-                style={{ left, top, maxWidth: toolbarMaxWidth }}
-                onMouseEnter={() => onKeep(node.id)}
-                onMouseLeave={() => {
-                    if (!imageToolSettingsOpen && !skillDropdownOpen && !videoPreparing) onLeave();
-                }}
-                onMouseDown={(event) => event.stopPropagation()}
-                onPointerDown={(event) => event.stopPropagation()}
-            >
-                {toolbarTools.map((tool) => (
-                    <ToolbarAction key={tool.id} {...tool} showLabel={isImage ? showImageToolLabels : true} />
-                ))}
-                {isText ? (
-                    <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
-                        <label htmlFor={`video-skill-${node.id}`} className="whitespace-nowrap text-[13px] text-[#64676f]">使用 Skill</label>
-                        <Select
-                            id={`video-skill-${node.id}`}
-                            aria-label="使用视频 Skill"
-                            className="min-w-0"
-                            style={{ width: Math.min(200, toolbarMaxWidth - 40) }}
-                            value={selectedVideoSkillId || ""}
-                            loading={videoSkillsLoading}
-                            disabled={videoPreparing}
-                            options={[{ value: "", label: "不使用 Skill" }, ...videoSkills.map((skill) => ({ value: skill.id, label: `${skill.name}${skill.installed ? "" : " · 未安装"}` }))]}
-                            onChange={(value) => setSelectedVideoSkillId(value || null)}
-                            onOpenChange={(open) => { setSkillDropdownOpen(open); if (open) onKeep(node.id); }}
-                            getPopupContainer={(trigger) => trigger.parentElement || document.body}
-                        />
-                        {videoSkillsError ? <Tooltip title={videoSkillsError}><Button size="small" aria-label="重新加载视频 Skill" onClick={() => setVideoSkillsReload((value) => value + 1)} icon={<RefreshCw className="size-3.5" />}>重试 Skill</Button></Tooltip> : null}
-                        <Tooltip title={selectedVideoSkill?.requiresReference ? "准备后连接参考图片，再在参数面板生成视频" : "创建视频参数节点并引用此文本，确认参数后再生成"}>
-                            <Button loading={videoPreparing} disabled={videoSkillsLoading || Boolean(selectedVideoSkillId && !selectedVideoSkill)} onClick={() => void prepareVideo()} icon={<Video className="size-4" />}>{selectedVideoSkill && !selectedVideoSkill.installed ? "安装并准备视频" : "准备视频"}</Button>
-                        </Tooltip>
-                    </div>
-                ) : null}
-                {hasImage ? <ToolbarAction id="more" title={t("canvas.imageTools.configure")} label={t("canvas.imageTools.more")} icon={<Ellipsis className="size-4" />} active={imageToolSettingsOpen} onClick={openImageToolSettings} showLabel={showImageToolLabels} /> : null}
-            </div>
-            {hasImage ? (
-                <ImageToolSettingsModal
-                    open={imageToolSettingsOpen}
-                    tools={selectableImageToolbarTools}
-                    selectedIds={draftImageToolIds}
-                    showLabels={draftShowImageToolLabels}
-                    onToggle={setDraftImageToolVisible}
-                    onShowLabelsChange={setDraftShowImageToolLabels}
-                    onCancel={closeImageToolSettings}
-                    onSave={saveImageToolSettings}
-                />
-            ) : null}
-        </>
+function readPreferences(): Preferences {
+  try {
+    return readImageQuickToolsConfig(
+      JSON.parse(localStorage.getItem(IMAGE_QUICK_TOOLS_STORAGE_KEY) || "null"),
     );
+  } catch {
+    return { ids: [...defaultImageQuickToolIds], showLabels: false };
+  }
 }
 
-export function CanvasNodeInfoModal({ node, open, onClose }: { node: CanvasNodeData | null; open: boolean; onClose: () => void }) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
-    const { t } = useTranslation();
-    const [view, setView] = useState<"info" | "json">("info");
-    const imageBytes = node?.type === CanvasNodeType.Image && node.metadata?.content ? getDataUrlByteSize(node.metadata.content) : 0;
-    const batchCount = node?.type === CanvasNodeType.Image ? node.metadata?.images?.length || 0 : 0;
-    const json = useMemo(() => {
-        if (!node) return "";
-        return JSON.stringify(
-            node,
-            (key, value) => {
-                if (key === "content" && typeof value === "string" && value.startsWith("data:image/")) {
-                    return "[base64 image]";
-                }
-                return value;
-            },
-            2,
+/** The request belongs to one node and project; changing either retires its results. */
+function useVideoRecipes(node: CanvasNodeData | null, projectId: string) {
+  const [scope, setScope] = useState(() => getPlatformInit()?.scopeId || "");
+  const [refresh, setRefresh] = useState(0);
+  const [state, setState] = useState<{
+    skills: CanvasVideoSkill[];
+    loading: boolean;
+    error: string;
+  }>({ skills: [], loading: false, error: "" });
+  useEffect(() => onPlatformInit((init) => setScope(init.scopeId)), []);
+  useEffect(() => {
+    if (node?.type !== CanvasNodeType.Text) {
+      setState({ skills: [], loading: false, error: "" });
+      return;
+    }
+    const request = new AbortController();
+    setState({ skills: [], loading: true, error: "" });
+    void platformRequest<{ skills: CanvasVideoSkill[] }>(
+      "skills.list",
+      {},
+      { signal: request.signal, timeoutMs: 20_000 },
+    )
+      .then((result) => {
+        if (request.signal.aborted) return;
+        const skills = (
+          Array.isArray(result.skills) ? result.skills : []
+        ).filter(
+          (skill) =>
+            skill &&
+            typeof skill.id === "string" &&
+            typeof skill.name === "string" &&
+            typeof skill.version === "string",
         );
-    }, [node]);
+        setState({ skills, loading: false, error: "" });
+      })
+      .catch((error: unknown) => {
+        if (!request.signal.aborted)
+          setState({
+            skills: [],
+            loading: false,
+            error: error instanceof Error ? error.message : "Skill 加载失败",
+          });
+      });
+    return () => request.abort();
+  }, [node?.id, node?.type, projectId, scope, refresh]);
+  return { ...state, retry: () => setRefresh((value) => value + 1) };
+}
 
-    useEffect(() => {
-        if (open) setView("info");
-    }, [node?.id, open]);
+/** A compact, theme-aware inspector placed next to the selected node. */
+export function CanvasNodeHoverToolbar(props: CanvasNodeHoverToolbarProps) {
+  const { node, viewport, canvasWidth, projectId, onKeep, onLeave } = props;
+  const { t } = useTranslation();
+  const { message } = App.useApp();
+  const theme = canvasThemes[useThemeStore((state) => state.theme)];
+  const copy = useCopyText();
+  const toolbar = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(96);
+  const [preferences, setPreferences] = useState(readPreferences);
+  const [draft, setDraft] = useState<Preferences>(preferences);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [skillOpen, setSkillOpen] = useState(false);
+  const [skillId, setSkillId] = useState("");
+  const [preparing, setPreparing] = useState(false);
+  const operation = useRef<AbortController | null>(null);
+  const recipes = useVideoRecipes(node, projectId);
 
-    const title = (
-        <div className="flex items-center justify-between gap-4 pr-12">
-            <span>{t("canvas.nodeToolbar.nodeInfo")}</span>
-            <Segmented
-                size="small"
-                value={view}
-                onChange={(value) => setView(value as "info" | "json")}
-                options={[
-                    { label: t("canvas.nodeToolbar.info"), value: "info" },
-                    { label: "JSON", value: "json" },
-                ]}
+  useEffect(() => {
+    setSettingsOpen(false);
+    setSkillOpen(false);
+    setSkillId("");
+    setPreparing(false);
+    return () => {
+      operation.current?.abort();
+      operation.current = null;
+    };
+  }, [node?.id, projectId]);
+  useLayoutEffect(() => {
+    if (!toolbar.current) return;
+    const measure = () => setHeight(toolbar.current?.offsetHeight || 96);
+    const observer = new ResizeObserver(measure);
+    observer.observe(toolbar.current);
+    measure();
+    return () => observer.disconnect();
+  }, [node?.id]);
+  if (!node) return null;
+  const target = node;
+  const hasContent = Boolean(node.metadata?.content);
+  const image = node.type === CanvasNodeType.Image;
+  const text = node.type === CanvasNodeType.Text;
+  const video = node.type === CanvasNodeType.Video;
+  const audio = node.type === CanvasNodeType.Audio;
+  const base: Action[] = [
+    {
+      id: "info",
+      title: t("canvas.nodeToolbar.infoTitle"),
+      label: t("canvas.nodeToolbar.info"),
+      icon: <Info className="size-4" />,
+      onClick: () => props.onInfo(target),
+    },
+  ];
+  if (hasContent && (image || video || audio))
+    base.push({
+      id: "download",
+      title: t("common.download"),
+      label: t("common.download"),
+      icon: <Download className="size-4" />,
+      onClick: () => props.onDownload(target),
+    });
+  if (text || (hasContent && (image || video)))
+    base.push({
+      id: "saveAsset",
+      title: t("common.addToAssets"),
+      label: t("canvas.nodeToolbar.saveAsset"),
+      icon: <FolderPlus className="size-4" />,
+      onClick: () => props.onSaveAsset(target),
+    });
+  const editing: Action[] = [];
+  if (image && hasContent)
+    editing.push(
+      ...buildImageToolbarTools(node, {
+        ...props,
+        onCopyPrompt: (item) => {
+          const prompt = item.metadata?.prompt?.trim();
+          if (prompt) copy(prompt, t("common.promptCopied"));
+          else message.warning(t("canvas.nodeToolbar.noPrompt"));
+        },
+      }),
+    );
+  else if (image || video || audio)
+    editing.push({
+      id: "upload",
+      title: t(
+        video
+          ? hasContent
+            ? "canvas.nodeToolbar.replaceVideo"
+            : "canvas.nodeToolbar.uploadVideo"
+          : audio
+            ? hasContent
+              ? "canvas.nodeToolbar.replaceAudio"
+              : "canvas.nodeToolbar.uploadAudio"
+            : "canvas.nodeToolbar.uploadImage",
+      ),
+      label: t("canvas.importAsset"),
+      icon: audio ? (
+        <Music2 className="size-4" />
+      ) : (
+        <Upload className="size-4" />
+      ),
+      onClick: () => props.onUpload(target),
+    });
+  if (text)
+    editing.push(
+      {
+        id: "generateImage",
+        title: t("canvas.node.generateImage"),
+        label: t("canvas.node.generate"),
+        icon: <ImageIcon className="size-4" />,
+        onClick: () => props.onGenerateImage(target),
+      },
+      {
+        id: "smaller",
+        title: t("canvas.nodeToolbar.decreaseFont"),
+        label: t("canvas.nodeToolbar.zoomOut"),
+        icon: <Minus className="size-4" />,
+        onClick: () => props.onDecreaseFont(target),
+      },
+      {
+        id: "larger",
+        title: t("canvas.nodeToolbar.increaseFont"),
+        label: t("canvas.nodeToolbar.zoomIn"),
+        icon: <Plus className="size-4" />,
+        onClick: () => props.onIncreaseFont(target),
+      },
+    );
+  if (video || node.type === CanvasNodeType.Config)
+    editing.push({
+      id: "parameters",
+      title: t("common.edit"),
+      label: t("common.edit"),
+      icon: <Settings2 className="size-4" />,
+      onClick: () => props.onToggleDialog(target),
+    });
+  if (node.type === CanvasNodeType.Group && props.onUngroup)
+    editing.push({
+      id: "ungroup",
+      title: t("canvas.nodeToolbar.ungroupTitle"),
+      label: t("canvas.nodeToolbar.ungroup"),
+      icon: <Ungroup className="size-4" />,
+      onClick: () => props.onUngroup?.(target),
+    });
+  const removal: Action = {
+    id: "delete",
+    title: t("canvas.nodeToolbar.removeTitle"),
+    label: t("common.delete"),
+    icon: <Trash2 className="size-4" />,
+    danger: true,
+    onClick: () => props.onDelete(target),
+  };
+  const configurable = [...base, ...editing, removal];
+  const selectedIds = new Set<string>(preferences.ids);
+  const visible =
+    image && hasContent
+      ? configurable.filter((action) => selectedIds.has(action.id))
+      : configurable;
+  const pendingVideo =
+    video && Boolean(node.metadata?.videoTaskId) && !hasContent;
+  const queryable = pendingVideo && node.metadata?.status !== "loading";
+  const retryable = node.metadata?.status === "error" && !pendingVideo;
+  const primary: Action[] =
+    retryable || queryable
+      ? [
+          {
+            id: "retry",
+            title: t(
+              queryable
+                ? "canvas.nodeToolbar.queryVideoTaskTitle"
+                : "canvas.nodeToolbar.retryTitle",
+            ),
+            label: t(
+              queryable
+                ? "canvas.nodeToolbar.queryVideoTask"
+                : "canvas.node.retry",
+            ),
+            icon: <RefreshCw className="size-4" />,
+            onClick: () => props.onRetry(target),
+          },
+        ]
+      : [];
+  const chosenSkill = recipes.skills.find((skill) => skill.id === skillId);
+  const width = Math.min(440, Math.max(120, canvasWidth - 24));
+  const half = width / 2;
+  const center = viewport.x + (node.position.x + node.width / 2) * viewport.k;
+  const left = Math.max(12 + half, Math.min(canvasWidth - half - 12, center));
+  const top = Math.max(
+    12 + height,
+    viewport.y + node.position.y * viewport.k - 12,
+  );
+  const launchVideo = async () => {
+    if (operation.current) return;
+    const controller = new AbortController();
+    operation.current = controller;
+    setPreparing(true);
+    onKeep(target.id);
+    try {
+      await props.onPrepareVideo(
+        target,
+        chosenSkill || null,
+        controller.signal,
+      );
+    } catch (error) {
+      if (!controller.signal.aborted)
+        message.error(error instanceof Error ? error.message : "视频准备失败");
+    } finally {
+      if (operation.current === controller) {
+        operation.current = null;
+        if (!controller.signal.aborted) setPreparing(false);
+      }
+    }
+  };
+  const savePreferences = () => {
+    setPreferences(draft);
+    setSettingsOpen(false);
+    try {
+      localStorage.setItem(
+        IMAGE_QUICK_TOOLS_STORAGE_KEY,
+        JSON.stringify(draft),
+      );
+    } catch {
+      message.info("已应用本次设置；浏览器未允许保存偏好");
+    }
+    onLeave();
+  };
+  return (
+    <>
+      <section
+        ref={toolbar}
+        data-node-toolbar={node.id}
+        aria-label="节点操作"
+        className="absolute z-[70] -translate-x-1/2 -translate-y-full rounded-xl border p-1.5 shadow-xl"
+        style={{
+          left,
+          top,
+          width,
+          background: theme.toolbar.panel,
+          color: theme.node.text,
+          borderColor: theme.toolbar.border,
+        }}
+        onMouseEnter={() => onKeep(target.id)}
+        onMouseLeave={() => {
+          if (!settingsOpen && !skillOpen && !preparing) onLeave();
+        }}
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div
+          className="flex items-center gap-2 border-b px-2 pb-1.5 text-xs"
+          style={{ borderColor: theme.toolbar.border }}
+        >
+          <span className="min-w-0 flex-1 truncate font-medium">
+            {node.title || t("canvas.node.untitled")}
+          </span>
+          <span style={{ color: theme.node.muted }}>
+            {Math.round(node.width)} × {Math.round(node.height)}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-0.5 pt-1">
+          {[...primary, ...visible, ...(props.extraTools || [])].map(
+            (action) => (
+              <NodeAction
+                key={action.id}
+                action={action}
+                labels={image ? preferences.showLabels : true}
+              />
+            ),
+          )}
+          {image && hasContent ? (
+            <NodeAction
+              labels={preferences.showLabels}
+              action={{
+                id: "more",
+                title: t("canvas.imageTools.configure"),
+                label: t("canvas.imageTools.more"),
+                icon: <Ellipsis className="size-4" />,
+                onClick: () => {
+                  setDraft({
+                    ids: [...preferences.ids],
+                    showLabels: preferences.showLabels,
+                  });
+                  setSettingsOpen(true);
+                  onKeep(target.id);
+                },
+              }}
             />
+          ) : null}
         </div>
-    );
-
-    return (
-        <Modal className="canvas-node-info-modal" title={title} open={open && Boolean(node)} centered footer={null} onCancel={onClose}>
-            {node ? (
-                <div className="h-[56vh] min-h-[360px] select-text text-sm" data-canvas-shortcuts-ignore>
-                    {view === "info" ? (
-                        <div className="thin-scrollbar h-full space-y-3 overflow-auto pr-1">
-                            <InfoRow label="ID" value={node.id} />
-                            <InfoRow label={t("canvas.nodeToolbar.name")} value={node.title || t("canvas.node.untitled")} />
-                            <InfoRow label={t("canvas.nodeToolbar.type")} value={node.type === CanvasNodeType.Group ? t("canvas.node.group") : node.type === CanvasNodeType.Config ? t("canvas.configNode.title") : [CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Audio, CanvasNodeType.Text].includes(node.type as CanvasNodeType) ? t(`assets.kinds.${node.type}`) : getNodeDefinition(node.type)?.title || node.type} />
-                            <InfoRow label={t("canvas.nodeToolbar.size")} value={`${Math.round(node.width)} x ${Math.round(node.height)}`} />
-                            <InfoRow label={t("canvas.nodeToolbar.position")} value={`${Math.round(node.position.x)}, ${Math.round(node.position.y)}`} />
-                            <InfoRow label={t("canvas.nodeToolbar.status")} value={node.metadata?.status || "idle"} />
-                            {batchCount > 1 ? <InfoRow label={t("canvas.nodeToolbar.imageGroup")} value={t("canvas.configNode.images", { count: batchCount })} /> : null}
-                            {node.metadata?.prompt ? <InfoRow label={t("canvas.configNode.prompt")} value={node.metadata.prompt} /> : null}
-                            {node.metadata?.videoTaskId ? <InfoRow label={t("canvas.nodeToolbar.videoTaskId")} value={node.metadata.videoTaskId} /> : null}
-                            {imageBytes ? <InfoRow label={t("canvas.nodeToolbar.imageSize")} value={formatBytes(imageBytes)} /> : null}
-                            {node.metadata?.errorDetails ? (
-                                <div className="rounded-lg border p-3 text-red-400" style={{ borderColor: theme.node.stroke }}>
-                                    {node.metadata.errorDetails}
-                                </div>
-                            ) : null}
-                        </div>
-                    ) : (
-                        <pre className="thin-scrollbar h-full overflow-auto rounded-lg border p-3 text-xs leading-5" style={{ background: theme.node.fill, borderColor: theme.node.stroke, color: theme.node.text }}>
-                            {json}
-                        </pre>
-                    )}
-                </div>
+        {text ? (
+          <div
+            className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-t p-1 pt-2"
+            style={{ borderColor: theme.toolbar.border }}
+          >
+            <Select
+              aria-label="使用视频 Skill"
+              placeholder="选择视频 Skill"
+              value={skillId}
+              loading={recipes.loading}
+              disabled={preparing}
+              className="min-w-0"
+              options={[
+                { value: "", label: "不使用 Skill" },
+                ...recipes.skills.map((skill) => ({
+                  value: skill.id,
+                  label: skill.name + (skill.installed ? "" : " · 未安装"),
+                })),
+              ]}
+              onChange={setSkillId}
+              onOpenChange={(open) => {
+                setSkillOpen(open);
+                if (open) onKeep(target.id);
+              }}
+              getPopupContainer={(trigger) =>
+                trigger.parentElement || document.body
+              }
+            />
+            <Button
+              loading={preparing}
+              disabled={recipes.loading || Boolean(skillId && !chosenSkill)}
+              onClick={() => void launchVideo()}
+              icon={<Video className="size-4" />}
+            >
+              {chosenSkill && !chosenSkill.installed
+                ? "安装并准备视频"
+                : "准备视频"}
+            </Button>
+            {recipes.error ? (
+              <button
+                type="button"
+                className="col-span-2 text-left text-xs text-red-400"
+                onClick={recipes.retry}
+                title={recipes.error}
+              >
+                Skill 加载失败，点击重试
+              </button>
             ) : null}
-        </Modal>
-    );
+            {chosenSkill?.requiresReference ? (
+              <span
+                className="col-span-2 text-xs"
+                style={{ color: theme.node.muted }}
+              >
+                准备后连接参考图片，再确认视频参数。
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+      {image && hasContent ? (
+        <ImageToolSettingsModal
+          open={settingsOpen}
+          tools={configurable as ImageToolbarSettingsTool[]}
+          selectedIds={draft.ids}
+          showLabels={draft.showLabels}
+          onShowLabelsChange={(showLabels) =>
+            setDraft((current) => ({ ...current, showLabels }))
+          }
+          onToggle={(id, enabled) =>
+            setDraft((current) => ({
+              ...current,
+              ids: enabled
+                ? [...new Set([...current.ids, id])]
+                : current.ids.filter((value) => value !== id),
+            }))
+          }
+          onCancel={() => {
+            setSettingsOpen(false);
+            onLeave();
+          }}
+          onSave={savePreferences}
+        />
+      ) : null}
+    </>
+  );
 }
 
-function ToolbarAction({ title, label, icon, onClick, showLabel, active = false, danger = false }: ToolbarTool & { showLabel: boolean }) {
-    const hasText = showLabel && Boolean(label);
-    return (
-        <Tooltip title={title} placement="top" mouseEnterDelay={0.2} color="#ffffff" styles={{ root: { color: "#242529", boxShadow: "0 8px 24px rgba(15,23,42,.16)", fontSize: 13, fontWeight: 500 } }}>
-            <button type="button" className={`group relative flex h-12 items-center whitespace-nowrap px-1.5 ${danger ? "text-[#ef4444]" : ""}`} onClick={onClick} aria-label={title}>
-                <span className={`flex h-9 items-center ${hasText ? "gap-2 px-2.5" : "justify-center px-2"} rounded-lg transition group-hover:bg-[#f0f0f1] ${active ? "bg-[#eeeeef]" : ""}`}>
-                    {icon}
-                    {hasText ? <span>{label}</span> : null}
-                </span>
-            </button>
-        </Tooltip>
-    );
+function NodeAction({ action, labels }: { action: Action; labels: boolean }) {
+  const theme = canvasThemes[useThemeStore((state) => state.theme)];
+  return (
+    <button
+      type="button"
+      aria-label={action.title}
+      aria-pressed={action.active || undefined}
+      title={action.title}
+      onClick={action.onClick}
+      className="flex h-8 items-center justify-center gap-1.5 rounded-md px-2 text-xs transition hover:brightness-125 focus-visible:outline-2"
+      style={{
+        color: action.danger ? "#f87171" : theme.node.text,
+        background: action.active ? theme.toolbar.activeBg : undefined,
+      }}
+    >
+      {action.icon}
+      {labels ? action.label : null}
+    </button>
+  );
 }
 
-function InfoRow({ label, value }: { label: string; value: ReactNode }) {
-    return (
-        <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3">
-            <span className="opacity-50">{label}</span>
-            <span className="min-w-0 whitespace-pre-wrap break-words">{value}</span>
-        </div>
-    );
+/** Inspect persisted metadata without expanding inline binary payloads. */
+export function CanvasNodeInfoModal({
+  node,
+  open,
+  onClose,
+}: {
+  node: CanvasNodeData | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const [view, setView] = useState("info");
+  const theme = canvasThemes[useThemeStore((state) => state.theme)];
+  useEffect(() => {
+    if (open) setView("info");
+  }, [open, node?.id]);
+  const json = useMemo(
+    () =>
+      node
+        ? JSON.stringify(
+            node,
+            (_key, value) =>
+              typeof value === "string" &&
+              /^data:(image|video|audio)\//i.test(value)
+                ? "[inline media]"
+                : value,
+            2,
+          )
+        : "",
+    [node],
+  );
+  const rows: [string, ReactNode][] = node
+    ? [
+        ["ID", node.id],
+        [t("canvas.nodeToolbar.name"), node.title || t("canvas.node.untitled")],
+        [
+          t("canvas.nodeToolbar.type"),
+          getNodeDefinition(node.type)?.title || node.type,
+        ],
+        [
+          t("canvas.nodeToolbar.size"),
+          `${Math.round(node.width)} × ${Math.round(node.height)}`,
+        ],
+        [
+          t("canvas.nodeToolbar.position"),
+          `${Math.round(node.position.x)}, ${Math.round(node.position.y)}`,
+        ],
+        [t("canvas.nodeToolbar.status"), node.metadata?.status || "idle"],
+      ]
+    : [];
+  if (node?.metadata?.prompt)
+    rows.push([t("canvas.configNode.prompt"), node.metadata.prompt]);
+  if (node?.metadata?.videoTaskId)
+    rows.push([t("canvas.nodeToolbar.videoTaskId"), node.metadata.videoTaskId]);
+  if (node?.metadata?.images?.length)
+    rows.push([
+      t("canvas.nodeToolbar.imageGroup"),
+      node.metadata.images.length,
+    ]);
+  const bytes =
+    node?.metadata?.bytes ||
+    (node?.metadata?.content && node.type === CanvasNodeType.Image
+      ? getDataUrlByteSize(node.metadata.content)
+      : 0);
+  if (bytes) rows.push([t("canvas.nodeToolbar.imageSize"), formatBytes(bytes)]);
+  return (
+    <Modal
+      open={open && Boolean(node)}
+      onCancel={onClose}
+      footer={null}
+      title={t("canvas.nodeToolbar.nodeInfo")}
+      centered
+    >
+      <Segmented
+        className="mb-4"
+        value={view}
+        onChange={(value) => setView(String(value))}
+        options={[
+          { label: t("canvas.nodeToolbar.info"), value: "info" },
+          { label: "JSON", value: "json" },
+        ]}
+      />
+      <div
+        className="thin-scrollbar max-h-[56vh] min-h-64 overflow-auto select-text text-sm"
+        data-canvas-shortcuts-ignore
+      >
+        {view === "json" ? (
+          <pre
+            className="whitespace-pre-wrap break-all rounded-lg p-3 text-xs"
+            style={{ background: theme.node.fill, color: theme.node.text }}
+          >
+            {json}
+          </pre>
+        ) : (
+          <dl className="grid grid-cols-[90px_minmax(0,1fr)] gap-x-3 gap-y-3">
+            {rows.map(([label, value]) => (
+              <div key={label} className="contents">
+                <dt className="opacity-60">{label}</dt>
+                <dd className="min-w-0 whitespace-pre-wrap break-words">
+                  {value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {view === "info" && node?.metadata?.errorDetails ? (
+          <p className="mt-4 rounded-lg border border-red-400/30 p-3 text-red-400">
+            {node.metadata.errorDetails}
+          </p>
+        ) : null}
+      </div>
+    </Modal>
+  );
 }

@@ -72,8 +72,9 @@ public class JobService {
         List<String> refs=r.referenceAssetIds()==null?List.of():r.referenceAssetIds();if(refs.stream().anyMatch(s->s==null||s.isBlank()))throw ApiException.invalid("参考素材标识不能为空");refs=List.copyOf(refs);if(refs.size()>4)throw ApiException.invalid("最多支持 4 张参考图");
         String mode=r.videoMode();
         if(mode!=null&&(!r.kind().equals("video")||!List.of("auto","reference","frames").contains(mode)))throw ApiException.invalid("videoMode 仅用于视频，须为 auto、reference 或 frames");
-        if(r.kind().equals("video")&&("frames".equals(mode)||mode==null)&&refs.size()>2)throw ApiException.invalid("首尾帧模式最多支持 2 张参考图，多图请使用参考模式");
+        if(r.kind().equals("video")&&"frames".equals(mode)&&refs.size()>2)throw ApiException.invalid("首尾帧模式最多支持 2 张参考图，多图请使用参考模式");
         if("frames".equals(mode)&&refs.isEmpty())throw ApiException.invalid("首尾帧模式需要至少一张首帧图片");
+        if(r.kind().equals("video")&&mode==null)mode="reference";
         if((r.skillId()==null)!=(r.skillVersion()==null) || (r.skillId()!=null && (!r.skillId().matches("[a-z][a-z0-9-]{0,63}") || !r.skillVersion().matches("[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}"))))throw ApiException.invalid("skillId 与 skillVersion 格式无效，且须一起提供");
         return new Request(r.projectId(),r.nodeId(),r.kind(),r.prompt().trim(),model,width,height,duration,refs,r.skillId(),r.skillVersion(),mode);
     }

@@ -1,8 +1,8 @@
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 
 export type CanvasExportFile = {
-    app: "infinite-canvas";
-    version: 3;
+    app: "yingxu-atlas";
+    version: 4;
     exportedAt: string;
     projects: CanvasProjectExportItem[];
 };

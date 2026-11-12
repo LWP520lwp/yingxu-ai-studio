@@ -18,7 +18,9 @@ class SettingsAndRequestTest {
     }
     @Test void unsupportedInputFailsBeforeCallingAProvider(){
         assertThrows(ApiException.class,()->JobService.normalize(new JobService.Request("p","n",null,"prompt",null,null,null,null,null)));
-        assertThrows(ApiException.class,()->JobService.normalize(new JobService.Request("p","n","video","prompt",null,null,null,null,List.of("a","b","c"))));
+        var generic=JobService.normalize(new JobService.Request("p","n","video","prompt",null,null,null,null,List.of("a","b","c")));
+        assertEquals("reference",generic.videoMode());assertEquals(List.of("a","b","c"),generic.referenceAssetIds());
+        assertThrows(ApiException.class,()->JobService.normalize(new JobService.Request("p","n","video","prompt",null,null,null,null,List.of("a","b","c"),null,null,"frames")));
         assertThrows(ApiException.class,()->JobService.normalize(new JobService.Request("p","n","image","prompt",null,100000,20,null,null)));
     }
     @Test void optionalSkillIdentityIsValidatedAndAbsentFieldsKeepExistingIdempotencySerialization(){

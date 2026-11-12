@@ -2,44 +2,82 @@ import type { CanvasNodeData, Position, ViewportTransform } from "@/types/canvas
 
 export const VIEWPORT_LIMITS = { minScale: 0.05, maxScale: 5 } as const;
 
+const finite = (value: number, fallback = 0) => (Number.isFinite(value) ? value : fallback);
+const coordinate = (viewport: ViewportTransform) => ({ x: finite(viewport.x), y: finite(viewport.y) });
+
 export function clampScale(scale: number) {
-    return Math.min(VIEWPORT_LIMITS.maxScale, Math.max(VIEWPORT_LIMITS.minScale, Number.isFinite(scale) ? scale : 1));
+    return Math.min(VIEWPORT_LIMITS.maxScale, Math.max(VIEWPORT_LIMITS.minScale, finite(scale, 1)));
 }
 
 export function worldPoint(viewport: ViewportTransform, screen: Position): Position {
-    return { x: (screen.x - viewport.x) / viewport.k, y: (screen.y - viewport.y) / viewport.k };
+    const offset = coordinate(viewport);
+    const scale = clampScale(viewport.k);
+    return { x: (finite(screen.x) - offset.x) / scale, y: (finite(screen.y) - offset.y) / scale };
 }
 
 export function screenPoint(viewport: ViewportTransform, world: Position): Position {
-    return { x: world.x * viewport.k + viewport.x, y: world.y * viewport.k + viewport.y };
+    const offset = coordinate(viewport);
+    const scale = clampScale(viewport.k);
+    return { x: finite(world.x) * scale + offset.x, y: finite(world.y) * scale + offset.y };
 }
 
 export function panViewport(viewport: ViewportTransform, dx: number, dy: number): ViewportTransform {
-    return { x: viewport.x + dx, y: viewport.y + dy, k: viewport.k };
+    const offset = coordinate(viewport);
+    return { x: offset.x + finite(dx), y: offset.y + finite(dy), k: clampScale(viewport.k) };
 }
 
 export function zoomViewportAt(viewport: ViewportTransform, screen: Position, wheelDelta: number): ViewportTransform {
-    const nextScale = clampScale(viewport.k * Math.pow(1.1, -wheelDelta / 100));
-    const anchor = worldPoint(viewport, screen);
-    return { x: screen.x - anchor.x * nextScale, y: screen.y - anchor.y * nextScale, k: nextScale };
+    const anchor = { x: finite(screen.x), y: finite(screen.y) };
+    const nextScale = clampScale(clampScale(viewport.k) * Math.pow(1.1, -finite(wheelDelta) / 100));
+    const world = worldPoint(viewport, anchor);
+    return { x: anchor.x - world.x * nextScale, y: anchor.y - world.y * nextScale, k: nextScale };
+}
+
+function centerX(node: CanvasNodeData) {
+    return node.position.x + node.width / 2;
+}
+
+function port(node: CanvasNodeData, side: "left" | "right"): Position {
+    return { x: node.position.x + (side === "right" ? node.width : 0), y: node.position.y + node.height / 2 };
+}
+
+function pointsBetween(from: CanvasNodeData, to: CanvasNodeData) {
+    const direction = centerX(to) >= centerX(from) ? 1 : -1;
+    return {
+        start: port(from, direction > 0 ? "right" : "left"),
+        end: port(to, direction > 0 ? "left" : "right"),
+    };
+}
+
+function curvePath(start: Position, end: Position, minimumBend: number) {
+    const direction = end.x >= start.x ? 1 : -1;
+    const bend = Math.max(minimumBend, Math.abs(end.x - start.x) * 0.5);
+    const control1 = { x: start.x + direction * bend, y: start.y };
+    const control2 = { x: end.x - direction * bend, y: end.y };
+    return { control1, control2, path: `M ${start.x} ${start.y} C ${control1.x} ${control1.y}, ${control2.x} ${control2.y}, ${end.x} ${end.y}` };
 }
 
 export function connectionCurve(from: CanvasNodeData, to: CanvasNodeData) {
-    const start = { x: from.position.x + from.width, y: from.position.y + from.height / 2 };
-    const end = { x: to.position.x, y: to.position.y + to.height / 2 };
-    const distance = Math.abs(end.x - start.x);
-    const bend = Math.max(50, distance * 0.5);
-    return { start, end, path: `M ${start.x} ${start.y} C ${start.x + bend} ${start.y}, ${end.x - bend} ${end.y}, ${end.x} ${end.y}` };
+    const { start, end } = pointsBetween(from, to);
+    return { start, end, ...curvePath(start, end, 50) };
+}
+
+function sideFacing(node: CanvasNodeData, point: Position) {
+    return point.x >= centerX(node) ? "right" : "left";
 }
 
 export function activeConnectionCurve(node: CanvasNodeData, handleType: "source" | "target", pointer: Position, target?: CanvasNodeData) {
-    const source = handleType === "source" ? node : target;
-    const destination = handleType === "source" ? target : node;
-    const start = source ? { x: source.position.x + source.width, y: source.position.y + source.height / 2 } : pointer;
-    const end = destination ? { x: destination.position.x, y: destination.position.y + destination.height / 2 } : pointer;
-    if (handleType === "target" && !target) return { start: pointer, end: { x: node.position.x, y: node.position.y + node.height / 2 }, path: `M ${pointer.x} ${pointer.y} L ${node.position.x} ${node.position.y + node.height / 2}` };
-    if (handleType === "source" && !target) return { start: { x: node.position.x + node.width, y: node.position.y + node.height / 2 }, end: pointer, path: `M ${node.position.x + node.width} ${node.position.y + node.height / 2} L ${pointer.x} ${pointer.y}` };
-    const distance = Math.abs(end.x - start.x);
-    const bend = Math.max(40, distance * 0.5);
-    return { start, end, path: `M ${start.x} ${start.y} C ${start.x + bend} ${start.y}, ${end.x - bend} ${end.y}, ${end.x} ${end.y}` };
+    if (target) {
+        const { start, end } = handleType === "source" ? pointsBetween(node, target) : pointsBetween(target, node);
+        return { start, end, ...curvePath(start, end, 40) };
+    }
+
+    const safePointer = { x: finite(pointer.x), y: finite(pointer.y) };
+    if (handleType === "source") {
+        const start = port(node, sideFacing(node, safePointer));
+        return { start, end: safePointer, path: `M ${start.x} ${start.y} L ${safePointer.x} ${safePointer.y}` };
+    }
+
+    const end = port(node, sideFacing(node, safePointer));
+    return { start: safePointer, end, path: `M ${safePointer.x} ${safePointer.y} L ${end.x} ${end.y}` };
 }

@@ -673,6 +673,7 @@ function Workbench() {
         height: node.data.height || 1024,
         duration: node.data.duration || 5,
         referenceAssetIds: references,
+        ...(node.data.kind === "video" ? { videoMode: node.data.videoMode || "reference" } : {}),
         skillId: node.data.skillId,
         skillVersion: node.data.skillVersion,
       };
@@ -889,12 +890,13 @@ function Workbench() {
     workspaceTransition.current = true;
     navigationSequence.current += 1;
     setBusy("navigation");
+    setError("");
+    if (kind) draftLibrary.setKind(kind);
+    setMode("home");
     try {
       await flushWorkspace();
-      if (kind) draftLibrary.setKind(kind);
       // The library needs summaries only; release saved editors and their media/iframe memory.
       setOpenedWorkspaces({});
-      setMode("home");
     } catch (cause) { setError(message(cause)); }
     finally { workspaceTransition.current = false; setBusy(""); }
   }

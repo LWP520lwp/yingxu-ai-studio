@@ -23,65 +23,145 @@ export type CanvasAgentSnapshot = {
     viewport: ViewportTransform;
 };
 
+type CanvasState = Pick<CanvasAgentSnapshot, "nodes" | "connections" | "selectedNodeIds" | "viewport">;
+
 export function summarizeCanvasAgentOps(ops?: CanvasAgentOp[]) {
-    const counts = (Array.isArray(ops) ? ops : []).reduce<Record<string, number>>((acc, op) => {
-        if (!op?.type) return acc;
-        acc[op.type] = (acc[op.type] || 0) + 1;
-        return acc;
-    }, {});
-    return Object.entries(counts)
-        .map(([type, count]) => `${opLabel(type)} ${count}`)
-        .join("，");
+    const counts = new Map<string, number>();
+    for (const op of Array.isArray(ops) ? ops : []) {
+        if (!op || typeof op.type !== "string") continue;
+        counts.set(op.type, (counts.get(op.type) || 0) + 1);
+    }
+    return [...counts].map(([type, count]) => `${opLabel(type)} ${count}`).join("，");
+}
+
+function finite(value: number, fallback: number) {
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function positive(value: number, fallback: number) {
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function uniqueId(preferred: string | undefined, exists: (id: string) => boolean) {
+    if (preferred && !exists(preferred)) return preferred;
+    let id = nanoid();
+    while (exists(id)) id = nanoid();
+    return id;
+}
+
+function createNode(state: CanvasState, op: Extract<CanvasAgentOp, { type: "add_node" }>, index: number): CanvasState {
+    const nodeType = op.nodeType && isRegisteredNodeType(op.nodeType) ? op.nodeType : CanvasNodeType.Text;
+    const spec = getNodeSpec(nodeType);
+    const id = uniqueId(op.id, (candidate) => state.nodes.some((node) => node.id === candidate));
+    const fallbackPosition = { x: index * 36, y: index * 36 };
+    const requestedPosition = op.position || { x: op.x ?? fallbackPosition.x, y: op.y ?? fallbackPosition.y };
+    const node: CanvasNodeData = {
+        id,
+        type: nodeType,
+        title: op.title?.trim() || spec.title,
+        position: { x: finite(requestedPosition.x, fallbackPosition.x), y: finite(requestedPosition.y, fallbackPosition.y) },
+        width: positive(op.width ?? spec.width, spec.width),
+        height: positive(op.height ?? spec.height, spec.height),
+        metadata: { ...spec.metadata, ...op.metadata },
+    };
+    return { ...state, nodes: [...state.nodes, node], selectedNodeIds: [node.id] };
+}
+
+function updateNode(state: CanvasState, op: Extract<CanvasAgentOp, { type: "update_node" }>): CanvasState {
+    if (!op.id) return state;
+    const target = state.nodes.find((node) => node.id === op.id);
+    if (!target) return state;
+    const patch = op.patch || {};
+    const nextType = patch.type && isRegisteredNodeType(patch.type) ? patch.type : target.type;
+    const position = patch.position || target.position;
+    const updated: CanvasNodeData = {
+        ...target,
+        ...patch,
+        id: target.id,
+        type: nextType,
+        position: { x: finite(position.x, target.position.x), y: finite(position.y, target.position.y) },
+        width: positive(patch.width ?? target.width, target.width),
+        height: positive(patch.height ?? target.height, target.height),
+        metadata: { ...target.metadata, ...patch.metadata, ...op.metadata },
+    };
+    return { ...state, nodes: state.nodes.map((node) => node.id === op.id ? updated : node) };
+}
+
+function deleteNodes(state: CanvasState, op: Extract<CanvasAgentOp, { type: "delete_node" }>): CanvasState {
+    const requestedIds = op.ids ?? (op.id ? [op.id] : op.nodeType ? state.nodes.filter((node) => node.type === op.nodeType).map((node) => node.id) : []);
+    const removed = new Set(requestedIds);
+    if (!removed.size) return state;
+    const nodes = state.nodes.filter((node) => !removed.has(node.id));
+    const remainingIds = new Set(nodes.map((node) => node.id));
+    return {
+        ...state,
+        nodes,
+        connections: state.connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId)),
+        selectedNodeIds: state.selectedNodeIds.filter((id) => remainingIds.has(id)),
+    };
+}
+
+function connectNodes(state: CanvasState, op: Extract<CanvasAgentOp, { type: "connect_nodes" }>): CanvasState {
+    if (!op.fromNodeId || !op.toNodeId || op.fromNodeId === op.toNodeId) return state;
+    const hasSource = state.nodes.some((node) => node.id === op.fromNodeId);
+    const hasTarget = state.nodes.some((node) => node.id === op.toNodeId);
+    const exists = state.connections.some((connection) => connection.fromNodeId === op.fromNodeId && connection.toNodeId === op.toNodeId);
+    if (!hasSource || !hasTarget || exists) return state;
+    const id = uniqueId(op.id, (candidate) => state.connections.some((connection) => connection.id === candidate));
+    return { ...state, connections: [...state.connections, { id, fromNodeId: op.fromNodeId, toNodeId: op.toNodeId }] };
+}
+
+function updateViewport(state: CanvasState, viewport: ViewportTransform): CanvasState {
+    return {
+        ...state,
+        viewport: {
+            x: finite(viewport.x, 0),
+            y: finite(viewport.y, 0),
+            k: Math.min(5, Math.max(0.05, finite(viewport.k, 1))),
+        },
+    };
+}
+
+function applyOperation(state: CanvasState, op: CanvasAgentOp, index: number): CanvasState {
+    switch (op.type) {
+        case "add_node":
+            return createNode(state, op, index);
+        case "update_node":
+            return updateNode(state, op);
+        case "delete_node":
+            return deleteNodes(state, op);
+        case "delete_connections": {
+            if (op.all) return state.connections.length ? { ...state, connections: [] } : state;
+            const ids = new Set(op.ids ?? (op.id ? [op.id] : []));
+            if (!ids.size) return state;
+            const connections = state.connections.filter((connection) => !ids.has(connection.id));
+            return connections.length === state.connections.length ? state : { ...state, connections };
+        }
+        case "connect_nodes":
+            return connectNodes(state, op);
+        case "set_viewport":
+            return updateViewport(state, op.viewport);
+        case "select_nodes": {
+            const known = new Set(state.nodes.map((node) => node.id));
+            const ids = [...new Set(op.ids)].filter((id) => known.has(id));
+            return { ...state, selectedNodeIds: ids };
+        }
+        case "run_generation":
+            return state;
+    }
 }
 
 export function applyCanvasAgentOps(snapshot: CanvasAgentSnapshot, ops?: CanvasAgentOp[]) {
-    let nodes = snapshot.nodes;
-    let connections = snapshot.connections;
-    let selectedNodeIds = snapshot.selectedNodeIds;
-    let viewport = snapshot.viewport;
-
-    (Array.isArray(ops) ? ops : []).forEach((op, index) => {
-        if (!op?.type) return;
-        if (op.type === "add_node") {
-            const nodeType = op.nodeType && isRegisteredNodeType(op.nodeType) ? op.nodeType : CanvasNodeType.Text;
-            const spec = getNodeSpec(nodeType);
-            const node: CanvasNodeData = {
-                id: op.id || `${nodeType}-${Date.now()}-${index}`,
-                type: nodeType,
-                title: op.title || spec.title,
-                position: op.position || { x: op.x ?? index * 36, y: op.y ?? index * 36 },
-                width: op.width || spec.width,
-                height: op.height || spec.height,
-                metadata: { ...spec.metadata, ...op.metadata },
-            };
-            nodes = [...nodes, node];
-            selectedNodeIds = [node.id];
-        }
-        if (op.type === "update_node") {
-            if (!op.id) return;
-            nodes = nodes.map((node) => (node.id === op.id ? { ...node, ...op.patch, metadata: { ...node.metadata, ...op.patch?.metadata, ...op.metadata } } : node));
-        }
-        if (op.type === "delete_node") {
-            const ids = new Set(op.ids || (op.id ? [op.id] : op.nodeType ? nodes.filter((node) => node.type === op.nodeType).map((node) => node.id) : []));
-            nodes = nodes.filter((node) => !ids.has(node.id));
-            connections = connections.filter((conn) => !ids.has(conn.fromNodeId) && !ids.has(conn.toNodeId));
-            selectedNodeIds = selectedNodeIds.filter((id) => !ids.has(id));
-        }
-        if (op.type === "delete_connections") {
-            const ids = new Set(op.ids || (op.id ? [op.id] : []));
-            connections = op.all ? [] : connections.filter((conn) => !ids.has(conn.id));
-        }
-        if (op.type === "connect_nodes") {
-            if (!op.fromNodeId || !op.toNodeId) return;
-            const exists = connections.some((conn) => conn.fromNodeId === op.fromNodeId && conn.toNodeId === op.toNodeId);
-            const hasNodes = nodes.some((node) => node.id === op.fromNodeId) && nodes.some((node) => node.id === op.toNodeId);
-            if (!exists && hasNodes) connections = [...connections, { id: op.id || nanoid(), fromNodeId: op.fromNodeId, toNodeId: op.toNodeId }];
-        }
-        if (op.type === "set_viewport" && op.viewport) viewport = op.viewport;
-        if (op.type === "select_nodes") selectedNodeIds = (op.ids || []).filter((id) => nodes.some((node) => node.id === id));
-    });
-
-    return { ...snapshot, nodes, connections, selectedNodeIds, viewport };
+    let state: CanvasState = {
+        nodes: snapshot.nodes,
+        connections: snapshot.connections,
+        selectedNodeIds: snapshot.selectedNodeIds,
+        viewport: snapshot.viewport,
+    };
+    for (const [index, op] of (Array.isArray(ops) ? ops : []).entries()) {
+        if (op && typeof op.type === "string") state = applyOperation(state, op, index);
+    }
+    return { ...snapshot, ...state };
 }
 
 function opLabel(type: string) {

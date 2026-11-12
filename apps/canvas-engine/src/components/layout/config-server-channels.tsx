@@ -89,6 +89,9 @@ export function ConfigServerChannels() {
         } finally { if (active.current) setRefreshingQuota(false); }
     };
     const builtinModels = (["image", "video"] as const).flatMap((capability) => catalog[capability].filter((model) => !model.id.startsWith("channel:")).map((model) => ({ ...model, capability })));
+    const builtinModelName = (model: (typeof builtinModels)[number]) => model.id.startsWith("muse-service-")
+        ? `内置 Muse ${model.capability === "video" ? "视频" : "图像"}模型`
+        : model.name || model.id;
 
     const save = async (draft: ChannelDraft) => {
         const result = await platformRequest<ServerChannel>("channels.save", {
@@ -136,15 +139,15 @@ export function ConfigServerChannels() {
         </div>
         <div className="ff-config-builtin">
             <div className="ff-config-service-icon"><Layers3 size={19} /></div>
-            <div className="min-w-0 flex-1"><strong>内置账号与生成渠道</strong><p>Muse 服务、个人网站账号与共享额度。</p></div>
+            <div className="min-w-0 flex-1"><strong>内置模型与账号</strong><p>Muse 模型、个人网站账号与共享额度。</p></div>
             <Button size="small" icon={<RefreshCw size={13} />} loading={refreshingQuota} disabled={loading} onClick={() => void refreshQuota()}>同步额度</Button>
         </div>
         {poolError ? <Alert className="mt-3" type="warning" showIcon message="账号额度暂时无法同步" description={poolError} /> : null}
         {pool?.sharedChannels ? <ConfigPoolQuota title="内置 Muse 共享服务" quota={pool.sharedChannels.muse.quota} /> : null}
-        <div className="ff-config-model-directory" aria-label="内置渠道模型">
-            <div className="ff-config-model-heading"><strong>内置渠道模型</strong><span>{builtinModels.length} 个模型</span></div>
+        <div className="ff-config-model-directory" aria-label="内置模型">
+            <div className="ff-config-model-heading"><strong>内置模型</strong><span>{builtinModels.length} 个模型</span></div>
             {builtinModels.map((model) => <div className="ff-config-model-row" key={model.id}>
-                <div><strong>{model.name || model.id}</strong><code>{model.id}</code></div>
+                <div><strong>{builtinModelName(model)}</strong><code>{model.id}</code></div>
                 <span className="ff-config-model-capability">{model.capability === "image" ? "图像" : "视频"}</span>
                 <Tag className="m-0" color={model.available ? "green" : undefined}>{model.available ? "可选" : "暂不可用"}</Tag>
             </div>)}

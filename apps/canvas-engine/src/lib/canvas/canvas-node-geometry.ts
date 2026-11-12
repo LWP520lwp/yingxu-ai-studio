@@ -1,176 +1,443 @@
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type ConnectionHandle, type ViewportTransform } from "@/types/canvas";
+import {
+    CanvasNodeType,
+    type CanvasConnection,
+    type CanvasNodeData,
+    type ConnectionHandle,
+    type ViewportTransform,
+} from "@/types/canvas";
 
-export function nodeBounds(nodes: CanvasNodeData[]) {
-    return nodes.reduce(
-        (acc, node) => ({
-            left: Math.min(acc.left, node.position.x),
-            top: Math.min(acc.top, node.position.y),
-            right: Math.max(acc.right, node.position.x + node.width),
-            bottom: Math.max(acc.bottom, node.position.y + node.height),
-        }),
-        { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity },
+type Rect = { left: number; top: number; right: number; bottom: number };
+type NodeFrame = Pick<CanvasNodeData, "position" | "width" | "height">;
+
+const GROUP_INSET = 24;
+const finite = (value: number, fallback = 0) =>
+    Number.isFinite(value) ? value : fallback;
+
+function rectOf(node: NodeFrame): Rect {
+    const left = finite(node.position.x);
+    const top = finite(node.position.y);
+    return {
+        left,
+        top,
+        right: left + Math.max(0, finite(node.width)),
+        bottom: top + Math.max(0, finite(node.height)),
+    };
+}
+
+function centerOf(node: NodeFrame) {
+    const rect = rectOf(node);
+    return { x: (rect.left + rect.right) / 2, y: (rect.top + rect.bottom) / 2 };
+}
+
+function containsCenter(container: CanvasNodeData, candidate: CanvasNodeData) {
+    const center = centerOf(candidate);
+    const frame = rectOf(container);
+    return (
+        center.x >= frame.left &&
+        center.x <= frame.right &&
+        center.y >= frame.top &&
+        center.y <= frame.bottom
     );
 }
 
-function containsCenter(group: CanvasNodeData, node: CanvasNodeData) {
-    const centerX = node.position.x + node.width / 2;
-    const centerY = node.position.y + node.height / 2;
-    return centerX >= group.position.x && centerX <= group.position.x + group.width && centerY >= group.position.y && centerY <= group.position.y + group.height;
+/** Return the enclosing world-space bounds; an empty collection has a zero frame. */
+export function nodeBounds(nodes: CanvasNodeData[]) {
+    if (!nodes.length) return { left: 0, top: 0, right: 0, bottom: 0 };
+    const bounds: Rect = {
+        left: Infinity,
+        top: Infinity,
+        right: -Infinity,
+        bottom: -Infinity,
+    };
+    for (const node of nodes) {
+        const frame = rectOf(node);
+        bounds.left = Math.min(bounds.left, frame.left);
+        bounds.top = Math.min(bounds.top, frame.top);
+        bounds.right = Math.max(bounds.right, frame.right);
+        bounds.bottom = Math.max(bounds.bottom, frame.bottom);
+    }
+    return bounds;
 }
 
-export function findGroupDropTarget(movedIds: Set<string>, nodes: CanvasNodeData[]) {
-    if (nodes.some((node) => movedIds.has(node.id) && node.type === CanvasNodeType.Group)) return null;
-    const movingNodes = nodes.filter((node) => movedIds.has(node.id) && node.type !== CanvasNodeType.Group);
-    if (!movingNodes.length) return null;
-    // Walk backwards instead of copying and reversing; this runs on every drag frame.
+function selectedGroups(
+    selectedIds: ReadonlySet<string>,
+    nodes: CanvasNodeData[],
+) {
+    return new Set(
+        nodes
+            .filter(
+                (node) =>
+                    node.type === CanvasNodeType.Group &&
+                    selectedIds.has(node.id),
+            )
+            .map((node) => node.id),
+    );
+}
+
+function selectedMembers(
+    selectedIds: ReadonlySet<string>,
+    nodes: CanvasNodeData[],
+) {
+    const groupIds = selectedGroups(selectedIds, nodes);
+    return nodes.filter(
+        (node) =>
+            node.type !== CanvasNodeType.Group &&
+            (selectedIds.has(node.id) ||
+                Boolean(
+                    node.metadata?.groupId &&
+                    groupIds.has(node.metadata.groupId),
+                )),
+    );
+}
+
+function referencedGroupIds(nodes: CanvasNodeData[]) {
+    return new Set(
+        nodes.flatMap((node) =>
+            node.metadata?.groupId ? [node.metadata.groupId] : [],
+        ),
+    );
+}
+
+function unusedGroupIds(nodes: CanvasNodeData[], preserveId?: string) {
+    const referenced = referencedGroupIds(nodes);
+    return new Set(
+        nodes
+            .filter(
+                (node) =>
+                    node.type === CanvasNodeType.Group &&
+                    node.id !== preserveId &&
+                    !referenced.has(node.id),
+            )
+            .map((node) => node.id),
+    );
+}
+
+function removeNodes(
+    nodes: CanvasNodeData[],
+    connections: CanvasConnection[],
+    removedIds: ReadonlySet<string>,
+) {
+    return {
+        nodes: nodes.filter((node) => !removedIds.has(node.id)),
+        connections: connections.filter(
+            (edge) =>
+                !removedIds.has(edge.fromNodeId) &&
+                !removedIds.has(edge.toNodeId),
+        ),
+    };
+}
+
+/** Find the topmost group whose frame contains the center of any dragged node. */
+export function findGroupDropTarget(
+    movedIds: ReadonlySet<string>,
+    nodes: CanvasNodeData[],
+) {
+    if (
+        nodes.some(
+            (node) =>
+                movedIds.has(node.id) && node.type === CanvasNodeType.Group,
+        )
+    )
+        return null;
+    const dragged = nodes.filter(
+        (node) => movedIds.has(node.id) && node.type !== CanvasNodeType.Group,
+    );
+    if (!dragged.length) return null;
     for (let index = nodes.length - 1; index >= 0; index -= 1) {
-        const group = nodes[index];
-        if (group.type !== CanvasNodeType.Group || movedIds.has(group.id)) continue;
-        if (movingNodes.some((node) => containsCenter(group, node))) return group;
+        const candidate = nodes[index];
+        if (
+            candidate.type === CanvasNodeType.Group &&
+            !movedIds.has(candidate.id) &&
+            dragged.some((node) => containsCenter(candidate, node))
+        )
+            return candidate;
     }
     return null;
 }
 
-export function snapNodesIntoGroup(movedIds: Set<string>, nodes: CanvasNodeData[], group: CanvasNodeData) {
-    const movingNodes = nodes.filter((node) => movedIds.has(node.id) && node.type !== CanvasNodeType.Group);
-    if (!movingNodes.length) return nodes;
-    const pad = 24;
-    const bounds = nodeBounds(movingNodes);
-    const left = group.position.x + pad;
-    const top = group.position.y + pad;
-    const right = group.position.x + group.width - pad;
-    const bottom = group.position.y + group.height - pad;
-    const dx = bounds.right - bounds.left > right - left ? left - bounds.left : bounds.left < left ? left - bounds.left : bounds.right > right ? right - bounds.right : 0;
-    const dy = bounds.bottom - bounds.top > bottom - top ? top - bounds.top : bounds.top < top ? top - bounds.top : bounds.bottom > bottom ? bottom - bounds.bottom : 0;
+/** Move dragged nodes into the usable interior of a group, preserving their relative layout. */
+export function snapNodesIntoGroup(
+    movedIds: ReadonlySet<string>,
+    nodes: CanvasNodeData[],
+    group: CanvasNodeData,
+) {
+    const dragged = nodes.filter(
+        (node) => movedIds.has(node.id) && node.type !== CanvasNodeType.Group,
+    );
+    if (!dragged.length) return nodes;
+
+    const content = nodeBounds(dragged);
+    const frame = rectOf(group);
+    const innerLeft = frame.left + GROUP_INSET;
+    const innerRight = frame.right - GROUP_INSET;
+    const innerTop = frame.top + GROUP_INSET;
+    const innerBottom = frame.bottom - GROUP_INSET;
+    const dx =
+        content.right - content.left > innerRight - innerLeft
+            ? innerLeft - content.left
+            : content.left < innerLeft
+              ? innerLeft - content.left
+              : content.right > innerRight
+                ? innerRight - content.right
+                : 0;
+    const dy =
+        content.bottom - content.top > innerBottom - innerTop
+            ? innerTop - content.top
+            : content.top < innerTop
+              ? innerTop - content.top
+              : content.bottom > innerBottom
+                ? innerBottom - content.bottom
+                : 0;
+
     return nodes.map((node) => {
-        if (!movedIds.has(node.id) || node.type === CanvasNodeType.Group) return node;
-        return { ...node, position: { x: node.position.x + dx, y: node.position.y + dy }, metadata: { ...node.metadata, groupId: group.id } };
+        if (!movedIds.has(node.id) || node.type === CanvasNodeType.Group)
+            return node;
+        const position = {
+            x: finite(node.position.x) + dx,
+            y: finite(node.position.y) + dy,
+        };
+        if (
+            node.metadata?.groupId === group.id &&
+            position.x === node.position.x &&
+            position.y === node.position.y
+        )
+            return node;
+        return {
+            ...node,
+            position,
+            metadata: { ...node.metadata, groupId: group.id },
+        };
     });
 }
 
 export const GROUP_WRAP_PADDING = 24;
 export const GROUP_WRAP_TOP_PADDING = 52;
 
-function selectedGroupIds(selectedIds: Set<string>, nodes: CanvasNodeData[]) {
-    return new Set(nodes.filter((node) => selectedIds.has(node.id) && node.type === CanvasNodeType.Group).map((node) => node.id));
+/** Resolve selected nodes and the direct non-group members of selected groups. */
+export function collectGroupMemberNodes(
+    selectedIds: ReadonlySet<string>,
+    nodes: CanvasNodeData[],
+) {
+    return selectedMembers(selectedIds, nodes);
 }
 
-export function collectGroupMemberNodes(selectedIds: Set<string>, nodes: CanvasNodeData[]) {
-    const groups = selectedGroupIds(selectedIds, nodes);
-    return nodes.filter((node) => node.type !== CanvasNodeType.Group && (selectedIds.has(node.id) || (node.metadata?.groupId != null && groups.has(node.metadata.groupId))));
-}
-
+/** Compute a frame around members, including the standard header and body insets. */
 export function getGroupWrapRect(members: CanvasNodeData[]) {
     const bounds = nodeBounds(members);
     return {
         x: bounds.left - GROUP_WRAP_PADDING,
         y: bounds.top - GROUP_WRAP_TOP_PADDING,
         width: bounds.right - bounds.left + GROUP_WRAP_PADDING * 2,
-        height: bounds.bottom - bounds.top + GROUP_WRAP_TOP_PADDING + GROUP_WRAP_PADDING,
+        height:
+            bounds.bottom -
+            bounds.top +
+            GROUP_WRAP_TOP_PADDING +
+            GROUP_WRAP_PADDING,
     };
 }
 
-export function canGroupSelectedNodes(selectedIds: Set<string>, nodes: CanvasNodeData[]) {
-    const members = collectGroupMemberNodes(selectedIds, nodes);
+export function canGroupSelectedNodes(
+    selectedIds: ReadonlySet<string>,
+    nodes: CanvasNodeData[],
+) {
+    const members = selectedMembers(selectedIds, nodes);
     if (members.length < 2) return false;
-    const groupId = members[0].metadata?.groupId;
-    return !groupId || members.some((node) => node.metadata?.groupId !== groupId);
+    const memberships = new Set(
+        members.map((node) => node.metadata?.groupId || ""),
+    );
+    return memberships.size > 1 || memberships.has("");
 }
 
-export function canUngroupSelectedNodes(selectedIds: Set<string>, nodes: CanvasNodeData[]) {
-    return nodes.some((node) => selectedIds.has(node.id) && (node.type === CanvasNodeType.Group || Boolean(node.metadata?.groupId)));
+export function canUngroupSelectedNodes(
+    selectedIds: ReadonlySet<string>,
+    nodes: CanvasNodeData[],
+) {
+    return nodes.some(
+        (node) =>
+            selectedIds.has(node.id) &&
+            (node.type === CanvasNodeType.Group ||
+                Boolean(node.metadata?.groupId)),
+    );
 }
 
-function emptyGroupIds(nodes: CanvasNodeData[], keepId?: string) {
-    const used = new Set(nodes.flatMap((node) => (node.type !== CanvasNodeType.Group && node.metadata?.groupId ? [node.metadata.groupId] : [])));
-    return new Set(nodes.filter((node) => node.type === CanvasNodeType.Group && node.id !== keepId && !used.has(node.id)).map((node) => node.id));
-}
+export function applyGroupSelection(
+    selectedIds: ReadonlySet<string>,
+    nodes: CanvasNodeData[],
+    connections: CanvasConnection[],
+    group: CanvasNodeData,
+) {
+    const members = selectedMembers(selectedIds, nodes);
+    if (
+        members.length < 2 ||
+        group.type !== CanvasNodeType.Group ||
+        nodes.some((node) => node.id === group.id)
+    )
+        return null;
 
-function withoutRemoved(nodes: CanvasNodeData[], connections: CanvasConnection[], removedIds: Set<string>) {
-    return {
-        nodes: nodes.filter((node) => !removedIds.has(node.id)),
-        connections: connections.filter((connection) => !removedIds.has(connection.fromNodeId) && !removedIds.has(connection.toNodeId)),
-    };
-}
-
-export function applyGroupSelection(selectedIds: Set<string>, nodes: CanvasNodeData[], connections: CanvasConnection[], group: CanvasNodeData) {
-    const members = collectGroupMemberNodes(selectedIds, nodes);
-    if (members.length < 2) return null;
     const memberIds = new Set(members.map((node) => node.id));
-    const flattenedGroupIds = selectedGroupIds(selectedIds, nodes);
-    const updated = nodes.filter((node) => !flattenedGroupIds.has(node.id)).map((node) => (memberIds.has(node.id) ? { ...node, metadata: { ...node.metadata, groupId: group.id } } : node));
-    const insertAt = updated.findIndex((node) => memberIds.has(node.id));
-    const withGroup = insertAt < 0 ? [...updated, group] : [...updated.slice(0, insertAt), group, ...updated.slice(insertAt)];
-    const next = withoutRemoved(withGroup, connections, new Set([...flattenedGroupIds, ...emptyGroupIds(withGroup, group.id)]));
-    return { ...next, selectedIds: [group.id] };
+    const selectedGroupIds = selectedGroups(selectedIds, nodes);
+    const reassigned = nodes
+        .filter((node) => !selectedGroupIds.has(node.id))
+        .map((node) =>
+            memberIds.has(node.id)
+                ? { ...node, metadata: { ...node.metadata, groupId: group.id } }
+                : node,
+        );
+    const firstMemberIndex = reassigned.findIndex((node) =>
+        memberIds.has(node.id),
+    );
+    const ordered =
+        firstMemberIndex < 0
+            ? [...reassigned, group]
+            : [
+                  ...reassigned.slice(0, firstMemberIndex),
+                  group,
+                  ...reassigned.slice(firstMemberIndex),
+              ];
+    const removed = new Set([
+        ...selectedGroupIds,
+        ...unusedGroupIds(ordered, group.id),
+    ]);
+    const result = removeNodes(ordered, connections, removed);
+    return { ...result, selectedIds: [group.id] };
 }
 
-export function applyUngroupSelection(selectedIds: Set<string>, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const flattenedGroupIds = selectedGroupIds(selectedIds, nodes);
-    if (!flattenedGroupIds.size && !nodes.some((node) => selectedIds.has(node.id) && node.metadata?.groupId)) return null;
+export function applyUngroupSelection(
+    selectedIds: ReadonlySet<string>,
+    nodes: CanvasNodeData[],
+    connections: CanvasConnection[],
+) {
+    const groups = selectedGroups(selectedIds, nodes);
+    const hasGroupedSelection = nodes.some(
+        (node) => selectedIds.has(node.id) && Boolean(node.metadata?.groupId),
+    );
+    if (!groups.size && !hasGroupedSelection) return null;
+
     const releasedIds = new Set<string>();
-    const updated = nodes
-        .filter((node) => !flattenedGroupIds.has(node.id))
+    const remaining = nodes
+        .filter((node) => !groups.has(node.id))
         .map((node) => {
-            const groupId = node.metadata?.groupId;
-            if (!groupId) return node;
-            if (!flattenedGroupIds.has(groupId) && !selectedIds.has(node.id)) return node;
+            const parentId = node.metadata?.groupId;
+            if (
+                !parentId ||
+                (!groups.has(parentId) && !selectedIds.has(node.id))
+            )
+                return node;
             releasedIds.add(node.id);
-            return { ...node, metadata: { ...node.metadata, groupId: undefined } };
+            return {
+                ...node,
+                metadata: { ...node.metadata, groupId: undefined },
+            };
         });
-    const next = withoutRemoved(updated, connections, new Set([...flattenedGroupIds, ...emptyGroupIds(updated)]));
-    return { ...next, selectedIds: next.nodes.filter((node) => selectedIds.has(node.id) || releasedIds.has(node.id)).map((node) => node.id) };
+    const removed = new Set([...groups, ...unusedGroupIds(remaining)]);
+    const result = removeNodes(remaining, connections, removed);
+    const nextSelection = result.nodes
+        .filter((node) => selectedIds.has(node.id) || releasedIds.has(node.id))
+        .map((node) => node.id);
+    return { ...result, selectedIds: nextSelection };
 }
 
-export function findContainingGroupId(node: CanvasNodeData, nodes: CanvasNodeData[]) {
-    // Called once per moved node when a drag ends, so avoid copying the node list each time.
+export function findContainingGroupId(
+    node: CanvasNodeData,
+    nodes: CanvasNodeData[],
+) {
     for (let index = nodes.length - 1; index >= 0; index -= 1) {
         const group = nodes[index];
-        if (group.type === CanvasNodeType.Group && group.id !== node.id && containsCenter(group, node)) return group.id;
+        if (
+            group.type === CanvasNodeType.Group &&
+            group.id !== node.id &&
+            containsCenter(group, node)
+        )
+            return group.id;
     }
     return undefined;
 }
 
-export function getConnectionTargetAnchor(node: CanvasNodeData, current: ConnectionHandle) {
+/** Anchor a candidate target on the side opposite the handle that began a new edge. */
+export function getConnectionTargetAnchor(
+    node: CanvasNodeData,
+    current: ConnectionHandle,
+) {
+    const frame = rectOf(node);
     return {
-        x: current.handleType === "source" ? node.position.x : node.position.x + node.width,
-        y: node.position.y + node.height / 2,
+        x: current.handleType === "source" ? frame.left : frame.right,
+        y: (frame.top + frame.bottom) / 2,
     };
 }
 
-export function normalizeConnection(firstNodeId: string, secondNodeId: string, nodes: CanvasNodeData[], firstHandleType: "source" | "target") {
+/** Keep regular edge direction tied to the drag start and route every config edge into its config node. */
+export function normalizeConnection(
+    firstNodeId: string,
+    secondNodeId: string,
+    nodes: CanvasNodeData[],
+    firstHandleType: "source" | "target",
+) {
     const first = nodes.find((node) => node.id === firstNodeId);
     const second = nodes.find((node) => node.id === secondNodeId);
-    if (!first || !second || first.id === second.id) return null;
-    if (second.type === CanvasNodeType.Group) return null;
-    if (first.type === CanvasNodeType.Config && second.type === CanvasNodeType.Config) return null;
-    if (second.type === CanvasNodeType.Config) return { fromNodeId: first.id, toNodeId: second.id };
-    if (first.type === CanvasNodeType.Config && firstHandleType === "target") return { fromNodeId: second.id, toNodeId: first.id };
-    if (first.type === CanvasNodeType.Config) return { fromNodeId: first.id, toNodeId: second.id };
+    if (
+        !first ||
+        !second ||
+        first.id === second.id ||
+        second.type === CanvasNodeType.Group
+    )
+        return null;
+    if (
+        first.type === CanvasNodeType.Config &&
+        second.type === CanvasNodeType.Config
+    )
+        return null;
+    if (second.type === CanvasNodeType.Config)
+        return { fromNodeId: first.id, toNodeId: second.id };
+    if (first.type === CanvasNodeType.Config && firstHandleType === "target")
+        return { fromNodeId: second.id, toNodeId: first.id };
     return { fromNodeId: first.id, toNodeId: second.id };
 }
 
 export type FocusFrame = {
-    // Screen-space room taken above/below the node by open overlays (hover toolbar, prompt panel), gaps included.
     above?: number;
     below?: number;
-    // Fixed chrome covering the bottom edge of the canvas (dock), excluded from the usable area.
     bottomInset?: number;
 };
 
-// Viewport that centers the node (plus any open overlay above/below) in the usable canvas area, zoomed so the
-// whole thing fits (the node itself is kept within 60% of the viewport). When an overlay is open below the node,
-// the remaining space is split 3:1 so the panel sits closer to the bottom dock (half the usual bottom gap).
-export function focusViewportForNode(node: Pick<CanvasNodeData, "position" | "width" | "height">, size: { width: number; height: number }, frame: FocusFrame = {}): ViewportTransform {
-    const above = frame.above ?? 0;
-    const below = frame.below ?? 0;
-    const usableBottom = Math.max(0, size.height - (frame.bottomInset ?? 0));
-    const nodeCenterX = node.position.x + node.width / 2;
-    const nodeCenterY = node.position.y + node.height / 2;
-    const verticalRoom = usableBottom * 0.92 - above - below;
-    const k = Math.min(Math.max(Math.min((size.width * 0.6) / node.width, (size.height * 0.6) / node.height, verticalRoom / node.height), 0.05), 1);
-    const groupHeight = above + node.height * k + below;
-    const slack = usableBottom - groupHeight;
-    const groupTop = slack * (below > 0 && slack > 0 ? 0.75 : 0.5);
-    return { x: size.width / 2 - nodeCenterX * k, y: groupTop + groupHeight / 2 - nodeCenterY * k - (below - above) / 2, k };
+/** Center a node and its measured overlays within the usable portion of the canvas. */
+export function focusViewportForNode(
+    node: NodeFrame,
+    size: { width: number; height: number },
+    frame: FocusFrame = {},
+): ViewportTransform {
+    const bounds = rectOf(node);
+    const width = Math.max(0, finite(size.width));
+    const height = Math.max(0, finite(size.height));
+    const above = Math.max(0, finite(frame.above ?? 0));
+    const below = Math.max(0, finite(frame.below ?? 0));
+    const availableHeight = Math.max(
+        0,
+        height - Math.min(height, Math.max(0, finite(frame.bottomInset ?? 0))),
+    );
+    const nodeWidth = Math.max(1, bounds.right - bounds.left);
+    const nodeHeight = Math.max(1, bounds.bottom - bounds.top);
+    const center = {
+        x: (bounds.left + bounds.right) / 2,
+        y: (bounds.top + bounds.bottom) / 2,
+    };
+    const room = availableHeight * 0.92 - above - below;
+    const scale = Math.min(
+        Math.max(
+            Math.min(
+                (width * 0.6) / nodeWidth,
+                (height * 0.6) / nodeHeight,
+                room / nodeHeight,
+            ),
+            0.05,
+        ),
+        1,
+    );
+    const contentHeight = above + nodeHeight * scale + below;
+    const spare = availableHeight - contentHeight;
+    const top = spare * (below > 0 && spare > 0 ? 0.75 : 0.5);
+    return {
+        x: width / 2 - center.x * scale,
+        y: top + contentHeight / 2 - center.y * scale - (below - above) / 2,
+        k: scale,
+    };
 }

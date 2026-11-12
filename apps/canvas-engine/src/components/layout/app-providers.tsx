@@ -10,43 +10,80 @@ import { useTranslation } from "react-i18next";
 
 import type { AppLocale } from "@/i18n";
 import { getAntThemeConfig } from "@/lib/app-theme";
-import { useThemeStore } from "@/stores/use-theme-store";
+import { useThemeStore, type ThemeName } from "@/stores/use-theme-store";
 
 const queryClient = new QueryClient({
-    defaultOptions: {
-        queries: {
-            staleTime: 30_000,
-            retry: false,
-            refetchOnWindowFocus: false,
-        },
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: false,
+      refetchOnWindowFocus: false,
     },
+  },
 });
 
-export function AppProviders({ children }: { children: ReactNode }) {
-    const { i18n, t } = useTranslation();
-    const theme = useThemeStore((state) => state.theme);
-    const dark = theme === "dark";
-    const locale = i18n.resolvedLanguage as AppLocale;
+type AppProvidersProps = { children: ReactNode };
 
-    useEffect(() => {
-        document.documentElement.classList.toggle("dark", dark);
-        document.documentElement.style.colorScheme = theme;
-    }, [dark, theme]);
+export function AppProviders({ children }: AppProvidersProps) {
+  const { i18n, t } = useTranslation();
+  const theme = useThemeStore((state) => state.theme);
+  const dark = theme === "dark";
+  const locale = resolveAppLocale(i18n.resolvedLanguage);
 
-    useEffect(() => {
-        document.documentElement.lang = locale;
-        document.title = t("meta.title");
-        document.querySelector('meta[name="description"]')?.setAttribute("content", t("meta.description"));
-        dayjs.locale(locale === "zh-CN" ? "zh-cn" : "en");
-    }, [locale, t]);
+  useDocumentAppearance(theme);
+  useDocumentLocale(locale, t("meta.title"), t("meta.description"));
 
-    return (
-        <ConfigProvider locale={locale === "zh-CN" ? zhCN : enUS} theme={getAntThemeConfig(dark)}>
-                <App>
-                    <QueryClientProvider client={queryClient}>
-                        {children}
-                    </QueryClientProvider>
-                </App>
-        </ConfigProvider>
-    );
+  return (
+    <CanvasDesignSystemProvider dark={dark} locale={locale}>
+      <CanvasQueryProvider>{children}</CanvasQueryProvider>
+    </CanvasDesignSystemProvider>
+  );
+}
+
+function CanvasDesignSystemProvider({
+  children,
+  dark,
+  locale,
+}: AppProvidersProps & { dark: boolean; locale: AppLocale }) {
+  return (
+    <ConfigProvider
+      locale={locale === "zh-CN" ? zhCN : enUS}
+      theme={getAntThemeConfig(dark)}
+    >
+      <App>{children}</App>
+    </ConfigProvider>
+  );
+}
+
+function CanvasQueryProvider({ children }: AppProvidersProps) {
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+}
+
+function useDocumentAppearance(theme: ThemeName) {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.style.colorScheme = theme;
+  }, [theme]);
+}
+
+function useDocumentLocale(
+  locale: AppLocale,
+  title: string,
+  description: string,
+) {
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.title = title;
+    document
+      .querySelector('meta[name="description"]')
+      ?.setAttribute("content", description);
+    dayjs.locale(locale === "zh-CN" ? "zh-cn" : "en");
+  }, [description, locale, title]);
+}
+
+function resolveAppLocale(language: string | undefined): AppLocale {
+  return language === "en-US" ? "en-US" : "zh-CN";
 }

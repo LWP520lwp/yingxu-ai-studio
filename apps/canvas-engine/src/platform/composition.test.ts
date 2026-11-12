@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readZip } from "@/lib/zip";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { clipDurationMs, compositionVideos, createComposition, exportCompositionPackage, moveCompositionClip, normalizeClip, type CompositionClip } from "@/lib/canvas/canvas-composition";
+import { clipDurationMs, compositionVideos, createComposition, exportCompositionPackage, formatCompositionTime, moveCompositionClip, normalizeClip, type CompositionClip } from "@/lib/canvas/canvas-composition";
 
 vi.mock("@/services/file-storage", () => ({ resolveMediaUrl: async (_key: string | undefined, fallback: string) => fallback }));
 const video = (id: string, content = `/api/assets/${id}/content`): CanvasNodeData => ({ id, type: CanvasNodeType.Video, title: id, width: 400, height: 225, position: { x: 0, y: 0 }, metadata: { content, durationMs: 2000, storageKey: `video:${id}`, mimeType: "video/mp4" } });
@@ -24,6 +24,13 @@ describe("native video composition", () => {
         expect(clipDurationMs(clip({ startMs: 500, endMs: null }))).toBe(1500);
         expect(clipDurationMs(clip({ durationMs: undefined }))).toBe(0);
     });
+    it("keeps short clips valid and formats non-finite timestamps predictably", () => {
+        expect(normalizeClip(clip({ durationMs: 50, startMs: 20, endMs: 30, volume: Number.NaN }))).toMatchObject({ startMs: 0, endMs: 50, volume: 1 });
+        expect(normalizeClip(clip({ startMs: Number.NaN, endMs: Number.POSITIVE_INFINITY, volume: Number.NEGATIVE_INFINITY }))).toMatchObject({ startMs: 0, endMs: null, volume: 1 });
+        expect(formatCompositionTime(59_950)).toBe("1:00.0");
+        expect(formatCompositionTime(Number.NaN)).toBe("0:00.0");
+        expect(formatCompositionTime(-100)).toBe("0:00.0");
+    });
     it("changes order without changing originals or trimming and rejects out-of-range moves", () => {
         const first = clip({ startMs: 250, endMs: 1700, volume: .4 });
         const data = { version: 1 as const, clips: [first, clip({ id: "two" })] };
@@ -32,6 +39,7 @@ describe("native video composition", () => {
         expect(moved.clips[1]).toEqual(first);
         expect(data.clips[0].id).toBe("one");
         expect(moveCompositionClip(data, 0, -1)).toBe(data);
+        expect(moveCompositionClip(data, 0, 0.5)).toBe(data);
     });
     it("exports real media bytes, portable relative paths, trims and an offline sequential player", async () => {
         const fetcher = vi.fn(async () => new Response(new Blob([new Uint8Array([1, 9, 4, 2])], { type: "video/mp4" })));

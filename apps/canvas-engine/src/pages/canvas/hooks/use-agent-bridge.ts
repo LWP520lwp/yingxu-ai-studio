@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type Dispatch, type MutableR
 
 import i18n from "@/i18n";
 import { useAgentStore } from "@/stores/use-agent-store";
-import { applyCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import { executeAgentCanvasTransaction } from "@/lib/agent-canvas-bridge";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import type { CanvasConnection, CanvasNodeData, ContextMenuState, ViewportTransform } from "@/types/canvas";
 
@@ -42,31 +43,28 @@ export function useAgentBridge(params: AgentBridgeParams) {
     const agentSnapshot = useMemo<CanvasAgentSnapshot>(() => ({ projectId, title: projectTitle, nodes, connections, selectedNodeIds: Array.from(selectedNodeIds), viewport }), [connections, projectTitle, nodes, projectId, selectedNodeIds, viewport]);
     const applyAgentOps = useCallback(
         (ops?: CanvasAgentOp[]) => {
-            const safeOps = Array.isArray(ops) ? ops.filter((op) => op?.type) : [];
             const before = { projectId, title: projectTitle, nodes: nodesRef.current, connections: connectionsRef.current, selectedNodeIds: Array.from(selectedNodeIdsRef.current), viewport: viewportRef.current };
-            const generationOps = safeOps.filter((op): op is Extract<CanvasAgentOp, { type: "run_generation" }> => op.type === "run_generation" && Boolean(op.nodeId));
-            const next = applyCanvasAgentOps(
-                before,
-                safeOps.filter((op) => op.type !== "run_generation"),
-            );
+            const transaction = executeAgentCanvasTransaction(before, ops);
+            const next = transaction.after;
+            if (!transaction.changed && !transaction.generation.length) return before;
             nodesRef.current = next.nodes;
             connectionsRef.current = next.connections;
             selectedNodeIdsRef.current = new Set(next.selectedNodeIds);
             viewportRef.current = next.viewport;
-            setAgentUndoSnapshot(before);
-            setNodes(next.nodes);
-            setConnections(next.connections);
-            setSelectedNodeIds(new Set(next.selectedNodeIds));
-            setSelectedConnectionId(null);
-            setViewport(next.viewport);
-            setContextMenu(null);
-            if (generationOps.length) {
+            if (transaction.changed) {
+                setAgentUndoSnapshot(before);
+                setNodes(next.nodes);
+                setConnections(next.connections);
+                setSelectedNodeIds(new Set(next.selectedNodeIds));
+                setSelectedConnectionId(null);
+                setViewport(next.viewport);
+                setContextMenu(null);
+            }
+            if (transaction.generation.length) {
                 queueMicrotask(() =>
-                    generationOps.forEach((op) => {
-                        const target = nodesRef.current.find((node) => node.id === op.nodeId);
-                        const prompt = op.prompt?.trim() ? op.prompt : (target?.metadata?.composerContent ?? target?.metadata?.prompt ?? "");
-                        void generateNodeRef.current?.(op.nodeId, op.mode || target?.metadata?.generationMode || "image", prompt);
-                    }),
+                    transaction.generation.forEach(({ nodeId, mode, prompt }) =>
+                        void generateNodeRef.current?.(nodeId, mode, prompt),
+                    ),
                 );
             }
             return { ...next, projectId, title: projectTitle };

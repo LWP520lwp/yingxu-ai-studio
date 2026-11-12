@@ -3,40 +3,105 @@ import React from "react";
 import { emitCanvasEvent, onCanvasEvent } from "@/lib/canvas/canvas-event-bus";
 import type { CanvasPluginApp } from "@/types/canvas-plugin";
 
-// Remote plugins obtain the host React instance through this runtime to avoid multiple React copies.
 export type PluginRuntime = CanvasPluginApp & {
-    React: typeof React;
-    jsx: typeof React.createElement;
-    Fragment: typeof React.Fragment;
-    injectCSS: (css: string, key?: string) => () => void;
+  React: typeof React;
+  jsx: typeof React.createElement;
+  Fragment: typeof React.Fragment;
+  injectCSS: (css: string, key?: string) => () => void;
 };
+
+type PluginEventBridge = Pick<CanvasPluginApp, "emit" | "on">;
+
+export type PluginStyleElement = {
+  id: string;
+  textContent: string | null;
+  dataset: { canvasPluginStyle?: string };
+  remove: () => void;
+};
+
+export type PluginStyleHost = {
+  getElementById: (id: string) => PluginStyleElement | null;
+  createStyleElement: () => PluginStyleElement;
+  appendToHead: (element: PluginStyleElement) => void;
+};
+
+const STYLE_ID_PREFIX = "canvas-plugin-style-";
+
+function browserStyleHost(): PluginStyleHost {
+  return {
+    getElementById: (id) =>
+      document.getElementById(id) as HTMLStyleElement | null,
+    createStyleElement: () => document.createElement("style"),
+    appendToHead: (element) =>
+      document.head.appendChild(element as HTMLStyleElement),
+  };
+}
+
+export function createPluginStyleInjector(host: PluginStyleHost) {
+  const activeById = new Map<string, PluginStyleElement>();
+
+  return (css: string, key?: string) => {
+    const id = key ? `${STYLE_ID_PREFIX}${key}` : "";
+    if (id) {
+      activeById.get(id)?.remove();
+      host.getElementById(id)?.remove();
+    }
+
+    const element = host.createStyleElement();
+    element.id = id;
+    element.dataset.canvasPluginStyle = "true";
+    element.textContent = css;
+    host.appendToHead(element);
+    if (id) activeById.set(id, element);
+
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      if (id && activeById.get(id) === element) activeById.delete(id);
+      element.remove();
+    };
+  };
+}
+
+export function resolvePluginRuntimeVersion(value: unknown): string {
+  return typeof value === "string" ? value : "dev";
+}
+
+export function createPluginRuntime(
+  react: typeof React,
+  version: unknown,
+  events: PluginEventBridge,
+  injectCSS: PluginRuntime["injectCSS"],
+): PluginRuntime {
+  return {
+    React: react,
+    jsx: react.createElement,
+    Fragment: react.Fragment,
+    injectCSS,
+    version: resolvePluginRuntimeVersion(version),
+    emit: events.emit,
+    on: events.on,
+  };
+}
 
 let runtime: PluginRuntime | null = null;
 
-// Inject plugin styles, replacing the previous style with the same key, and return a removal function.
-function injectCSS(css: string, key?: string) {
-    const id = key ? `canvas-plugin-style-${key}` : undefined;
-    if (id) document.getElementById(id)?.remove();
-    const style = document.createElement("style");
-    if (id) style.id = id;
-    style.dataset.canvasPluginStyle = "true";
-    style.textContent = css;
-    document.head.appendChild(style);
-    return () => style.remove();
-}
-
 export function getPluginRuntime(): PluginRuntime {
-    if (!runtime) {
-        runtime = {
-            React,
-            jsx: React.createElement,
-            Fragment: React.Fragment,
-            injectCSS,
-            version: typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev",
-            emit: emitCanvasEvent,
-            on: onCanvasEvent,
-        };
-        (window as unknown as { InfiniteCanvasRuntime?: PluginRuntime }).InfiniteCanvasRuntime = runtime;
-    }
-    return runtime;
+  if (runtime) return runtime;
+
+  const styleHost = browserStyleHost();
+  runtime = createPluginRuntime(
+    React,
+    typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : undefined,
+    { emit: emitCanvasEvent, on: onCanvasEvent },
+    createPluginStyleInjector(styleHost),
+  );
+
+  if (typeof window !== "undefined") {
+    (
+      window as unknown as { InfiniteCanvasRuntime?: PluginRuntime }
+    ).InfiniteCanvasRuntime = runtime;
+  }
+  return runtime;
 }

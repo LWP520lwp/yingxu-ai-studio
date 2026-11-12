@@ -1,29 +1,80 @@
 import { useEffect, useMemo, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
-import { ALL_PROMPTS_OPTION, fetchPrompts } from "@/services/api/prompts";
+import {
+  flattenPromptPages,
+  getNextPromptPage,
+  normalizePromptTags,
+} from "@/lib/prompt-picker";
+import {
+  ALL_PROMPTS_OPTION,
+  fetchPrompts,
+  type Prompt,
+  type PromptListResponse,
+} from "@/services/api/prompts";
 
 export const PROMPT_PAGE_SIZE = 20;
+export const PROMPT_SEARCH_DEBOUNCE_MS = 300;
 
-export function usePromptList({ keyword, tags, category, enabled = true }: { keyword: string; tags: string[]; category: string; enabled?: boolean }) {
-    const [debouncedKeyword, setDebouncedKeyword] = useState(keyword);
-    useEffect(() => {
-        const timer = setTimeout(() => setDebouncedKeyword(keyword), 300);
-        return () => clearTimeout(timer);
-    }, [keyword]);
-    const query = useInfiniteQuery({
-        queryKey: ["prompts", debouncedKeyword, tags, category],
-        queryFn: ({ pageParam }) => fetchPrompts({ keyword: debouncedKeyword, tag: tags, category, page: pageParam, pageSize: PROMPT_PAGE_SIZE }),
-        initialPageParam: 1,
-        getNextPageParam: (lastPage, pages) => (pages.reduce((total, page) => total + page.items.length, 0) < lastPage.total ? pages.length + 1 : undefined),
-        enabled,
-    });
-    const firstPage = query.data?.pages[0];
-    return {
-        query,
-        items: useMemo(() => query.data?.pages.flatMap((page) => page.items) || [], [query.data?.pages]),
-        tags: useMemo(() => [ALL_PROMPTS_OPTION, ...(firstPage?.tags || [])], [firstPage?.tags]),
-        categories: useMemo(() => [ALL_PROMPTS_OPTION, ...(firstPage?.categories || [])], [firstPage?.categories]),
-        total: firstPage?.total || 0,
-    };
+type UsePromptListOptions = {
+  keyword: string;
+  tags: string[];
+  category: string;
+  enabled?: boolean;
+};
+
+export function usePromptList({
+  keyword,
+  tags,
+  category,
+  enabled = true,
+}: UsePromptListOptions) {
+  const [debouncedKeyword, setDebouncedKeyword] = useState(keyword);
+  const normalizedTags = useMemo(() => normalizePromptTags(tags), [tags]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setDebouncedKeyword(keyword),
+      PROMPT_SEARCH_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [keyword]);
+
+  const query = useInfiniteQuery({
+    queryKey: ["prompts", debouncedKeyword.trim(), normalizedTags, category],
+    queryFn: ({ pageParam }) =>
+      fetchPrompts({
+        keyword: debouncedKeyword,
+        tag: normalizedTags,
+        category,
+        page: pageParam,
+        pageSize: PROMPT_PAGE_SIZE,
+      }),
+    initialPageParam: 1,
+    getNextPageParam: getNextPromptPage,
+    enabled,
+  });
+
+  const pages = query.data?.pages;
+  const firstPage = pages?.[0];
+  const items = useMemo(
+    () => flattenPromptPages<Prompt, PromptListResponse>(pages),
+    [pages],
+  );
+  const availableTags = useMemo(
+    () => [ALL_PROMPTS_OPTION, ...(firstPage?.tags ?? [])],
+    [firstPage?.tags],
+  );
+  const categories = useMemo(
+    () => [ALL_PROMPTS_OPTION, ...(firstPage?.categories ?? [])],
+    [firstPage?.categories],
+  );
+
+  return {
+    query,
+    items,
+    tags: availableTags,
+    categories,
+    total: firstPage?.total ?? 0,
+  };
 }

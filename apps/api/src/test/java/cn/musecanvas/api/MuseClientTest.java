@@ -34,13 +34,17 @@ class MuseClientTest {
             when(assets.referenceDataUrl("owner","first")).thenReturn("data:image/png;base64,"+Base64.getEncoder().encodeToString("FIRST-FRAME-CONTENT".getBytes(StandardCharsets.UTF_8)));
             when(assets.referenceDataUrl("owner","last")).thenReturn("data:image/png;base64,"+Base64.getEncoder().encodeToString("LAST-FRAME-CONTENT".getBytes(StandardCharsets.UTF_8)));
             var client=new MuseClient(settings,assets,new MuseProvider(settings));
-            for(String mode:List.of("frames","reference")){
+            for(String mode:List.of("frames","reference","auto")){
                 client.submit("job-"+mode,"owner",JobService.normalize(new JobService.Request("p","n","video","move","muse-video",1280,720,8,List.of("first","last"),null,null,mode)),"test-only");
-                String body=requestBody.get();assertTrue(body.contains("name=\"mode\"\r\n\r\n"+mode));
+                String body=requestBody.get();assertTrue(body.contains("name=\"mode\"\r\n\r\n"+(mode.equals("frames")?"frames":"reference")));
                 assertTrue(body.indexOf("FIRST-FRAME-CONTENT")<body.indexOf("LAST-FRAME-CONTENT"));
                 if(mode.equals("frames")){assertTrue(body.contains("name=\"first_frame\""));assertTrue(body.contains("name=\"last_frame\""));assertFalse(body.contains("name=\"image[]\""));}
                 else{assertFalse(body.contains("name=\"first_frame\""));assertEquals(2,body.split("name=\\\"image\\[\\]\\\"",-1).length-1);}
             }
+            var defaultRequest=JobService.normalize(new JobService.Request("p","n","video","move","muse-video",1280,720,8,List.of("first","last")));
+            assertEquals("reference",defaultRequest.videoMode());
+            client.submit("job-default","owner",defaultRequest,"test-only");
+            String defaultBody=requestBody.get();assertTrue(defaultBody.contains("name=\"mode\"\r\n\r\nreference"));assertFalse(defaultBody.contains("name=\"first_frame\""));assertEquals(2,defaultBody.split("name=\\\"image\\[\\]\\\"",-1).length-1);
         }finally{server.stop(0);}
     }
     @Test void videoLimitsDistinguishReferenceSetsFromEndpointFrames(){
@@ -48,6 +52,7 @@ class MuseClientTest {
         var reference=JobService.normalize(new JobService.Request("p","n","video","move","muse-service-video",1280,720,8,refs,null,null,"reference"));
         assertEquals(refs,reference.referenceAssetIds());assertEquals("reference",MuseClient.videoMode(reference));
         var auto=JobService.normalize(new JobService.Request("p","n","video","move","muse-service-video",1280,720,8,refs,null,null,"auto"));assertEquals("reference",MuseClient.videoMode(auto));
+        var twoAuto=JobService.normalize(new JobService.Request("p","n","video","move","muse-service-video",1280,720,8,List.of("a","b"),null,null,"auto"));assertEquals("reference",MuseClient.videoMode(twoAuto));
         assertThrows(ApiException.class,()->JobService.normalize(new JobService.Request("p","n","video","move","muse-service-video",1280,720,8,refs,null,null,"frames")));
         assertThrows(ApiException.class,()->JobService.normalize(new JobService.Request("p","n","video","move","muse-service-video",1280,720,8,List.of(),null,null,"frames")));
         assertThrows(ApiException.class,()->JobService.normalize(new JobService.Request("p","n","image","move","muse-image",1024,1024,8,List.of(),null,null,"reference")));

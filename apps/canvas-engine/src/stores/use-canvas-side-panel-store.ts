@@ -1,68 +1,122 @@
 import { create } from "zustand";
 
-export const CANVAS_SIDE_PANEL_MOTION_MS = 500;
-export const CANVAS_SIDE_PANEL_MIN_WIDTH = 220;
-export const CANVAS_SIDE_PANEL_MAX_WIDTH = 480;
-export const CANVAS_SIDE_PANEL_DEFAULT_WIDTH = 280;
+import {
+  CANVAS_SIDE_PANEL_DEFAULT_WIDTH,
+  CANVAS_SIDE_PANEL_MAX_WIDTH,
+  CANVAS_SIDE_PANEL_MIN_WIDTH,
+  CANVAS_SIDE_PANEL_MOTION_MS,
+  clampCanvasSidePanelWidth,
+  createCanvasSidePanelLifecycle,
+  normalizeCanvasNodeViewMode,
+  readCanvasSidePanelPreference,
+  transitionCanvasSidePanel,
+  writeCanvasSidePanelPreference,
+  type CanvasNodeViewMode,
+} from "@/lib/canvas/canvas-side-panel-state";
+
+export {
+  CANVAS_SIDE_PANEL_DEFAULT_WIDTH,
+  CANVAS_SIDE_PANEL_MAX_WIDTH,
+  CANVAS_SIDE_PANEL_MIN_WIDTH,
+  CANVAS_SIDE_PANEL_MOTION_MS,
+};
+export type { CanvasNodeViewMode };
+export type CanvasSidePanelTab = "canvas" | "assets" | "prompts";
 
 const WIDTH_KEY = "canvas-side-panel-width";
 const OPEN_KEY = "canvas-side-panel-open";
 const NODE_VIEW_KEY = "canvas-side-panel-node-view";
 
-export type CanvasNodeViewMode = "list" | "grid";
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+let closeGeneration = 0;
+
+type CanvasSidePanelStore = ReturnType<
+  typeof createCanvasSidePanelLifecycle
+> & {
+  width: number;
+  nodeViewMode: CanvasNodeViewMode;
+  activeTab: CanvasSidePanelTab;
+  setWidth: (width: number) => void;
+  setNodeViewMode: (mode: CanvasNodeViewMode) => void;
+  setActiveTab: (tab: CanvasSidePanelTab) => void;
+  openPanel: () => void;
+  closePanel: () => void;
+  togglePanel: () => void;
+};
+
+function preferenceStorage(): Storage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function storedValue(key: string) {
+  return readCanvasSidePanelPreference(preferenceStorage(), key);
+}
 
 function initialWidth() {
-    if (typeof window === "undefined") return CANVAS_SIDE_PANEL_DEFAULT_WIDTH;
-    const stored = Number(localStorage.getItem(WIDTH_KEY));
-    if (!stored) return CANVAS_SIDE_PANEL_DEFAULT_WIDTH;
-    return Math.min(CANVAS_SIDE_PANEL_MAX_WIDTH, Math.max(CANVAS_SIDE_PANEL_MIN_WIDTH, stored));
+  const stored = storedValue(WIDTH_KEY);
+  if (stored === null) return CANVAS_SIDE_PANEL_DEFAULT_WIDTH;
+  const value = Number(stored);
+  return Number.isFinite(value)
+    ? clampCanvasSidePanelWidth(value)
+    : CANVAS_SIDE_PANEL_DEFAULT_WIDTH;
 }
 
 function initialOpen() {
-    if (typeof window === "undefined") return true;
-    return localStorage.getItem(OPEN_KEY) !== "0";
+  return storedValue(OPEN_KEY) !== "0";
 }
 
-function initialNodeView(): CanvasNodeViewMode {
-    if (typeof window === "undefined") return "list";
-    return localStorage.getItem(NODE_VIEW_KEY) === "grid" ? "grid" : "list";
+function initialNodeView() {
+  return normalizeCanvasNodeViewMode(storedValue(NODE_VIEW_KEY));
 }
 
-type CanvasSidePanelStore = {
-    width: number;
-    panelOpen: boolean;
-    panelMounted: boolean;
-    panelClosing: boolean;
-    nodeViewMode: CanvasNodeViewMode;
-    setWidth: (width: number) => void;
-    setNodeViewMode: (mode: CanvasNodeViewMode) => void;
-    openPanel: () => void;
-    closePanel: () => void;
-    togglePanel: () => void;
-};
+function cancelCloseTimer() {
+  closeGeneration += 1;
+  if (closeTimer !== null) clearTimeout(closeTimer);
+  closeTimer = null;
+  return closeGeneration;
+}
 
-export const useCanvasSidePanelStore = create<CanvasSidePanelStore>((set, get) => ({
+export const useCanvasSidePanelStore = create<CanvasSidePanelStore>(
+  (set, get) => ({
+    ...createCanvasSidePanelLifecycle(initialOpen()),
     width: initialWidth(),
-    panelOpen: initialOpen(),
-    panelMounted: initialOpen(),
-    panelClosing: false,
     nodeViewMode: initialNodeView(),
-    setWidth: (width) => set({ width }),
+    activeTab: "canvas",
+    setWidth: (width) => set({ width: clampCanvasSidePanelWidth(width) }),
+    setActiveTab: (activeTab) => set({ activeTab }),
     setNodeViewMode: (mode) => {
-        if (typeof window !== "undefined") localStorage.setItem(NODE_VIEW_KEY, mode);
-        set({ nodeViewMode: mode });
+      const nextMode = normalizeCanvasNodeViewMode(mode);
+      writeCanvasSidePanelPreference(
+        preferenceStorage(),
+        NODE_VIEW_KEY,
+        nextMode,
+      );
+      set({ nodeViewMode: nextMode });
     },
     openPanel: () => {
-        if (typeof window !== "undefined") localStorage.setItem(OPEN_KEY, "1");
-        set({ panelOpen: true, panelMounted: true, panelClosing: false });
+      cancelCloseTimer();
+      writeCanvasSidePanelPreference(preferenceStorage(), OPEN_KEY, "1");
+      set((state) => transitionCanvasSidePanel(state, "open"));
     },
     closePanel: () => {
-        if (!get().panelMounted || get().panelClosing) return;
-        if (typeof window !== "undefined") localStorage.setItem(OPEN_KEY, "0");
-        set({ panelOpen: false, panelClosing: true });
-        setTimeout(() => {
-            if (get().panelClosing) set({ panelMounted: false, panelClosing: false });
-        }, CANVAS_SIDE_PANEL_MOTION_MS);
+      const state = get();
+      const closing = transitionCanvasSidePanel(state, "close");
+      if (closing === state) return;
+
+      const generation = cancelCloseTimer();
+      writeCanvasSidePanelPreference(preferenceStorage(), OPEN_KEY, "0");
+      set(closing);
+      closeTimer = setTimeout(() => {
+        if (generation !== closeGeneration) return;
+        closeTimer = null;
+        set((current) => transitionCanvasSidePanel(current, "finish-close"));
+      }, CANVAS_SIDE_PANEL_MOTION_MS);
     },
-    togglePanel: () => (get().panelOpen ? get().closePanel() : get().openPanel()),
-}));
+    togglePanel: () =>
+      get().panelOpen ? get().closePanel() : get().openPanel(),
+  }),
+);

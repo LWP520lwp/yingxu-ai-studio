@@ -116,7 +116,8 @@ public class MuseProvider {
         caps.put("supportsReferenceImages",!doubao);caps.put("maxReferenceImages",doubao?0:browser&&video?2:4);caps.put("fixedDuration",doubao&&video?10:null);caps.put("durations",doubao&&video?List.of(10):List.of());caps.put("resolutions",doubao&&video?List.of("720p"):List.of());caps.put("fixedWidth",doubao&&video?1280:null);caps.put("fixedHeight",doubao&&video?720:null);caps.put("supportsSizeControl",!doubao&&!browser);caps.put("watermark",doubao&&!video);caps.put("requiresInteractiveVerification",doubao||browser);
         caps.put("supportedVideoModes",!video?List.of():doubao?List.of("auto"):browser?List.of("auto","reference"):List.of("auto","reference","frames"));
         caps.put("maxFrameImages",video&&!doubao&&!browser?2:0);
-        return Map.of("id",id,"name",(doubao?"豆包":service?"Muse 服务密钥通道":"Muse")+(video?" 视频":" 图像"),"provider",doubao?"doubao":service?"muse-service":"muse","available",available,"caps",caps);
+        String name=doubao?"豆包"+(video?" 视频":" 图像"):service?"内置 Muse "+(video?"视频":"图像")+"模型":"Muse"+(video?" 视频":" 图像");
+        return Map.of("id",id,"name",name,"provider",doubao?"doubao":service?"muse-service":"muse","available",available,"caps",caps);
     }
     private static Map<String,Object> fallbackModels(){return Map.of("image",List.of(describe("muse-image",false),describe("doubao-image",false)),"video",List.of(describe("muse-video",false),describe("doubao-video",false)));}
 }

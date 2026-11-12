@@ -126,4 +126,21 @@ describe("groups remain intact", () => {
         expectNoOverlap([at(result, "outer"), at(result, "orphan")]);
         expect(tidyCanvasNodes(result, [edge("child", "orphan")])).toBe(result);
     });
+
+    it("keeps malformed cyclic group membership finite and idempotent", () => {
+        const nodes = [
+            node("group-a", 20, 30, { type: CanvasNodeType.Group, width: 80, height: 70, metadata: { groupId: "group-b" } }),
+            node("group-b", 120, 90, { type: CanvasNodeType.Group, width: 90, height: 60, metadata: { groupId: "group-a" } }),
+            node("member", 250, 160, { metadata: { groupId: "group-a", content: "循环中的成员" } }),
+            node("output", 0, 0),
+        ];
+        const connections = [edge("member", "output")];
+        const result = tidyCanvasNodes(nodes, connections);
+        const repeated = tidyCanvasNodes(result, connections);
+        expect(result).toHaveLength(nodes.length);
+        expect(positions(repeated)).toEqual(positions(result));
+        expect(result.every((item) => Number.isFinite(item.position.x) && Number.isFinite(item.position.y))).toBe(true);
+        expect(result.map((item) => item.metadata)).toEqual(nodes.map((item) => item.metadata));
+        expect(at(result, "output").position.x).toBeGreaterThan(at(result, "group-a").position.x + at(result, "group-a").width);
+    });
 });

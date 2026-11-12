@@ -82,7 +82,7 @@ public class MuseClient {
         out.write(("--"+boundary+"--\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));return out.toByteArray();
     }
     static String videoMode(JobService.Request request){
-        return "reference".equals(request.videoMode())||("auto".equals(request.videoMode())&&request.referenceAssetIds().size()>2)?"reference":"frames";
+        return "frames".equals(request.videoMode())?"frames":"reference";
     }
     public Outcome poll(String kind,String taskId)throws Exception{
         return poll(kind,taskId,provider.apiKey());

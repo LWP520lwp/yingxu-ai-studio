@@ -164,14 +164,6 @@
 }
 
 @layer utilities {
-    /* Retain the upstream class contract without continuously repainting text. */
-    .ai-title-aurora,
-    .dark .ai-title-aurora {
-        color: var(--foreground);
-        background: none;
-        animation: none;
-    }
-
     .hide-scrollbar {
         -ms-overflow-style: none;
         scrollbar-width: none;
@@ -461,6 +453,10 @@
     mix-blend-mode: normal;
 }
 
+html[data-theme-reveal="active"]::view-transition-new(root) {
+    clip-path: var(--theme-reveal-start);
+}
+
 .agent-streamdown {
     overflow-wrap: anywhere;
 }
@@ -681,35 +677,12 @@
     box-shadow: 12px 0 30px rgba(0, 0, 0, .13);
 }
 
-.canvas-atlas-panel__body > div:first-child {
-    margin: 12px 12px 0;
-    padding: 4px;
-    gap: 3px;
-    border: 1px solid var(--atlas-soft-line);
-    border-radius: 10px;
-    background: rgba(4, 12, 24, .46);
-}
-
-.canvas-atlas-panel__body > div:first-child button {
-    flex: 1;
-    border-radius: 7px;
-    padding: 9px 7px 8px;
-    font-size: 11px;
-    letter-spacing: .02em;
-}
-
-.canvas-atlas-panel__body > div:first-child button[aria-current="true"],
-.canvas-atlas-panel__body > div:first-child button:hover {
-    background: rgba(97, 230, 210, .10);
-}
-
 .canvas-atlas-viewport {
     background-color: #0b1424 !important;
 }
 
 .canvas-atlas-grid {
-    opacity: .27 !important;
-    mix-blend-mode: screen;
+    opacity: .75;
 }
 
 .canvas-atlas-node {
@@ -731,18 +704,6 @@
 
 .canvas-atlas-node [data-node-panel] {
     filter: drop-shadow(0 18px 34px rgba(0, 0, 0, .22));
-}
-
-.canvas-atlas-connections path {
-    stroke: #6686a6;
-    stroke-width: 1.45;
-    opacity: .72;
-}
-
-.canvas-atlas-connections path:hover,
-.canvas-atlas-connections path[data-selected="true"] {
-    stroke: var(--atlas-accent);
-    opacity: 1;
 }
 
 .canvas-atlas-commandbar {

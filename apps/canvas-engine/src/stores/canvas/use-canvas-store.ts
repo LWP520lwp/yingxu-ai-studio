@@ -1,30 +1,24 @@
 import { create } from "zustand";
-import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
+import { persist, type StorageValue } from "zustand/middleware";
 
 import { nanoid } from "nanoid";
 import i18n from "@/i18n";
 import { localForageStorage } from "@/lib/localforage-storage";
+import { createDebouncedPersistStorage } from "@/lib/canvas/canvas-persist-storage";
+import {
+    createCanvasProject,
+    deleteCanvasProjects,
+    importCanvasProject,
+    renameCanvasProject,
+    replaceCanvasCatalog,
+    updateCanvasProject,
+    type CanvasDeletedProject,
+    type CanvasProject,
+} from "@/lib/canvas/canvas-project-catalog";
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
-import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
 
-export type CanvasProject = {
-    id: string;
-    title: string;
-    createdAt: string;
-    updatedAt: string;
-    nodes: CanvasNodeData[];
-    connections: CanvasConnection[];
-    chatSessions: CanvasAssistantSession[];
-    activeChatId: string | null;
-    backgroundMode: CanvasBackgroundMode;
-    showImageInfo: boolean;
-    viewport: ViewportTransform;
-};
-
-export type CanvasDeletedProject = {
-    id: string;
-    deletedAt: string;
-};
+export type { CanvasProject, CanvasDeletedProject };
 
 type CanvasStore = {
     hydrated: boolean;
@@ -39,33 +33,9 @@ type CanvasStore = {
     updateProject: (id: string, patch: Partial<Pick<CanvasProject, "nodes" | "connections" | "chatSessions" | "activeChatId" | "backgroundMode" | "showImageInfo" | "viewport">>) => void;
 };
 
-const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
 const CANVAS_STORE_KEY = "yingxu-atlas:canvas_store:v2";
 const LEGACY_CANVAS_STORE_KEY = "infinite-canvas:canvas_store";
-type PersistedCanvasState = Pick<CanvasStore, "projects" | "deletedProjects">;
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let queuedPersistState: PersistedCanvasState | null = null;
-
-const canvasStorage: PersistStorage<CanvasStore> = {
-    getItem: async (name) => {
-        const value = (await localForageStorage.getItem(name)) ?? (await localForageStorage.getItem(LEGACY_CANVAS_STORE_KEY));
-        if (!value) return null;
-        const parsed = JSON.parse(value) as StorageValue<CanvasStore>;
-        queuedPersistState = parsed.state as PersistedCanvasState;
-        return parsed;
-    },
-    setItem: (name, value) => {
-        const nextState = value.state as PersistedCanvasState;
-        if (queuedPersistState && queuedPersistState.projects === nextState.projects && queuedPersistState.deletedProjects === nextState.deletedProjects) return;
-        queuedPersistState = nextState;
-        if (saveTimer) clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => {
-            saveTimer = null;
-            void localForageStorage.setItem(name, JSON.stringify(value));
-        }, 400);
-    },
-    removeItem: (name) => localForageStorage.removeItem(name),
-};
+const canvasStorage = createDebouncedPersistStorage<CanvasStore>(localForageStorage, LEGACY_CANVAS_STORE_KEY, 400);
 
 export const useCanvasStore = create<CanvasStore>()(
     persist(
@@ -76,60 +46,37 @@ export const useCanvasStore = create<CanvasStore>()(
             createProject: (title = i18n.t("canvas.project.untitled")) => {
                 const now = new Date().toISOString();
                 const id = nanoid();
-                const project: CanvasProject = {
-                    id,
-                    title,
-                    createdAt: now,
-                    updatedAt: now,
-                    nodes: [],
-                    connections: [],
-                    chatSessions: [],
-                    activeChatId: null,
-                    backgroundMode: "lines",
-                    showImageInfo: false,
-                    viewport: initialViewport,
-                };
+                const project = createCanvasProject(id, title, now);
                 set((state) => ({ projects: [project, ...state.projects] }));
                 return id;
             },
             importProject: (source) => {
                 const now = new Date().toISOString();
-                const project: CanvasProject = {
-                    id: nanoid(),
-                    title: source.title || i18n.t("canvas.project.imported"),
-                    createdAt: source.createdAt || now,
-                    updatedAt: now,
-                    nodes: source.nodes || [],
-                    connections: source.connections || [],
-                    chatSessions: source.chatSessions || [],
-                    activeChatId: source.activeChatId || null,
-                    backgroundMode: source.backgroundMode || "lines",
-                    showImageInfo: source.showImageInfo || false,
-                    viewport: source.viewport || initialViewport,
-                };
+                const project = importCanvasProject(source, nanoid(), now, i18n.t("canvas.project.imported"));
                 set((state) => ({ projects: [project, ...state.projects] }));
                 return project.id;
             },
             openProject: (id) => {
                 return get().projects.find((item) => item.id === id) || null;
             },
-            renameProject: (id, title) =>
-                set((state) => ({
-                    projects: state.projects.map((project) => (project.id === id ? { ...project, title: title.trim() || project.title, updatedAt: new Date().toISOString() } : project)),
-                })),
+            renameProject: (id, title) => set((state) => {
+                const projects = renameCanvasProject(state.projects, id, title, new Date().toISOString());
+                return projects === state.projects ? state : { projects };
+            }),
             deleteProjects: (ids) =>
                 set((state) => {
-                    const now = new Date().toISOString();
-                    const removing = new Set(ids);
-                    const projects = state.projects.filter((project) => !removing.has(project.id));
-                    const deletedProjects = [...state.deletedProjects.filter((item) => !removing.has(item.id)), ...ids.map((id) => ({ id, deletedAt: now }))];
-                    return { projects, deletedProjects };
+                    const next = deleteCanvasProjects(state, ids, new Date().toISOString());
+                    return next === state ? state : next;
                 }),
-            replaceProjects: (projects, deletedProjects = []) => set({ projects, deletedProjects }),
-            updateProject: (id, patch) =>
-                set((state) => ({
-                    projects: state.projects.map((project) => (project.id === id ? { ...project, ...patch, updatedAt: new Date().toISOString() } : project)),
-                })),
+            replaceProjects: (projects, deletedProjects = []) => set((state) => {
+                const next = replaceCanvasCatalog(projects, deletedProjects);
+                if (next.projects === state.projects && next.deletedProjects === state.deletedProjects) return state;
+                return next;
+            }),
+            updateProject: (id, patch) => set((state) => {
+                const projects = updateCanvasProject(state.projects, id, patch, new Date().toISOString());
+                return projects === state.projects ? state : { projects };
+            }),
         }),
         {
             name: CANVAS_STORE_KEY,

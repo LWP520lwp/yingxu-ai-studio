@@ -1,5 +1,12 @@
 import { create } from "zustand";
 import i18n from "@/i18n";
+import {
+    normalizeAgentEndpoint,
+    persistBrowserAgentConnection,
+    readBrowserAgentPreferences,
+    type AgentPermissionMode,
+    type AgentReasoningEffort,
+} from "@/lib/agent-preferences";
 
 import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -12,8 +19,7 @@ export type AgentSkillReference = { name: string; path: string; displayName?: st
 export type AgentChatItem = { id: string; itemId?: string; clientMessageId?: string; threadId?: string; turnId?: string; role: AgentChatRole; title?: string; text: string; meta?: string; detail?: unknown; attachments?: AgentMessageAttachment[]; canvasReferences?: AgentCanvasReference[]; skill?: AgentSkillReference; streamId?: string; activityItems?: Record<string, string> };
 export type AgentEventLog = { id: string; time: string; title: string; text: string; raw?: unknown };
 export type AgentPendingToolCall = { requestId: string; name: string; input?: { ops?: CanvasAgentOp[]; path?: string } & Record<string, unknown> };
-export type AgentPermissionMode = "request" | "automatic" | "full";
-export type AgentReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export type { AgentPermissionMode, AgentReasoningEffort } from "@/lib/agent-preferences";
 export type AgentModel = {
     id: string;
     model: string;
@@ -42,6 +48,15 @@ export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
 const CONNECT_TIMEOUT_MS = 6000;
 let agentSource: EventSource | null = null;
 let connectTimer: ReturnType<typeof setTimeout> | null = null;
+let panelCloseTimer: ReturnType<typeof setTimeout> | null = null;
+const MAX_AGENT_MESSAGES = 500;
+const MAX_AGENT_EVENT_LOGS = 160;
+const savedPreferences = readBrowserAgentPreferences();
+
+function appendBounded<T>(items: T[], next: T, capacity: number) {
+    if (capacity <= 0) return [];
+    return [...items.slice(-(capacity - 1)), next];
+}
 
 type AgentStore = {
     width: number;
@@ -101,8 +116,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     panelMounted: true,
     panelClosing: false,
     canvasContext: null,
-    url: typeof window === "undefined" ? "http://127.0.0.1:17371" : localStorage.getItem("canvas-agent-url") || "http://127.0.0.1:17371",
-    token: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-token") || "",
+    url: savedPreferences.url,
+    token: savedPreferences.token,
     connected: false,
     enabled: false,
     silentConnect: false,
@@ -122,10 +137,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     loadingThreads: false,
     activeTab: "setup",
     confirmTools: false,
-    permissionMode: typeof window === "undefined" ? "request" : (localStorage.getItem("canvas-agent-permission-mode") as AgentPermissionMode) || "request",
+    permissionMode: savedPreferences.permissionMode,
     models: [],
-    model: typeof window === "undefined" ? "" : localStorage.getItem("canvas-agent-model") || "",
-    reasoningEffort: typeof window === "undefined" ? "" : (localStorage.getItem("canvas-agent-reasoning-effort") as AgentReasoningEffort) || "",
+    model: savedPreferences.model,
+    reasoningEffort: savedPreferences.reasoningEffort,
     activity: i18n.t("agent.state.ready"),
     conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} },
     bootstrapStatus: null,
@@ -134,11 +149,17 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     pendingTool: null,
     pendingApprovals: [],
     setAgentState: (patch) => set(patch),
-    openPanel: () => set({ panelOpen: true, panelMounted: true, panelClosing: false }),
+    openPanel: () => {
+        if (panelCloseTimer) clearTimeout(panelCloseTimer);
+        panelCloseTimer = null;
+        set({ panelOpen: true, panelMounted: true, panelClosing: false });
+    },
     closePanel: () => {
         if (!get().panelMounted || get().panelClosing) return;
+        if (panelCloseTimer) clearTimeout(panelCloseTimer);
         set({ panelOpen: false, panelClosing: true });
-        setTimeout(() => {
+        panelCloseTimer = setTimeout(() => {
+            panelCloseTimer = null;
             if (get().panelClosing) set({ panelClosing: false });
         }, CANVAS_AGENT_PANEL_MOTION_MS);
     },
@@ -146,19 +167,16 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     setCanvasContext: (canvasContext) => set({ canvasContext }),
     connectAgent: (options) => {
         const silent = options?.silent ?? false;
-        const endpoint = get().url.trim().replace(/\/$/, "");
+        const endpoint = normalizeAgentEndpoint(get().url);
         const token = get().token.trim();
         if (!endpoint || !token) return set({ connectError: silent ? "" : i18n.t("agent.state.connectionRequired") });
-        try {
-            const parsed = new URL(endpoint);
-            if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
-        } catch {
-            return set({ connectError: silent ? "" : i18n.t("agent.state.invalidUrl") });
-        }
-        localStorage.setItem("canvas-agent-url", endpoint);
-        localStorage.setItem("canvas-agent-token", token);
+        const connectionWarning = persistBrowserAgentConnection(endpoint, token)
+            ? ""
+            : silent
+                ? ""
+                : i18n.t("agent.state.storageUnavailable");
         // Only set enabled here; LocalAgentPanel's effect owns SSE initialization.
-        set({ url: endpoint, token, enabled: true, silentConnect: silent, fragmentBootstrap: false, activity: i18n.t("agent.status.connecting"), connectError: "" });
+        set({ url: endpoint, token, enabled: true, silentConnect: silent, fragmentBootstrap: false, activity: i18n.t("agent.status.connecting"), connectError: connectionWarning });
     },
     disconnectAgent: (patch = {}) => {
         agentSource?.close();
@@ -167,7 +185,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         connectTimer = null;
         set({ enabled: false, connected: false, silentConnect: false, fragmentBootstrap: false, activity: i18n.t("agent.state.offline"), conversation: { revision: 0, conversationId: "", threadId: "", status: "idle", mcpStatuses: {} }, bootstrapStatus: null, mcpStartupStatuses: {}, ...patch });
     },
-    addMessage: (item) => set((state) => ({ messages: [...state.messages, item] })),
-    addEventLog: (item) => set((state) => ({ eventLogs: [...state.eventLogs.slice(-160), item] })),
+    addMessage: (item) => set((state) => ({ messages: appendBounded(state.messages, item, MAX_AGENT_MESSAGES) })),
+    addEventLog: (item) => set((state) => ({ eventLogs: appendBounded(state.eventLogs, item, MAX_AGENT_EVENT_LOGS) })),
     clearEventLogs: () => set({ eventLogs: [] }),
 }));

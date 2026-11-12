@@ -1,6 +1,13 @@
-import { useEffect } from "react";
-import type { ReactNode } from "react";
-import { BetweenHorizontalStart, GalleryHorizontalEnd, GalleryHorizontal, Group, Plus, Trash2, Ungroup } from "lucide-react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  BetweenHorizontalStart,
+  GalleryHorizontalEnd,
+  GalleryHorizontal,
+  Group,
+  Copy,
+  Trash2,
+  Ungroup,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -8,49 +15,160 @@ import { useThemeStore } from "@/stores/use-theme-store";
 import type { ContextMenuState } from "@/types/canvas";
 import type { VideoFramePosition } from "@/lib/canvas/canvas-video-frame";
 
-export function CanvasNodeContextMenu({ menu, canCaptureVideoFrame, canGroup, canUngroup, onClose, onCaptureVideoFrame, onDuplicate, onGroup, onUngroup, onDelete }: { menu: ContextMenuState; canCaptureVideoFrame: boolean; canGroup?: boolean; canUngroup?: boolean; onClose: () => void; onCaptureVideoFrame: (position: VideoFramePosition) => void; onDuplicate: () => void; onGroup?: () => void; onUngroup?: () => void; onDelete: () => void }) {
-    const { t } = useTranslation();
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+type Props = {
+  menu: ContextMenuState;
+  canCaptureVideoFrame: boolean;
+  canGroup?: boolean;
+  canUngroup?: boolean;
+  onClose: () => void;
+  onCaptureVideoFrame: (position: VideoFramePosition) => void;
+  onDuplicate: () => void;
+  onGroup?: () => void;
+  onUngroup?: () => void;
+  onDelete: () => void;
+};
+type Entry = {
+  id: string;
+  text: string;
+  icon: ReactNode;
+  run: () => void;
+  danger?: boolean;
+};
 
-    useEffect(() => {
-        const close = (event: PointerEvent) => {
-            const target = event.target;
-            if (target instanceof Element && target.closest(".ant-popover")) return;
+/** A bounded keyboard menu; focus and dismissal are scoped to this popup. */
+export function CanvasNodeContextMenu(props: Props) {
+  const { menu, onClose } = props;
+  const { t } = useTranslation();
+  const theme = canvasThemes[useThemeStore((state) => state.theme)];
+  const root = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: menu.x, y: menu.y });
+  const entries: Entry[] = [];
+  if (props.canCaptureVideoFrame) {
+    for (const [id, icon] of [
+      ["first", <BetweenHorizontalStart className="size-4" />],
+      ["last", <GalleryHorizontalEnd className="size-4" />],
+      ["current", <GalleryHorizontal className="size-4" />],
+    ] as const) {
+      entries.push({
+        id,
+        text: t(`canvas.videoFrames.${id}`),
+        icon,
+        run: () => props.onCaptureVideoFrame(id),
+      });
+    }
+  }
+  if (menu.type === "node") {
+    if (props.canGroup && props.onGroup)
+      entries.push({
+        id: "group",
+        text: t("canvas.nodeToolbar.group"),
+        icon: <Group className="size-4" />,
+        run: props.onGroup,
+      });
+    if (props.canUngroup && props.onUngroup)
+      entries.push({
+        id: "ungroup",
+        text: t("canvas.nodeToolbar.ungroup"),
+        icon: <Ungroup className="size-4" />,
+        run: props.onUngroup,
+      });
+    entries.push({
+      id: "duplicate",
+      text: t("canvas.controls.duplicate"),
+      icon: <Copy className="size-4" />,
+      run: props.onDuplicate,
+    });
+  }
+  entries.push({
+    id: "delete",
+    text: t("canvas.controls.delete"),
+    icon: <Trash2 className="size-4" />,
+    run: props.onDelete,
+    danger: true,
+  });
+  useLayoutEffect(() => {
+    const popup = root.current;
+    if (!popup) return;
+    const previous = document.activeElement;
+    const rect = popup.getBoundingClientRect();
+    setPosition({
+      x: Math.max(8, Math.min(menu.x, window.innerWidth - rect.width - 8)),
+      y: Math.max(8, Math.min(menu.y, window.innerHeight - rect.height - 8)),
+    });
+    popup.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!popup.contains(event.target as Node)) onClose();
+    };
+    window.addEventListener("pointerdown", dismiss, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("pointerdown", dismiss, true);
+      window.removeEventListener("resize", onClose);
+      if (
+        popup.contains(document.activeElement) &&
+        previous instanceof HTMLElement &&
+        previous.isConnected
+      )
+        previous.focus();
+    };
+  }, [menu.x, menu.y, onClose]);
+  return (
+    <div
+      ref={root}
+      role="menu"
+      aria-label="节点菜单"
+      className="fixed z-[80] min-w-48 rounded-xl border p-1 shadow-2xl"
+      style={{
+        left: position.x,
+        top: position.y,
+        background: theme.toolbar.panel,
+        borderColor: theme.toolbar.border,
+        color: theme.node.text,
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" || event.key === "Tab") {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+          return;
+        }
+        if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key))
+          return;
+        event.preventDefault();
+        const buttons = Array.from(
+          root.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ||
+            [],
+        );
+        const current = buttons.indexOf(document.activeElement as HTMLElement);
+        const index =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? buttons.length - 1
+              : (current +
+                  (event.key === "ArrowDown" ? 1 : -1) +
+                  buttons.length) %
+                buttons.length;
+        buttons[index]?.focus();
+      }}
+    >
+      {entries.map((entry) => (
+        <button
+          key={entry.id}
+          type="button"
+          role="menuitem"
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-xs transition hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none"
+          style={{ color: entry.danger ? "#f87171" : theme.node.text }}
+          onClick={() => {
             onClose();
-        };
-        window.addEventListener("pointerdown", close);
-        return () => window.removeEventListener("pointerdown", close);
-    }, [onClose]);
-
-    return (
-        <div
-            className="fixed z-[80] min-w-44 overflow-hidden rounded-xl border py-1 shadow-2xl"
-            style={{ left: menu.x, top: menu.y, background: theme.toolbar.panel, borderColor: theme.toolbar.border, color: theme.node.text }}
-            onPointerDown={(event) => event.stopPropagation()}
+            entry.run();
+          }}
         >
-            {canCaptureVideoFrame ? (
-                <>
-                    <MenuButton icon={<BetweenHorizontalStart className="size-4" />} label={t("canvas.videoFrames.first")} onClick={() => onCaptureVideoFrame("first")} />
-                    <MenuButton icon={<GalleryHorizontalEnd className="size-4" />} label={t("canvas.videoFrames.last")} onClick={() => onCaptureVideoFrame("last")} />
-                    <MenuButton icon={<GalleryHorizontal className="size-4" />} label={t("canvas.videoFrames.current")} onClick={() => onCaptureVideoFrame("current")} />
-                    <div className="my-1 border-t" style={{ borderColor: theme.toolbar.border }} />
-                </>
-            ) : null}
-            {menu.type === "node" && canGroup ? <MenuButton icon={<Group className="size-4" />} label={t("canvas.nodeToolbar.group")} onClick={onGroup} /> : null}
-            {menu.type === "node" && canUngroup ? <MenuButton icon={<Ungroup className="size-4" />} label={t("canvas.nodeToolbar.ungroup")} onClick={onUngroup} /> : null}
-            {menu.type === "node" ? <MenuButton icon={<Plus className="size-4" />} label={t("canvas.controls.duplicate")} onClick={onDuplicate} /> : null}
-            <MenuButton icon={<Trash2 className="size-4" />} label={t("canvas.controls.delete")} onClick={onDelete} danger />
-        </div>
-    );
-}
-
-function MenuButton({ icon, label, onClick, danger = false }: { icon: ReactNode; label: string; onClick?: () => void; danger?: boolean }) {
-    const theme = canvasThemes[useThemeStore((state) => state.theme)];
-
-    return (
-        <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:opacity-80" style={{ color: danger ? "#f87171" : theme.node.text }} onClick={onClick}>
-            {icon}
-            <span>{label}</span>
+          {entry.icon}
+          <span>{entry.text}</span>
         </button>
-    );
+      ))}
+    </div>
+  );
 }

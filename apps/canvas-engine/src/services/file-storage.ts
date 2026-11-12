@@ -1,89 +1,190 @@
-import { createScopedStorage } from "@/lib/localforage-storage";
 import { nanoid } from "nanoid";
 
+import { createScopedStorage } from "@/lib/localforage-storage";
 import { withLocalProxy } from "@/stores/use-config-store";
+import {
+  abortReason,
+  collectStoredKeys,
+  fetchBlobWithDeadline,
+  isServerAssetUrl,
+  ObjectUrlRegistry,
+  throwIfAborted,
+} from "@/services/media-storage-runtime";
 
-export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number };
+export type UploadedFile = {
+  url: string;
+  storageKey: string;
+  bytes: number;
+  mimeType: string;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+};
+
+export type MediaUploadOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
 
 const store = createScopedStorage("media_files");
-const objectUrls = new Map<string, string>();
+const objectUrls = new ObjectUrlRegistry();
+const DEFAULT_IO_TIMEOUT_MS = 10 * 60_000;
+const METADATA_TIMEOUT_MS = 10_000;
 
-export async function uploadMediaFile(input: string | Blob, prefix = "file"): Promise<UploadedFile> {
-    const blob = typeof input === "string" ? await (await fetch(withLocalProxy(input))).blob() : input;
-    const storageKey = `${prefix}:${nanoid()}`;
-    await store.setItem(storageKey, blob);
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : blob.type.startsWith("audio/") ? await readAudioMeta(url) : {};
-    return { url, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta };
+export async function uploadMediaFile(
+  input: string | Blob,
+  prefix = "file",
+  options: MediaUploadOptions = {},
+): Promise<UploadedFile> {
+  throwIfAborted(options.signal);
+  const blob =
+    typeof input === "string"
+      ? await fetchBlobWithDeadline(withLocalProxy(input), {
+          signal: options.signal,
+          timeoutMs: options.timeoutMs ?? DEFAULT_IO_TIMEOUT_MS,
+          responseError: () => new Error("Media download failed"),
+          timeoutError: () => new Error("Media download timed out"),
+        })
+      : input;
+  throwIfAborted(options.signal);
+
+  const storageKey = `${prefix}:${nanoid()}`;
+  await store.setItem(storageKey, blob);
+  try {
+    throwIfAborted(options.signal);
+    const url = objectUrls.put(storageKey, blob);
+    const meta = await readMediaMeta(url, blob.type, options.signal);
+    throwIfAborted(options.signal);
+    return {
+      url,
+      storageKey,
+      bytes: blob.size,
+      mimeType: blob.type || "application/octet-stream",
+      ...meta,
+    };
+  } catch (error) {
+    objectUrls.invalidate(storageKey);
+    await store.removeItem(storageKey).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function resolveMediaUrl(storageKey?: string, fallback = "") {
-    if (/^\/api\/assets\/[a-zA-Z0-9-]+\/content(?:\?|$)/.test(fallback)) return fallback;
-    if (!storageKey) return fallback;
-    const cached = objectUrls.get(storageKey);
-    if (cached) return cached;
-    const blob = await store.getItem<Blob>(storageKey);
-    if (!blob) return fallback;
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+  if (isServerAssetUrl(fallback)) return fallback;
+  if (!storageKey) return fallback;
+  return (
+    (await objectUrls.resolve(storageKey, () =>
+      store.getItem<Blob>(storageKey),
+    )) || fallback
+  );
 }
 
 export async function getMediaBlob(storageKey: string) {
-    return store.getItem<Blob>(storageKey);
+  return store.getItem<Blob>(storageKey);
 }
 
 export async function setMediaBlob(storageKey: string, blob: Blob) {
-    await store.setItem(storageKey, blob);
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+  await store.setItem(storageKey, blob);
+  return objectUrls.put(storageKey, blob);
 }
 
 export async function deleteStoredMedia(keys: Iterable<string>) {
-    await Promise.all(
-        Array.from(new Set(keys)).map(async (key) => {
-            const url = objectUrls.get(key);
-            if (url) URL.revokeObjectURL(url);
-            objectUrls.delete(key);
-            await store.removeItem(key);
-        }),
-    );
+  await Promise.all(
+    Array.from(new Set(keys)).map(async (key) => {
+      objectUrls.invalidate(key);
+      await store.removeItem(key);
+    }),
+  );
 }
 
 export async function cleanupUnusedMedia(usedData: unknown) {
-    const usedKeys = collectMediaStorageKeys(usedData);
-    const unused: string[] = [];
-    await store.iterate((_value, key) => {
-        if (!usedKeys.has(key)) unused.push(key);
-    });
-    await Promise.all(unused.map((key) => store.removeItem(key)));
+  const usedKeys = collectMediaStorageKeys(usedData);
+  const unused: string[] = [];
+  await store.iterate((_value, key) => {
+    if (!usedKeys.has(key)) unused.push(key);
+  });
+  await deleteStoredMedia(unused);
 }
 
-export function collectMediaStorageKeys(value: unknown, keys = new Set<string>()) {
-    if (!value || typeof value !== "object") return keys;
-    if ("storageKey" in value && typeof value.storageKey === "string" && value.storageKey.includes(":")) keys.add(value.storageKey);
-    Object.values(value).forEach((item) => (Array.isArray(item) ? item.forEach((child) => collectMediaStorageKeys(child, keys)) : collectMediaStorageKeys(item, keys)));
-    return keys;
+export function collectMediaStorageKeys(
+  value: unknown,
+  keys = new Set<string>(),
+) {
+  return collectStoredKeys(value, (key) => key.includes(":"), keys);
 }
 
-function readVideoMeta(url: string) {
-    return new Promise<{ width: number; height: number; durationMs?: number }>((resolve) => {
-        const video = document.createElement("video");
-        const done = () => resolve({ width: video.videoWidth || 1280, height: video.videoHeight || 720, durationMs: Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : undefined });
-        video.onloadedmetadata = done;
-        video.onerror = done;
-        video.src = url;
-    });
+async function readMediaMeta(
+  url: string,
+  mimeType: string,
+  signal?: AbortSignal,
+) {
+  if (mimeType.startsWith("video/")) {
+    return readVideoMeta(url, signal);
+  }
+  if (mimeType.startsWith("audio/")) {
+    return readAudioMeta(url, signal);
+  }
+  return {};
 }
 
-function readAudioMeta(url: string) {
-    return new Promise<{ durationMs?: number }>((resolve) => {
-        const audio = document.createElement("audio");
-        const done = () => resolve({ durationMs: Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : undefined });
-        audio.onloadedmetadata = done;
-        audio.onerror = done;
-        audio.src = url;
-    });
+function readVideoMeta(url: string, signal?: AbortSignal) {
+  return readElementMeta(url, "video", signal, (element) => ({
+    width: (element as HTMLVideoElement).videoWidth || 1280,
+    height: (element as HTMLVideoElement).videoHeight || 720,
+    durationMs: durationMs(element.duration),
+  }));
+}
+
+function readAudioMeta(url: string, signal?: AbortSignal) {
+  return readElementMeta(url, "audio", signal, (element) => ({
+    durationMs: durationMs(element.duration),
+  }));
+}
+
+function readElementMeta<Result extends Record<string, number | undefined>>(
+  url: string,
+  kind: "video" | "audio",
+  signal: AbortSignal | undefined,
+  getResult: (element: HTMLMediaElement) => Result,
+): Promise<Result> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+
+    const element = document.createElement(kind) as HTMLMediaElement;
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      const result = error ? undefined : getResult(element);
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      element.onloadedmetadata = null;
+      element.onerror = null;
+      element.removeAttribute("src");
+      element.load();
+      if (error) reject(error);
+      else resolve(result!);
+    };
+    const abort = () =>
+      finish(
+        signal
+          ? abortReason(signal)
+          : new DOMException("Aborted", "AbortError"),
+      );
+    const timer = setTimeout(() => finish(), METADATA_TIMEOUT_MS);
+    signal?.addEventListener("abort", abort, { once: true });
+    element.preload = "metadata";
+    element.onloadedmetadata = () => finish();
+    element.onerror = () => finish();
+    element.src = url;
+  });
+}
+
+function durationMs(duration: number) {
+  return Number.isFinite(duration) && duration >= 0
+    ? Math.round(duration * 1000)
+    : undefined;
 }

@@ -1,217 +1,307 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import {
+  fitImageToEditorViewport,
+  IMAGE_EDITOR_MAX_ZOOM,
+  IMAGE_EDITOR_MIN_ZOOM,
+  imageEditorPanScroll,
+  imageEditorLayout,
+  normalizeImageEditorSize,
+  scrollForZoomAnchor,
+  zoomAnchorAtPoint,
+} from "@/lib/canvas/image-editor-viewport-geometry";
 
 type ImageSize = { width: number; height: number };
 
-const minZoom = 1;
-const maxZoom = 4;
 const zoomStep = 1.2;
-const viewportPadding = 16;
 
 export function useImageEditorViewport(image: ImageSize | null, open: boolean) {
-    const viewportNodeRef = useRef<HTMLDivElement>(null);
-    const stageRef = useRef<HTMLDivElement>(null);
-    const panRef = useRef<{ pointerId: number; x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
-    const zoomAnchorRef = useRef<{ zoom: number; ratioX: number; ratioY: number; viewportX: number; viewportY: number } | null>(null);
-    const [viewportElement, setViewportElement] = useState<HTMLDivElement | null>(null);
-    const [viewportSize, setViewportSize] = useState<ImageSize>({ width: 0, height: 0 });
-    const [zoom, setZoom] = useState(minZoom);
-    const [isPanning, setIsPanning] = useState(false);
-    const [spacePressed, setSpacePressed] = useState(false);
-    const spacePressedRef = useRef(false);
-    const viewportRef = useCallback((node: HTMLDivElement | null) => {
-        viewportNodeRef.current = node;
-        setViewportElement(node);
-    }, []);
+  const viewportNodeRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const panRef = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+    scrollLeft: number;
+    scrollTop: number;
+  } | null>(null);
+  const zoomAnchorRef = useRef<{
+    zoom: number;
+    ratioX: number;
+    ratioY: number;
+    viewportX: number;
+    viewportY: number;
+  } | null>(null);
+  const zoomRef = useRef(IMAGE_EDITOR_MIN_ZOOM);
+  const [viewportElement, setViewportElement] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [viewportSize, setViewportSize] = useState<ImageSize>({
+    width: 0,
+    height: 0,
+  });
+  const [zoom, setZoom] = useState(IMAGE_EDITOR_MIN_ZOOM);
+  const [isPanning, setIsPanning] = useState(false);
+  const [spacePressed, setSpacePressed] = useState(false);
+  const spacePressedRef = useRef(false);
+  const viewportRef = useCallback((node: HTMLDivElement | null) => {
+    viewportNodeRef.current = node;
+    setViewportElement(node);
+  }, []);
 
-    useEffect(() => {
-        if (!open) return;
-        zoomAnchorRef.current = null;
-        setZoom(minZoom);
-    }, [open, image?.width, image?.height]);
+  const stopPan = useCallback((updateState = true) => {
+    const viewport = viewportNodeRef.current;
+    const pan = panRef.current;
+    panRef.current = null;
+    try {
+      if (viewport && pan && viewport.hasPointerCapture(pan.pointerId)) {
+        viewport.releasePointerCapture(pan.pointerId);
+      }
+    } catch {
+      // The viewport may have detached while the dialog was closing.
+    }
+    if (updateState) setIsPanning(false);
+  }, []);
 
-    useEffect(() => {
-        if (!open) return;
-        const releaseSpace = () => {
-            spacePressedRef.current = false;
-            setSpacePressed(false);
-        };
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.code !== "Space" || event.repeat) return;
-            const target = event.target instanceof Element ? event.target : null;
-            if (target?.closest("input,textarea,[contenteditable='true']")) return;
-            event.preventDefault();
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            if (document.activeElement instanceof HTMLElement && document.activeElement.matches("button,a,[role='button']")) document.activeElement.blur();
-            spacePressedRef.current = true;
-            setSpacePressed(true);
-        };
-        const handleKeyUp = (event: KeyboardEvent) => {
-            if (event.code !== "Space" || !spacePressedRef.current) return;
-            event.preventDefault();
-            event.stopPropagation();
-            event.stopImmediatePropagation();
-            releaseSpace();
-        };
-        window.addEventListener("keydown", handleKeyDown, true);
-        window.addEventListener("keyup", handleKeyUp, true);
-        window.addEventListener("blur", releaseSpace);
-        return () => {
-            window.removeEventListener("keydown", handleKeyDown, true);
-            window.removeEventListener("keyup", handleKeyUp, true);
-            window.removeEventListener("blur", releaseSpace);
-            spacePressedRef.current = false;
-        };
-    }, [open]);
+  useEffect(() => {
+    if (!open) {
+      stopPan();
+      return;
+    }
+    zoomAnchorRef.current = null;
+    zoomRef.current = IMAGE_EDITOR_MIN_ZOOM;
+    setZoom(IMAGE_EDITOR_MIN_ZOOM);
+    stopPan();
+  }, [image?.height, image?.width, open, stopPan]);
 
-    useEffect(() => {
-        if (!open || !viewportElement) return;
-        const updateSize = () => {
-            const width = viewportElement.clientWidth;
-            const height = viewportElement.clientHeight;
-            setViewportSize((current) => (current.width === width && current.height === height ? current : { width, height }));
-        };
-        updateSize();
-        const observer = new ResizeObserver(updateSize);
-        observer.observe(viewportElement);
-        return () => observer.disconnect();
-    }, [open, viewportElement]);
-
-    const baseSize = fitImage(image, viewportSize);
-    const stageSize = { width: baseSize.width * zoom, height: baseSize.height * zoom };
-    const contentSize = {
-        width: Math.max(viewportSize.width, stageSize.width),
-        height: Math.max(viewportSize.height, stageSize.height),
+  useEffect(() => {
+    if (!open) return;
+    const releaseSpace = () => {
+      spacePressedRef.current = false;
+      setSpacePressed(false);
+      stopPan();
     };
-    const stageOffset = {
-        left: Math.max(0, Math.round((contentSize.width - stageSize.width) / 2)),
-        top: Math.max(0, Math.round((contentSize.height - stageSize.height) / 2)),
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.repeat) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("input,textarea,[contenteditable='true']")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (
+        document.activeElement instanceof HTMLElement &&
+        document.activeElement.matches("button,a,[role='button']")
+      )
+        document.activeElement.blur();
+      spacePressedRef.current = true;
+      setSpacePressed(true);
     };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || !spacePressedRef.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      spacePressedRef.current = false;
+      stopPan(false);
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("blur", releaseSpace);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("blur", releaseSpace);
+      releaseSpace();
+    };
+  }, [open, stopPan]);
 
-    useLayoutEffect(() => {
-        const viewport = viewportNodeRef.current;
-        const anchor = zoomAnchorRef.current;
-        if (!viewport || !anchor || Math.abs(anchor.zoom - zoom) > 0.001) return;
-        const nextWidth = baseSize.width * zoom;
-        const nextHeight = baseSize.height * zoom;
-        const nextLeft = Math.max(0, (Math.max(viewport.clientWidth, nextWidth) - nextWidth) / 2);
-        const nextTop = Math.max(0, (Math.max(viewport.clientHeight, nextHeight) - nextHeight) / 2);
-        viewport.scrollLeft = nextLeft + anchor.ratioX * nextWidth - anchor.viewportX;
-        viewport.scrollTop = nextTop + anchor.ratioY * nextHeight - anchor.viewportY;
-        zoomAnchorRef.current = null;
-    }, [baseSize.height, baseSize.width, zoom]);
+  useEffect(() => {
+    if (!open || !viewportElement) return;
+    const updateSize = () => {
+      const width = viewportElement.clientWidth;
+      const height = viewportElement.clientHeight;
+      const next = normalizeImageEditorSize({ width, height });
+      setViewportSize((current) =>
+        current.width === next.width && current.height === next.height
+          ? current
+          : next,
+      );
+    };
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(viewportElement);
+    return () => observer.disconnect();
+  }, [open, viewportElement]);
 
-    const setZoomAround = useCallback(
-        (nextZoom: number, clientX?: number, clientY?: number) => {
-            const viewport = viewportNodeRef.current;
-            const stage = stageRef.current;
-            if (!viewport || !stage || !baseSize.width || !baseSize.height) return;
+  const normalizedImage = normalizeImageEditorSize(image);
+  const baseSize = fitImageToEditorViewport(normalizedImage, viewportSize);
+  const { stageSize, contentSize, stageOffset } = imageEditorLayout(
+    baseSize,
+    viewportSize,
+    zoom,
+  );
 
-            const boundedZoom = clamp(nextZoom, minZoom, maxZoom);
-            if (Math.abs(boundedZoom - zoom) < 0.001) return;
+  useLayoutEffect(() => {
+    const viewport = viewportNodeRef.current;
+    const anchor = zoomAnchorRef.current;
+    if (!viewport || !anchor || Math.abs(anchor.zoom - zoom) > 0.001) return;
+    const nextScroll = scrollForZoomAnchor(anchor, baseSize, {
+      width: viewport.clientWidth,
+      height: viewport.clientHeight,
+    });
+    viewport.scrollLeft = nextScroll.left;
+    viewport.scrollTop = nextScroll.top;
+    zoomAnchorRef.current = null;
+  }, [baseSize.height, baseSize.width, zoom]);
 
-            const viewportRect = viewport.getBoundingClientRect();
-            const stageRect = stage.getBoundingClientRect();
-            const pointerX = clientX ?? viewportRect.left + viewportRect.width / 2;
-            const pointerY = clientY ?? viewportRect.top + viewportRect.height / 2;
-            const ratioX = clamp((pointerX - stageRect.left) / Math.max(1, stageRect.width), 0, 1);
-            const ratioY = clamp((pointerY - stageRect.top) / Math.max(1, stageRect.height), 0, 1);
-            const viewportX = pointerX - viewportRect.left;
-            const viewportY = pointerY - viewportRect.top;
-
-            zoomAnchorRef.current = { zoom: boundedZoom, ratioX, ratioY, viewportX, viewportY };
-            setZoom(boundedZoom);
+  const setZoomAround = useCallback(
+    (nextZoom: number, clientX?: number, clientY?: number) => {
+      const viewport = viewportNodeRef.current;
+      if (!viewport || !baseSize.width || !baseSize.height) return;
+      const currentZoom = zoomRef.current;
+      const viewportRect = viewport.getBoundingClientRect();
+      const anchor = zoomAnchorAtPoint({
+        baseSize,
+        viewport: {
+          left: viewportRect.left,
+          top: viewportRect.top,
+          width: viewportRect.width,
+          height: viewportRect.height,
         },
-        [baseSize.height, baseSize.width, zoom],
+        scroll: { x: viewport.scrollLeft, y: viewport.scrollTop },
+        currentZoom,
+        nextZoom,
+        clientPoint:
+          clientX === undefined || clientY === undefined
+            ? undefined
+            : { x: clientX, y: clientY },
+        previousAnchor: zoomAnchorRef.current,
+      });
+      if (!anchor) return;
+      zoomAnchorRef.current = anchor;
+      zoomRef.current = anchor.zoom;
+      setZoom(anchor.zoom);
+    },
+    [baseSize.height, baseSize.width],
+  );
+
+  useEffect(() => {
+    if (!open || !viewportElement) return;
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setZoomAround(
+        event.deltaY < 0
+          ? zoomRef.current * zoomStep
+          : zoomRef.current / zoomStep,
+        event.clientX,
+        event.clientY,
+      );
+    };
+    viewportElement.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewportElement.removeEventListener("wheel", handleWheel);
+  }, [open, setZoomAround, viewportElement]);
+
+  const startPan = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 1 && !(event.button === 0 && spacePressedRef.current))
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    const viewport = event.currentTarget;
+    panRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      scrollLeft: viewport.scrollLeft,
+      scrollTop: viewport.scrollTop,
+    };
+    viewport.setPointerCapture(event.pointerId);
+    setIsPanning(true);
+  }, []);
+  const movePan = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const pan = panRef.current;
+    if (!pan || event.pointerId !== pan.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const scroll = imageEditorPanScroll(
+      {
+        pointerX: pan.x,
+        pointerY: pan.y,
+        scrollLeft: pan.scrollLeft,
+        scrollTop: pan.scrollTop,
+      },
+      { x: event.clientX, y: event.clientY },
     );
+    event.currentTarget.scrollLeft = scroll.left;
+    event.currentTarget.scrollTop = scroll.top;
+  }, []);
+  const stopPanFromPointer = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const pan = panRef.current;
+      if (!pan || event.pointerId !== pan.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      stopPan();
+    },
+    [stopPan],
+  );
+  const preventAuxClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (event.button !== 1) return;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    [],
+  );
 
-    useEffect(() => {
-        if (!open || !viewportElement) return;
-        const handleWheel = (event: WheelEvent) => {
-            event.preventDefault();
-            event.stopPropagation();
-            setZoomAround(event.deltaY < 0 ? zoom * zoomStep : zoom / zoomStep, event.clientX, event.clientY);
-        };
-        viewportElement.addEventListener("wheel", handleWheel, { passive: false });
-        return () => viewportElement.removeEventListener("wheel", handleWheel);
-    }, [open, setZoomAround, viewportElement, zoom]);
-
-    const startPan = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-        if (event.button !== 1 && !(event.button === 0 && spacePressedRef.current)) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const viewport = event.currentTarget;
-        panRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop };
-        viewport.setPointerCapture(event.pointerId);
-        setIsPanning(true);
-    }, []);
-    const movePan = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-        const pan = panRef.current;
-        if (!pan || event.pointerId !== pan.pointerId) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.currentTarget.scrollLeft = pan.scrollLeft - (event.clientX - pan.x);
-        event.currentTarget.scrollTop = pan.scrollTop - (event.clientY - pan.y);
-    }, []);
-    const stopPan = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-        const pan = panRef.current;
-        if (!pan || event.pointerId !== pan.pointerId) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-        panRef.current = null;
-        setIsPanning(false);
-    }, []);
-    const preventAuxClick = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
-        if (event.button !== 1) return;
-        event.preventDefault();
-        event.stopPropagation();
-    }, []);
-
-    return {
-        viewportRef,
-        stageRef,
-        zoom,
-        isPanning,
-        spacePressed,
-        scrollClassName: zoom > minZoom + 0.001 ? "overflow-scroll" : "overflow-hidden",
-        panHandlers: {
-            onPointerDownCapture: startPan,
-            onPointerMoveCapture: movePan,
-            onPointerUpCapture: stopPan,
-            onPointerCancelCapture: stopPan,
-            onAuxClick: preventAuxClick,
-        },
-        canZoomIn: zoom < maxZoom,
-        canZoomOut: zoom > minZoom,
-        imageScale: image ? stageSize.width / image.width : 0,
-        zoomIn: () => setZoomAround(zoom * zoomStep),
-        zoomOut: () => setZoomAround(zoom / zoomStep),
-        resetZoom: () => setZoomAround(minZoom),
-        contentStyle: { width: contentSize.width, height: contentSize.height } satisfies CSSProperties,
-        stageStyle: {
-            left: stageOffset.left,
-            top: stageOffset.top,
-            width: stageSize.width,
-            height: stageSize.height,
-        } satisfies CSSProperties,
-        mediaStyle: {
-            width: baseSize.width,
-            height: baseSize.height,
-            transform: `translateZ(0) scale(${zoom})`,
-            transformOrigin: "top left",
-        } satisfies CSSProperties,
-    };
-}
-
-function fitImage(image: ImageSize | null, viewport: ImageSize): ImageSize {
-    if (!image || !viewport.width || !viewport.height) return { width: 0, height: 0 };
-    const availableWidth = Math.max(1, viewport.width - viewportPadding * 2);
-    const availableHeight = Math.max(1, viewport.height - viewportPadding * 2);
-    const scale = Math.min(availableWidth / image.width, availableHeight / image.height, 1);
-    return { width: Math.max(1, Math.floor(image.width * scale)), height: Math.max(1, Math.floor(image.height * scale)) };
-}
-
-function clamp(value: number, min: number, max: number) {
-    return Math.min(max, Math.max(min, value));
+  return {
+    viewportRef,
+    stageRef,
+    zoom,
+    isPanning,
+    spacePressed,
+    scrollClassName:
+      zoom > IMAGE_EDITOR_MIN_ZOOM + 0.001
+        ? "overflow-scroll"
+        : "overflow-hidden",
+    panHandlers: {
+      onPointerDownCapture: startPan,
+      onPointerMoveCapture: movePan,
+      onPointerUpCapture: stopPanFromPointer,
+      onPointerCancelCapture: stopPanFromPointer,
+      onAuxClick: preventAuxClick,
+    },
+    canZoomIn: zoom < IMAGE_EDITOR_MAX_ZOOM,
+    canZoomOut: zoom > IMAGE_EDITOR_MIN_ZOOM,
+    imageScale: normalizedImage.width
+      ? stageSize.width / normalizedImage.width
+      : 0,
+    zoomIn: () => setZoomAround(zoomRef.current * zoomStep),
+    zoomOut: () => setZoomAround(zoomRef.current / zoomStep),
+    resetZoom: () => setZoomAround(IMAGE_EDITOR_MIN_ZOOM),
+    contentStyle: {
+      width: contentSize.width,
+      height: contentSize.height,
+    } satisfies CSSProperties,
+    stageStyle: {
+      left: stageOffset.x,
+      top: stageOffset.y,
+      width: stageSize.width,
+      height: stageSize.height,
+    } satisfies CSSProperties,
+    mediaStyle: {
+      width: baseSize.width,
+      height: baseSize.height,
+      transform: `translateZ(0) scale(${zoom})`,
+      transformOrigin: "top left",
+    } satisfies CSSProperties,
+  };
 }

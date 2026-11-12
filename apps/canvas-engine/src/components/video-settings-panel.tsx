@@ -6,14 +6,21 @@ import i18n from "@/i18n";
 import { getPlatformInit } from "@/platform/rpc";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { clampVideoSeconds, computeVideoSize, inferVideoRatio, parseVideoResolution, readVideoDimensions, VIDEO_SECONDS_MAX, VIDEO_SECONDS_MIN, videoRatioOptions } from "@/lib/media-size";
+import { videoRatioOptions } from "@/lib/media-size";
+import {
+    normalizeVideoMode,
+    normalizeVideoResolution,
+    normalizeVideoSize,
+    normalizedVideoSeconds,
+    sizeFromDimensions,
+    videoDimensions,
+    videoRatioForSize,
+    VIDEO_RESOLUTIONS,
+    VIDEO_SECONDS_RANGE,
+} from "@/lib/video-settings-model";
 import { type AiConfig } from "@/stores/use-config-store";
 
-const resolutionOptions = [
-    { value: "480", label: "480p" },
-    { value: "720", label: "720p" },
-    { value: "1080", label: "1080p" },
-];
+const resolutionOptions = VIDEO_RESOLUTIONS.map((value) => ({ value, label: `${value}p` }));
 const videoModeOptions = [
     { value: "auto", labelKey: "auto" },
     { value: "frames", labelKey: "frames" },
@@ -22,7 +29,7 @@ const videoModeOptions = [
 
 export const videoResolutionOptions = resolutionOptions.map((item) => ({ value: item.value, label: item.label }));
 export const videoSizeOptions = videoRatioOptions.map((item) => ({ value: item.value, get label() { return item.value === "auto" ? i18n.t("settingsPanels.common.auto") : item.value; } }));
-export const videoSecondsRange = { min: VIDEO_SECONDS_MIN, max: VIDEO_SECONDS_MAX };
+export const videoSecondsRange = VIDEO_SECONDS_RANGE;
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
@@ -34,19 +41,21 @@ type VideoSettingsPanelProps = {
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     const { t } = useTranslation();
-    const seconds = Number(clampVideoSeconds(config.videoSeconds || "6"));
+    const seconds = normalizedVideoSeconds(config.videoSeconds);
     const videoMode = normalizeVideoModeValue(config.videoMode);
     const platformModel = config.model.startsWith("platform::") ? getPlatformInit()?.models.video.find((model) => model.id === config.model.replace(/^platform::/, "")) : null;
     const frameSupported = !config.model.startsWith("platform::") || Array.isArray(platformModel?.caps?.supportedVideoModes) && platformModel.caps.supportedVideoModes.includes("frames");
-    const resolution = parseVideoResolution(config.vquality);
-    const selectedRatio = inferVideoRatio(config.size || "auto");
-    const dimensions = readVideoDimensions(config.size || "auto", resolution, selectedRatio);
+    const selectedRatio = videoRatioForSize(config.size);
+    const resolution = normalizeVideoResolution(config.vquality, selectedRatio === "auto" ? "16:9" : selectedRatio);
+    const safeSize = normalizeVideoSize(config.size, resolution);
+    const dimensions = videoDimensions(safeSize, resolution, selectedRatio);
     const applySize = (nextResolution: string, ratio: string) => {
-        onConfigChange("vquality", nextResolution);
-        onConfigChange("size", computeVideoSize(nextResolution, ratio));
+        const safeResolution = normalizeVideoResolution(nextResolution, ratio);
+        onConfigChange("vquality", safeResolution);
+        onConfigChange("size", normalizeVideoSize(ratio, safeResolution));
     };
     const selectResolution = (nextResolution: string) => {
-        if (selectedRatio === "auto") onConfigChange("vquality", nextResolution);
+        if (selectedRatio === "auto") onConfigChange("vquality", normalizeVideoResolution(nextResolution));
         else applySize(nextResolution, selectedRatio);
     };
 
@@ -90,7 +99,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                 </SettingGroup>
                 <SettingGroup title={t("settingsPanels.video.seconds")} color={theme.node.muted}>
                     <div className="flex items-center gap-3" onMouseDown={(event) => event.stopPropagation()}>
-                        <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_MIN} max={VIDEO_SECONDS_MAX} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
+                        <Slider className="min-w-0 flex-1" min={VIDEO_SECONDS_RANGE.min} max={VIDEO_SECONDS_RANGE.max} step={1} value={seconds} onChange={(value) => onConfigChange("videoSeconds", String(Array.isArray(value) ? value[0] : value))} />
                         <SecondsInput value={seconds} theme={theme} onCommit={(value) => onConfigChange("videoSeconds", String(value))} />
                         <span className="shrink-0 text-sm" style={{ color: theme.node.muted }}>s</span>
                     </div>
@@ -109,12 +118,12 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
     );
 }
 
-export function videoResolutionLabel(value: string) {
-    return `${parseVideoResolution(value)}p`;
+export function videoResolutionLabel(value: string, ratio = "16:9") {
+    return `${normalizeVideoResolution(value, ratio)}p`;
 }
 
 export function videoSizeLabel(value: string) {
-    const ratio = inferVideoRatio(value);
+    const ratio = videoRatioForSize(value);
     return ratio === "auto" ? i18n.t("settingsPanels.video.adaptive") : ratio;
 }
 
@@ -129,24 +138,19 @@ export function videoModeLabel(value: string) {
 }
 
 export function normalizeVideoModeValue(value: string | undefined) {
-    if (value === "auto") return "auto";
-    return value === "reference" ? "reference" : "frames";
+    return normalizeVideoMode(value);
 }
 
 export function normalizeVideoSizeValue(value: string, resolution = "720") {
-    if (value === "auto") return "auto";
-    if (/^\d+x\d+$/.test(value || "")) return value;
-    const ratio = inferVideoRatio(value);
-    return ratio === "auto" ? "auto" : computeVideoSize(resolution, ratio);
+    return normalizeVideoSize(value, resolution);
 }
 
 export function normalizeVideoResolutionValue(value: string) {
-    return parseVideoResolution(value);
+    return normalizeVideoResolution(value);
 }
 
 function updateDimension(key: "width" | "height", value: number | null, dimensions: { width: number; height: number }, onConfigChange: VideoSettingsPanelProps["onConfigChange"]) {
-    const next = Math.max(1, Math.floor(value || dimensions[key] || 720));
-    onConfigChange("size", `${key === "width" ? next : dimensions.width}x${key === "height" ? next : dimensions.height}`);
+    onConfigChange("size", sizeFromDimensions(key, value, dimensions));
 }
 
 function OptionPill({ selected, disabled = false, theme, onClick, children }: { selected: boolean; disabled?: boolean; theme: CanvasTheme; onClick: () => void; children: ReactNode }) {
@@ -181,7 +185,7 @@ function ResolutionInput({ value, theme, onChange }: { value: string; theme: Can
 
 function SecondsInput({ value, theme, onCommit }: { value: number; theme: CanvasTheme; onCommit: (value: number) => void }) {
     const commit = (input: HTMLInputElement) => {
-        const next = Number(clampVideoSeconds(input.value));
+        const next = normalizedVideoSeconds(input.value);
         input.value = String(next);
         onCommit(next);
     };
@@ -190,8 +194,8 @@ function SecondsInput({ value, theme, onCommit }: { value: number; theme: Canvas
         <label className="flex h-9 w-[68px] shrink-0 overflow-hidden rounded-xl text-sm" style={{ background: theme.node.fill, color: theme.node.text }}>
             <input
                 type="number"
-                min={VIDEO_SECONDS_MIN}
-                max={VIDEO_SECONDS_MAX}
+                min={VIDEO_SECONDS_RANGE.min}
+                max={VIDEO_SECONDS_RANGE.max}
                 className="min-w-0 flex-1 bg-transparent px-2 text-center outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                 defaultValue={value}
                 key={value}

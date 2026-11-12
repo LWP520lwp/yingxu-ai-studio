@@ -15,6 +15,7 @@ class MuseProviderTest {
     @Test void browserAndServiceVideoCapabilitiesMatchTheirImplementedTransport(){
         var browser=(java.util.Map<?,?>)MuseProvider.describe("muse-video",true,true).get("caps");
         var service=(java.util.Map<?,?>)MuseProvider.describe("muse-service-video",true).get("caps");
+        assertEquals("内置 Muse 视频模型",MuseProvider.describe("muse-service-video",true).get("name"));
         assertEquals(2,browser.get("maxReferenceImages"));assertEquals(List.of("auto","reference"),browser.get("supportedVideoModes"));assertEquals(false,browser.get("supportsSizeControl"));
         assertEquals(4,service.get("maxReferenceImages"));assertEquals(List.of("auto","reference","frames"),service.get("supportedVideoModes"));assertEquals(2,service.get("maxFrameImages"));
     }
