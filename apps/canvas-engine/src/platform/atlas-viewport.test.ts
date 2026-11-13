@@ -10,10 +10,25 @@ import {
 } from "@/atlas-engine/surface/viewport";
 
 describe("Atlas canvas viewport math", () => {
+  it.each([0.1, 0.2, 0.37, 0.6, 1])(
+    "keeps the grid readable at zoom %s without changing its world alignment",
+    (k) => {
+      const style = canvasGridStyle({ x: -33, y: 14, k }, "lines")!;
+      const spacing = Number.parseFloat(style.backgroundSize);
+      expect(spacing).toBeGreaterThanOrEqual(32);
+      expect(spacing).toBeLessThan(64);
+      expect(
+        (33 + Number.parseFloat(style.backgroundPosition)) % spacing,
+      ).toBeCloseTo(0);
+    },
+  );
   it("keeps the world point beneath the pointer fixed while zooming", () => {
     const before = { x: 30, y: -20, k: 1.25 };
     const cursor = { x: 210, y: 150 };
-    const world = { x: (cursor.x - before.x) / before.k, y: (cursor.y - before.y) / before.k };
+    const world = {
+      x: (cursor.x - before.x) / before.k,
+      y: (cursor.y - before.y) / before.k,
+    };
     const after = zoomCanvasAt(before, cursor, 1.6);
 
     expect(after.k).toBe(2);
@@ -22,18 +37,26 @@ describe("Atlas canvas viewport math", () => {
   });
 
   it("clamps zoom and does not propagate invalid values", () => {
-    expect(zoomCanvasAt({ x: 0, y: 0, k: 1 }, { x: 0, y: 0 }, 100).k).toBe(ATLAS_ZOOM_LIMITS.maxScale);
-    expect(zoomCanvasAt({ x: 0, y: 0, k: 1 }, { x: 0, y: 0 }, 0.001).k).toBe(ATLAS_ZOOM_LIMITS.minScale);
+    expect(zoomCanvasAt({ x: 0, y: 0, k: 1 }, { x: 0, y: 0 }, 100).k).toBe(
+      ATLAS_ZOOM_LIMITS.maxScale,
+    );
+    expect(zoomCanvasAt({ x: 0, y: 0, k: 1 }, { x: 0, y: 0 }, 0.001).k).toBe(
+      ATLAS_ZOOM_LIMITS.minScale,
+    );
     expect(clampCanvasZoom(Number.NaN)).toBe(1);
     const invalid = { x: Number.NaN, y: 0, k: 1 };
     expect(zoomCanvasAt(invalid, { x: 1, y: 1 }, 2)).toBe(invalid);
-    expect(panCanvasBy({ x: 1, y: 2, k: 1 }, { x: Number.POSITIVE_INFINITY, y: 0 })).toEqual({ x: 1, y: 2, k: 1 });
+    expect(
+      panCanvasBy({ x: 1, y: 2, k: 1 }, { x: Number.POSITIVE_INFINITY, y: 0 }),
+    ).toEqual({ x: 1, y: 2, k: 1 });
   });
 
   it("normalizes wheel zoom across pixel, line, and page wheel modes", () => {
     expect(wheelZoomFactor(100, 0, 800)).toBeLessThan(1);
     expect(wheelZoomFactor(1, 1, 800)).toBeCloseTo(wheelZoomFactor(16, 0, 800));
-    expect(wheelZoomFactor(1, 2, 800)).toBeCloseTo(wheelZoomFactor(800, 0, 800));
+    expect(wheelZoomFactor(1, 2, 800)).toBeCloseTo(
+      wheelZoomFactor(800, 0, 800),
+    );
     expect(wheelZoomFactor(Number.NaN, 0, 800)).toBe(1);
   });
 

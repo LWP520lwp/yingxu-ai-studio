@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { DropdownMenu } from "radix-ui";
 import {
   Copy,
@@ -11,6 +11,8 @@ import {
   Save,
   Scissors,
   Settings2,
+  Sparkles,
+  Link2,
   Trash2,
   Upload,
   Video,
@@ -21,11 +23,16 @@ import type { CanvasNodeData, ViewportTransform } from "@/types/canvas";
 import { studioNodePlacement } from "./studio-node-placement";
 import "./studio-node-dock.css";
 
+export type StudioNodeSection =
+  "compose" | "skills" | "references" | "properties";
 type Props = {
   node: CanvasNodeData;
   viewport: ViewportTransform;
   size: { width: number; height: number };
-  composer: ReactNode;
+  composer: (
+    section: StudioNodeSection,
+    onAction: Props["onAction"],
+  ) => ReactNode;
   onMode: (mode: "image" | "video") => void;
   onAction: (action: string, node: CanvasNodeData) => void;
   onAssets: () => void;
@@ -44,13 +51,29 @@ export function StudioNodeDock({
   const zh = !i18n.resolvedLanguage?.startsWith("en");
   const word = (cn: string, en: string) => (zh ? cn : en);
   const [expanded, setExpanded] = useState(false);
-  useEffect(() => setExpanded(false), [node.id]);
+  const [section, setSection] = useState<StudioNodeSection>("compose");
   const place = studioNodePlacement(node, viewport, size);
   if (!place) return null;
   const hasContent = Boolean(node.metadata?.content);
   const choose = (mode: "image" | "video") => {
     onMode(mode);
+    setSection("compose");
     setExpanded(true);
+  };
+  const openSection = (next: StudioNodeSection) => {
+    if (
+      next === "skills" &&
+      node.metadata?.generationMode !== "video" &&
+      node.type !== "video"
+    )
+      onMode("video");
+    setSection(next);
+    setExpanded(true);
+  };
+  const dispatch: Props["onAction"] = (action, target) => {
+    if (action === "node-skills") openSection("skills");
+    else if (action === "node-references") openSection("references");
+    else onAction(action, target);
   };
   const mediaActions =
     node.type === "image" && hasContent
@@ -100,14 +123,25 @@ export function StudioNodeDock({
             </button>
           </>
         )}
+        {node.type !== "group" && (
+          <button
+            type="button"
+            onClick={() => openSection("skills")}
+            aria-pressed={expanded && section === "skills"}
+            title={word("使用导演 Skill", "Use a director Skill")}
+          >
+            <Sparkles size={15} />
+            <span>Skill</span>
+          </button>
+        )}
         <button
           type="button"
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded}
-          aria-label={word("节点创作参数", "Node settings")}
-          title={word("节点创作参数", "Node settings")}
+          onClick={() => openSection("references")}
+          aria-label={word("节点参考素材", "Node references")}
+          title={word("参考素材与首尾帧", "References and first/last frames")}
+          aria-pressed={expanded && section === "references"}
         >
-          <Settings2 size={16} />
+          <Link2 size={16} />
         </button>
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
@@ -125,6 +159,13 @@ export function StudioNodeDock({
               collisionPadding={12}
               sideOffset={8}
             >
+              <DropdownMenu.Item
+                className="studio-menu-item"
+                onSelect={() => openSection("properties")}
+              >
+                <Settings2 size={16} />
+                {word("节点属性", "Node properties")}
+              </DropdownMenu.Item>
               <DropdownMenu.Item
                 className="studio-menu-item"
                 onSelect={onAssets}
@@ -202,15 +243,48 @@ export function StudioNodeDock({
             }
           }}
         >
-          <button
-            className="studio-node-composer-close"
-            type="button"
-            onClick={() => setExpanded(false)}
-            aria-label={word("收起节点创作面板", "Close node composer")}
+          <header className="studio-node-composer-header">
+            <span>
+              {section === "skills"
+                ? word("导演 Skill", "Director Skills")
+                : section === "references"
+                  ? word("参考素材", "References")
+                  : section === "properties"
+                    ? word("节点属性", "Node properties")
+                    : node.metadata?.generationMode === "video" ||
+                        node.type === "video"
+                      ? word("视频创作", "Video creation")
+                      : word("图像创作", "Image creation")}
+            </span>
+            <button
+              className="studio-node-composer-close"
+              type="button"
+              onClick={() => setExpanded(false)}
+              aria-label={word("收起节点创作面板", "Close node composer")}
+            >
+              <X size={16} />
+            </button>
+          </header>
+          <nav
+            className="studio-node-composer-tabs"
+            aria-label={word("节点创作功能", "Node tools")}
           >
-            <X size={16} />
-          </button>
-          {composer}
+            {(["compose", "skills", "references"] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                aria-pressed={section === tab}
+                onClick={() => openSection(tab)}
+              >
+                {tab === "compose"
+                  ? word("创作", "Create")
+                  : tab === "skills"
+                    ? "Skill"
+                    : word("参考", "References")}
+              </button>
+            ))}
+          </nav>
+          {composer(section, dispatch)}
         </section>
       )}
     </div>

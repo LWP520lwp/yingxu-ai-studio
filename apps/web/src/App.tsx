@@ -105,7 +105,7 @@ function Workbench() {
   const [leftTab, setLeftTab] = useState<"canvas" | "assets" | "skills">("canvas");
   const draftLibrary = useDraftLibrary(bootstrap?.user?.id, mode === "home");
   const [modal, setModal] = useState<
-    "login" | "skills" | "pool" | "settings" | "story" | null
+    "login" | "skills" | "skillImport" | "pool" | "settings" | "story" | null
   >(null);
   const [settingsCapability, setSettingsCapability] = useState<"text" | "vision" | "image" | "video">("text");
   const [modelCatalogVersion, setModelCatalogVersion] = useState(0);
@@ -1269,7 +1269,8 @@ function Workbench() {
                   onAction={(action) => {
                     if (action === "home" || action === "projects") void returnToLibrary("canvas");
                     else if (action === "newProject") void newDraft("canvas");
-                    else if (action === "skills") setModal("skills");
+                    else if (action === "skills" || action === "skillImport") setModal(action === "skillImport" ? "skillImport" : "skills");
+                    else if (action === "workflow") setModal("story");
                     else if (action === "pool") setModal("pool");
                     else openSettings();
                   }}
@@ -1882,8 +1883,10 @@ function Workbench() {
         )}
       </Modal>
       <WorkspaceBoundary name="功能面板" resetKey={`${bootstrap?.user?.id}:${modal}`}><Suspense fallback={<div className="panel-loading" role="status">正在打开面板…</div>}>
-      {modal === "skills" && <SkillMarket
-        open={modal === "skills"}
+      {(modal === "skills" || modal === "skillImport") && <SkillMarket
+        key={modal}
+        open
+        initialImportOpen={modal === "skillImport"}
         onOpenChange={(open) => { setModal(open ? "skills" : null); if (!open) void refreshGenerationCatalog(); }}
         signedIn={!!bootstrap?.user}
         sessionKey={bootstrap?.user?.id || null}

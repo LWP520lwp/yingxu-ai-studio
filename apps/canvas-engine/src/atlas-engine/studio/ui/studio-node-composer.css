@@ -1,0 +1,145 @@
+.studio-inspector-compact {
+  min-height: 0;
+  background: var(--studio-surface);
+}
+.studio-inspector-compact .studio-inspector-scroll {
+  padding-inline: 16px;
+  scrollbar-width: thin;
+}
+.studio-inspector-compact .studio-inspector-section {
+  padding-block: 14px;
+}
+.studio-inspector-compact .studio-inspector-section:first-child {
+  padding-top: 12px;
+}
+.studio-inspector-compact .studio-field textarea {
+  height: 88px;
+  min-height: 88px;
+  max-height: 200px;
+  resize: vertical;
+}
+.studio-inspector-compact :is(input, textarea, select) {
+  border-radius: 6px;
+  box-shadow: none;
+}
+.studio-inspector-compact .studio-generate-footer {
+  padding: 12px 16px;
+}
+.studio-inspector-compact .studio-generate-button {
+  min-height: 38px;
+  border-radius: 6px;
+  box-shadow: none;
+}
+.studio-composer-shortcuts {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.studio-composer-shortcuts button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--studio-border);
+  border-radius: 6px;
+  color: var(--studio-secondary);
+  background: transparent;
+  font-size: 11px;
+}
+.studio-composer-shortcuts button span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.studio-composer-shortcuts :is(b, button > svg:last-child) {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.studio-composer-shortcuts button b {
+  font-size: 10px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.studio-skill-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 2px 0 13px;
+}
+.studio-skill-choices button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 9px;
+  background: transparent;
+  border: 1px solid var(--studio-border-soft);
+  border-radius: 6px;
+  color: var(--studio-secondary);
+  text-align: left;
+}
+.studio-skill-choices button > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.studio-skill-choices button > svg {
+  flex-shrink: 0;
+}
+.studio-skill-choices button[aria-pressed="true"] {
+  border-color: var(--studio-accent);
+  color: var(--studio-text);
+}
+.studio-skill-choices button[aria-pressed="true"] > svg:first-child {
+  color: var(--studio-accent);
+}
+.studio-skill-choices button:hover:not(:disabled),
+.studio-composer-shortcuts button:hover,
+.studio-skill-management button:hover {
+  background: var(--studio-raised);
+  color: var(--studio-text);
+}
+.studio-skill-management {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 15px;
+  margin-top: 14px;
+  border-top: 1px solid var(--studio-border-soft);
+}
+.studio-skill-management button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--studio-secondary);
+  font-size: 11px;
+}
+.studio-reference-add {
+  display: flex;
+  gap: 8px;
+  margin-block: 12px;
+}
+.studio-reference-add > .studio-wide {
+  flex: 1;
+}
+.studio-inspector-compact .studio-reference-list img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+.studio-inspector-compact .studio-action-tile {
+  min-height: 34px;
+  border-radius: 6px;
+}
+.studio-inspector-compact .studio-field-hint {
+  text-wrap: pretty;
+}

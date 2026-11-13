@@ -237,8 +237,8 @@ const StudioNode = memo(
                   {meta.composerContent ||
                     meta.prompt ||
                     (zh
-                      ? "在右侧描述画面、选择模型，再连接参考素材。"
-                      : "Describe the scene, choose a model and connect references in the inspector.")}
+                      ? "点击节点，填写创作要求、选择模型与 Skill。"
+                      : "Click this node to describe the scene and choose a model or Skill.")}
                 </p>
                 <small>
                   {meta.model?.replace(/^platform::/, "") ||
@@ -251,8 +251,8 @@ const StudioNode = memo(
                   <Icon size={30} strokeWidth={1.2} />
                   <span>
                     {zh
-                      ? "连接素材，或在检查器中开始创作"
-                      : "Connect a source or start in the inspector"}
+                      ? "点击节点开始创作，或从左侧添加参考素材"
+                      : "Click to create, or add references from the left library"}
                   </span>
                 </div>
               )

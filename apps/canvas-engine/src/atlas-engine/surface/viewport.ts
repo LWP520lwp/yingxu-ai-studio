@@ -53,7 +53,8 @@ export function canvasGridStyle(
   mode: AtlasCanvasBackground,
 ): { backgroundImage: string; backgroundSize: string; backgroundPosition: string } | undefined {
   if (mode === "blank" || !validView(view)) return undefined;
-  const spacing = 48 * view.k * (view.k < 0.25 ? 4 : 1);
+  const baseSpacing = 48 * view.k;
+  const spacing = baseSpacing * Math.pow(2, Math.max(0, Math.ceil(Math.log2(32 / baseSpacing))));
   const radius = view.k < 0.12 ? 0.8 : 1.15;
   const backgroundImage = mode === "dots"
     ? `radial-gradient(circle, var(--atlas-grid-dot, #6f86ad) ${radius}px, transparent ${radius + 0.2}px)`

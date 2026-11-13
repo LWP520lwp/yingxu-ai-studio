@@ -5,6 +5,7 @@ import {
   AudioLines,
   BookOpen,
   Check,
+  ChevronDown,
   FileText,
   Image,
   LoaderCircle,
@@ -63,7 +64,11 @@ function MaterialVisual({
   const Icon = kindIcons[item.kind];
   const url = item.payload && "url" in item.payload ? item.payload.url : "";
   useEffect(() => setFailed(false), [item.id, item.preview, url]);
-  if (!failed && item.kind === "image" && item.preview)
+  if (
+    !failed &&
+    item.preview &&
+    (item.kind === "image" || (!expanded && item.kind === "video"))
+  )
     return (
       <img
         src={item.preview}
@@ -110,11 +115,17 @@ export default function StudioLibrary({
   onInsert,
   nodes = NO_NODES,
   onUpload,
+  embedded = false,
+  insertLabel,
+  referenceOnly = false,
 }: {
   onClose: () => void;
   onInsert: (value: InsertAssetPayload) => void | Promise<void>;
   nodes?: readonly CanvasNodeData[];
   onUpload?: () => void;
+  embedded?: boolean;
+  insertLabel?: string;
+  referenceOnly?: boolean;
 }) {
   const { i18n } = useTranslation();
   const zh = !i18n.resolvedLanguage?.startsWith("en");
@@ -123,8 +134,11 @@ export default function StudioLibrary({
   const hydrated = useAssetStore((state) => state.hydrated);
   const [source, setSource] = useState<LibrarySource>("account");
   const [kind, setKind] = useState<LibraryKind | "all">("all");
+  const activeKind =
+    referenceOnly && (kind === "video" || kind === "audio") ? "all" : kind;
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  const [previewId, setPreviewId] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [inserting, setInserting] = useState("");
   const [insertError, setInsertError] = useState("");
@@ -195,18 +209,27 @@ export default function StudioLibrary({
     return () => abort.abort();
   }, [refresh]);
 
-  const collection = useMemo(
-    () => ({
-      local: localLibraryItems(local),
-      project: projectLibraryItems(remote.project.assets),
-      canvas: canvasLibraryItems(nodes),
-      account: projectLibraryItems(remote.account.assets, "account"),
-    }),
-    [local, nodes, remote.project.assets, remote.account.assets],
-  );
+  const collection = useMemo(() => {
+    const eligible = (items: LibraryItem[]) =>
+      referenceOnly
+        ? items.filter((item) => item.kind === "image" || item.kind === "text")
+        : items;
+    return {
+      local: eligible(localLibraryItems(local)),
+      project: eligible(projectLibraryItems(remote.project.assets)),
+      canvas: eligible(canvasLibraryItems(nodes)),
+      account: eligible(projectLibraryItems(remote.account.assets, "account")),
+    };
+  }, [
+    local,
+    nodes,
+    remote.project.assets,
+    remote.account.assets,
+    referenceOnly,
+  ]);
   const visible = useMemo(
-    () => filterLibraryItems(collection[source], kind, query),
-    [collection, source, kind, query],
+    () => filterLibraryItems(collection[source], activeKind, query),
+    [collection, source, activeKind, query],
   );
   const selected = visible.find((item) => item.id === selectedId) || visible[0];
   const loading =
@@ -262,6 +285,15 @@ export default function StudioLibrary({
 
   async function insert(item: LibraryItem) {
     if (inserting) return;
+    if (referenceOnly && item.kind !== "image" && item.kind !== "text") {
+      setInsertError(
+        word(
+          "请选择图片或文字作为参考。",
+          "Choose an image or text as a reference.",
+        ),
+      );
+      return;
+    }
     const abort = new AbortController();
     insertAbort.current = abort;
     setInserting(item.id);
@@ -323,226 +355,257 @@ export default function StudioLibrary({
     setQuery("");
     setKind("all");
   };
-  return (
-    <Modal
-      open
-      title={null}
-      footer={null}
-      onCancel={onClose}
-      width={1120}
-      destroyOnHidden
-      className="studio-material-modal"
-      closeIcon={null}
+  const panel = (
+    <section
+      className={`studio-material-library${embedded ? " is-embedded" : ""}`}
+      aria-label={word("素材库", "Material library")}
     >
-      <section
-        className="studio-material-library"
-        aria-label={word("素材库", "Material library")}
-      >
-        <header className="studio-material-header">
-          <div>
+      <header className="studio-material-header">
+        <div>
+          {!embedded && (
             <span className="studio-material-eyebrow">MATERIAL LIBRARY</span>
-            <h2>{word("资产库", "Asset library")}</h2>
+          )}
+          <h2>{word("资产库", "Asset library")}</h2>
+          {!embedded && (
             <p>
               {word(
                 "上传、收藏与生成内容，随时回到画布复用。",
                 "Bring uploads, saved references and generated work back to your canvas.",
               )}
             </p>
-          </div>
-          <div className="studio-material-header-actions">
-            {onUpload && (
-              <button
-                type="button"
-                className="studio-material-upload"
-                onClick={onUpload}
-              >
-                <Upload size={16} />
-                {word("上传素材", "Upload")}
-              </button>
-            )}
+          )}
+        </div>
+        <div className="studio-material-header-actions">
+          {onUpload && (
             <button
               type="button"
-              className="studio-material-dismiss"
-              aria-label={word("关闭素材库", "Close library")}
-              onClick={onClose}
+              className="studio-material-upload"
+              onClick={onUpload}
+              aria-label={word("上传素材", "Upload")}
+              title={word("上传素材", "Upload")}
             >
-              <X size={20} />
+              <Upload size={16} />
+              <span>{word("上传素材", "Upload")}</span>
             </button>
-          </div>
-        </header>
-        <nav
-          className="studio-material-sources"
-          aria-label={word("素材来源", "Material sources")}
-        >
-          {sources.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              aria-pressed={source === tab.id}
-              onClick={() => {
-                setSource(tab.id);
-                setSelectedId("");
-                setInsertError("");
-              }}
-            >
-              <span>{tab.title}</span>
-              <b>
-                {tab.id === "local" && !hydrated
-                  ? "…"
-                  : collection[tab.id].length}
-              </b>
-            </button>
-          ))}
-        </nav>
-        <div className="studio-material-controls">
-          <label className="studio-material-search">
-            <Search size={17} />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={word(
-                "搜索名称、标签或文本内容",
-                "Search names, tags or text",
-              )}
-              aria-label={word("搜索素材", "Search materials")}
-            />
-          </label>
-          <select
-            aria-label={word("素材类型", "Material type")}
-            value={kind}
-            onChange={(event) =>
-              setKind(event.target.value as LibraryKind | "all")
-            }
+          )}
+          <button
+            type="button"
+            className="studio-material-dismiss"
+            aria-label={word("关闭素材库", "Close library")}
+            onClick={onClose}
           >
-            {Object.entries(kindNames).map(([id, label]) => (
+            <X size={20} />
+          </button>
+        </div>
+      </header>
+      <nav
+        className="studio-material-sources"
+        aria-label={word("素材来源", "Material sources")}
+      >
+        {sources.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            aria-pressed={source === tab.id}
+            onClick={() => {
+              setSource(tab.id);
+              setSelectedId("");
+              setInsertError("");
+            }}
+          >
+            <span>{tab.title}</span>
+            <b>
+              {tab.id === "local" && !hydrated
+                ? "…"
+                : collection[tab.id].length}
+            </b>
+          </button>
+        ))}
+      </nav>
+      <div className="studio-material-controls">
+        <label className="studio-material-search">
+          <Search size={17} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={word(
+              "搜索名称、标签或文本内容",
+              "Search names, tags or text",
+            )}
+            aria-label={word("搜索素材", "Search materials")}
+          />
+        </label>
+        <select
+          aria-label={word("素材类型", "Material type")}
+          value={activeKind}
+          onChange={(event) =>
+            setKind(event.target.value as LibraryKind | "all")
+          }
+        >
+          {Object.entries(kindNames)
+            .filter(
+              ([id]) =>
+                !referenceOnly ||
+                id === "all" ||
+                id === "image" ||
+                id === "text",
+            )
+            .map(([id, label]) => (
               <option key={id} value={id}>
                 {label}
               </option>
             ))}
-          </select>
+        </select>
+        <button
+          type="button"
+          className="studio-material-refresh"
+          disabled={loading}
+          onClick={() => setRefresh((value) => value + 1)}
+        >
+          {loading && (
+            <LoaderCircle size={14} className="studio-material-spinner" />
+          )}
+          {loading ? word("加载中", "Loading") : word("刷新资源", "Refresh")}
+        </button>
+      </div>
+      <div className="studio-material-source-description">
+        <span title={currentSource.hint}>
+          {referenceOnly
+            ? word(
+                "选择图片或文字作为当前节点参考",
+                "Choose an image or text to reference in this node",
+              )
+            : embedded
+              ? word("双击素材快速添加", "Double-click to add")
+              : currentSource.hint}
+        </span>
+        <span aria-live="polite">
+          {word(`${visible.length} 项`, `${visible.length} items`)}
+        </span>
+      </div>
+      {loadError && (
+        <div className="studio-material-error" role="alert">
+          <span>{loadError}</span>
           <button
             type="button"
-            className="studio-material-refresh"
-            disabled={loading}
             onClick={() => setRefresh((value) => value + 1)}
           >
-            {loading && (
-              <LoaderCircle size={14} className="studio-material-spinner" />
-            )}
-            {loading ? word("加载中", "Loading") : word("刷新资源", "Refresh")}
+            {word("重试加载", "Retry")}
           </button>
         </div>
-        <div className="studio-material-source-description">
-          <span>{currentSource.hint}</span>
-          <span aria-live="polite">
-            {word(`${visible.length} 项`, `${visible.length} items`)}
-          </span>
+      )}
+      {insertError && (
+        <div className="studio-material-error" role="alert">
+          {insertError}
         </div>
-        {loadError && (
-          <div className="studio-material-error" role="alert">
-            <span>{loadError}</span>
-            <button
-              type="button"
-              onClick={() => setRefresh((value) => value + 1)}
-            >
-              {word("重试加载", "Retry")}
-            </button>
-          </div>
-        )}
-        {insertError && (
-          <div className="studio-material-error" role="alert">
-            {insertError}
-          </div>
-        )}
-        <div className="studio-material-body" aria-busy={loading}>
-          <div className="studio-material-results">
-            {visible.length > 0 ? (
-              <div className="studio-material-grid">
-                {visible.map((item) => (
-                  <button
-                    type="button"
-                    key={item.id}
-                    className={`studio-material-card${selected?.id === item.id ? " is-selected" : ""}`}
-                    aria-pressed={selected?.id === item.id}
-                    onClick={() => {
-                      setSelectedId(item.id);
-                      setInsertError("");
-                    }}
-                    onDoubleClick={() => void insert(item)}
-                  >
-                    <div className="studio-material-card-preview">
-                      <MaterialVisual
-                        item={item}
-                        unavailable={word("预览不可用", "Preview unavailable")}
-                      />
-                      {selected?.id === item.id && (
-                        <span className="studio-material-selected">
-                          <Check size={13} />
-                        </span>
-                      )}
-                    </div>
-                    <div className="studio-material-card-copy">
-                      <strong title={item.title}>
-                        {item.title || word("未命名素材", "Untitled material")}
-                      </strong>
-                      <span>
-                        {kindNames[item.kind]}
-                        <small>{sizeLabel(item.bytes)}</small>
+      )}
+      <div className="studio-material-body" aria-busy={loading}>
+        <div className="studio-material-results">
+          {visible.length > 0 ? (
+            <div className="studio-material-grid">
+              {visible.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={`studio-material-card${selected?.id === item.id ? " is-selected" : ""}`}
+                  aria-pressed={selected?.id === item.id}
+                  onClick={() => {
+                    setSelectedId(item.id);
+                    setInsertError("");
+                  }}
+                  onDoubleClick={() => void insert(item)}
+                >
+                  <div className="studio-material-card-preview">
+                    <MaterialVisual
+                      item={item}
+                      unavailable={word("预览不可用", "Preview unavailable")}
+                    />
+                    {selected?.id === item.id && (
+                      <span className="studio-material-selected">
+                        <Check size={13} />
                       </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="studio-material-empty" role="status">
-                {loading ? (
-                  <LoaderCircle size={30} className="studio-material-spinner" />
-                ) : (
-                  <BookOpen size={34} />
-                )}
-                <h3>
-                  {loading
-                    ? word("正在读取真实素材…", "Loading your materials…")
-                    : query.trim() || kind !== "all"
-                      ? word("没有匹配的素材", "No matching materials")
-                      : word("这里还没有素材", "No materials here yet")}
-                </h3>
-                <p>
-                  {loading
+                    )}
+                  </div>
+                  <div className="studio-material-card-copy">
+                    <strong title={item.title}>
+                      {item.title || word("未命名素材", "Untitled material")}
+                    </strong>
+                    <span>
+                      {kindNames[item.kind]}
+                      <small>{sizeLabel(item.bytes)}</small>
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="studio-material-empty" role="status">
+              {loading ? (
+                <LoaderCircle size={30} className="studio-material-spinner" />
+              ) : (
+                <BookOpen size={34} />
+              )}
+              <h3>
+                {loading
+                  ? word("正在读取真实素材…", "Loading your materials…")
+                  : query.trim() || activeKind !== "all"
+                    ? word("没有匹配的素材", "No matching materials")
+                    : word("这里还没有素材", "No materials here yet")}
+              </h3>
+              <p>
+                {loading
+                  ? word(
+                      "保留原有内容，读取完成后会自动显示。",
+                      "Your saved content will appear when loading completes.",
+                    )
+                  : query.trim() || activeKind !== "all"
                     ? word(
-                        "保留原有内容，读取完成后会自动显示。",
-                        "Your saved content will appear when loading completes.",
+                        "换个关键词，或查看其他类型。",
+                        "Try another keyword or material type.",
                       )
-                    : query.trim() || kind !== "all"
+                    : source === "local"
                       ? word(
-                          "换个关键词，或查看其他类型。",
-                          "Try another keyword or material type.",
+                          "在画布中选中一个素材，使用收藏即可保存在这里。",
+                          "Save a material from a canvas node to keep it here.",
                         )
-                      : source === "local"
+                      : source === "canvas"
                         ? word(
-                            "在画布中选中一个素材，使用收藏即可保存在这里。",
-                            "Save a material from a canvas node to keep it here.",
+                            "把图片、视频、文本或音频加入画布后，就可以在这里找到。",
+                            "Images, video, text and audio on the canvas appear here.",
                           )
-                        : source === "canvas"
-                          ? word(
-                              "把图片、视频、文本或音频加入画布后，就可以在这里找到。",
-                              "Images, video, text and audio on the canvas appear here.",
-                            )
-                          : word(
-                              "上传文件或完成一次生成，资源会保留在对应项目中。",
-                              "Upload a file or generate something to start your collection.",
-                            )}
-                </p>
-                {(query.trim() || kind !== "all") && !loading && (
-                  <button type="button" onClick={resetFilters}>
-                    {word("清除筛选", "Clear filters")}
-                  </button>
-                )}
-              </div>
+                        : word(
+                            "上传文件或完成一次生成，资源会保留在对应项目中。",
+                            "Upload a file or generate something to start your collection.",
+                          )}
+              </p>
+              {(query.trim() || activeKind !== "all") && !loading && (
+                <button type="button" onClick={resetFilters}>
+                  {word("清除筛选", "Clear filters")}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        {selected && (
+          <aside className="studio-material-detail">
+            {embedded && (
+              <button
+                type="button"
+                className="studio-material-preview-toggle"
+                aria-expanded={previewId === selected.id}
+                onClick={() =>
+                  setPreviewId(previewId === selected.id ? "" : selected.id)
+                }
+              >
+                <span>
+                  {previewId === selected.id
+                    ? word("收起预览", "Hide preview")
+                    : word("预览素材", "Preview material")}
+                </span>
+                <ChevronDown size={14} />
+              </button>
             )}
-          </div>
-          {selected && (
-            <aside className="studio-material-detail">
+            {(!embedded || previewId === selected.id) && (
               <div className="studio-material-detail-preview">
                 <MaterialVisual
                   key={selected.id}
@@ -554,39 +617,55 @@ export default function StudioLibrary({
                   )}
                 />
               </div>
-              <span className="studio-material-detail-type">
-                {kindNames[selected.kind]}
-                {sizeLabel(selected.bytes) && ` · ${sizeLabel(selected.bytes)}`}
-              </span>
-              <h3>
-                {selected.title || word("未命名素材", "Untitled material")}
-              </h3>
-              {selected.kind === "text" && selected.excerpt && (
+            )}
+            <span className="studio-material-detail-type">
+              {kindNames[selected.kind]}
+              {sizeLabel(selected.bytes) && ` · ${sizeLabel(selected.bytes)}`}
+            </span>
+            <h3>{selected.title || word("未命名素材", "Untitled material")}</h3>
+            {selected.kind === "text" &&
+              selected.excerpt &&
+              (!embedded || previewId === selected.id) && (
                 <p className="studio-material-full-text">{selected.excerpt}</p>
               )}
-              <p className="studio-material-insert-hint">
-                {word(
-                  "将这份素材加入当前画布，接着创作。",
-                  "Bring this material into your canvas and keep creating.",
-                )}
-              </p>
-              <button
-                type="button"
-                className="studio-material-insert"
-                disabled={Boolean(inserting)}
-                onClick={() => void insert(selected)}
-              >
-                {inserting === selected.id && (
-                  <LoaderCircle size={16} className="studio-material-spinner" />
-                )}
-                {inserting === selected.id
-                  ? word("正在插入…", "Inserting…")
-                  : word("插入画布", "Insert into canvas")}
-              </button>
-            </aside>
-          )}
-        </div>
-      </section>
+            <p className="studio-material-insert-hint">
+              {word(
+                "将这份素材加入当前画布，接着创作。",
+                "Bring this material into your canvas and keep creating.",
+              )}
+            </p>
+            <button
+              type="button"
+              className="studio-material-insert"
+              disabled={Boolean(inserting)}
+              onClick={() => void insert(selected)}
+            >
+              {inserting === selected.id && (
+                <LoaderCircle size={16} className="studio-material-spinner" />
+              )}
+              {inserting === selected.id
+                ? word("正在插入…", "Inserting…")
+                : insertLabel || word("插入画布", "Insert into canvas")}
+            </button>
+          </aside>
+        )}
+      </div>
+    </section>
+  );
+  return embedded ? (
+    panel
+  ) : (
+    <Modal
+      open
+      title={null}
+      footer={null}
+      onCancel={onClose}
+      width={1120}
+      destroyOnHidden
+      className="studio-material-modal"
+      closeIcon={null}
+    >
+      {panel}
     </Modal>
   );
 }

@@ -3,7 +3,7 @@ import { parseCanvasPlatformAction } from "./CanvasEngine";
 
 describe("canvas host destinations", () => {
   it("accepts the independent home destination and existing host panels", () => {
-    for (const action of ["home", "projects", "newProject", "skills", "pool", "settings"]) {
+    for (const action of ["home", "projects", "newProject", "skills", "skillImport", "workflow", "pool", "settings"]) {
       expect(parseCanvasPlatformAction(action)).toBe(action);
     }
   });

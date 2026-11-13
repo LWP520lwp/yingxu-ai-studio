@@ -1,8 +1,8 @@
 import { platformRequest } from "./rpc";
 
-export type PlatformAction = "home" | "projects" | "newProject" | "skills" | "pool" | "settings";
+export type PlatformAction = "home" | "projects" | "newProject" | "skills" | "skillImport" | "workflow" | "pool" | "settings";
 
-const ACTIONS = new Set<PlatformAction>(["home", "projects", "newProject", "skills", "pool", "settings"]);
+const ACTIONS = new Set<PlatformAction>(["home", "projects", "newProject", "skills", "skillImport", "workflow", "pool", "settings"]);
 
 /** Ask the host to switch workspace context without navigating the iframe. */
 export async function openPlatformAction(action: PlatformAction) {

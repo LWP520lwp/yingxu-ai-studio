@@ -19,6 +19,7 @@ import {
   Expand,
   Eye,
   Film,
+  FolderOpen,
   Frame,
   Image,
   Layers3,
@@ -56,6 +57,10 @@ import type {
   CanvasNodeMetadata,
 } from "@/types/canvas";
 import { useStudioCopy, type StudioCopyKey } from "./copy";
+import "./studio-node-composer.css";
+
+export type StudioInspectorSection =
+  "compose" | "skills" | "references" | "properties";
 
 export type StudioInspectorProps = {
   node: CanvasNodeData | null;
@@ -68,6 +73,8 @@ export type StudioInspectorProps = {
   onAction: (action: string, node: CanvasNodeData) => void;
   busy: boolean;
   selectedCount: number;
+  section?: StudioInspectorSection;
+  compact?: boolean;
 };
 
 function Field({
@@ -145,19 +152,30 @@ export function StudioInspector(props: StudioInspectorProps) {
   latest.current = props;
   const node = props.node;
   const mode = node ? currentMode(node) : "image";
+  const section = props.section ?? tab;
+  const showCompose = !props.section || section === "compose";
+  const showSkills = !props.section || section === "skills";
+  const showReferences = !props.section || section === "references";
   useEffect(() => setTab("compose"), [node?.id, mode]);
 
   useEffect(() => onPlatformInit((init) => setCatalog(init.models)), []);
   useEffect(() => {
+    setSkillId(node?.metadata?.videoSkillId || "");
+  }, [node?.metadata?.videoSkillId]);
+  useEffect(() => {
     preparation.current?.abort();
+    preparation.current = null;
     setPreparing(false);
     setSkillId(node?.metadata?.videoSkillId || "");
     setSkillError("");
     setSkillMessage("");
     return () => preparation.current?.abort();
-  }, [node?.id]);
+  }, [node?.id, mode]);
   useEffect(() => {
-    if (mode !== "video" || !node) return;
+    if (mode !== "video" || !node) {
+      setSkillLoading(false);
+      return;
+    }
     const controller = new AbortController();
     setSkillLoading(true);
     setSkillError("");
@@ -265,9 +283,8 @@ export function StudioInspector(props: StudioInspectorProps) {
   const updatePrompt = (value: string) =>
     patchMetadata({ prompt: value, composerContent: value });
 
-  const prepareSkill = async () => {
-    if (!skill || preparing) return;
-    preparation.current?.abort();
+  const prepareSkill = async (chosen = skill): Promise<boolean> => {
+    if (!chosen || preparing || preparation.current || props.busy) return false;
     const controller = new AbortController();
     preparation.current = controller;
     const initial = getPlatformInit();
@@ -279,8 +296,8 @@ export function StudioInspector(props: StudioInspectorProps) {
       const recipe = await platformRequest<PreparedCanvasSkill>(
         "skills.prepare",
         {
-          id: skill.id,
-          version: skill.version,
+          id: chosen.id,
+          version: chosen.version,
           install: true,
           sourceNodeId: owner,
           text: `@[node:${owner}]`,
@@ -292,31 +309,39 @@ export function StudioInspector(props: StudioInspectorProps) {
         latest.current.node?.id !== owner ||
         getPlatformInit()?.scopeId !== initial?.scopeId
       )
-        return;
+        return false;
       if (
         recipe.kind !== "video" ||
-        recipe.defaults?.skillId !== skill.id ||
-        recipe.defaults.skillVersion !== skill.version
+        recipe.defaults?.skillId !== chosen.id ||
+        recipe.defaults.skillVersion !== chosen.version
       )
         throw new Error(c.skillInvalid);
+      const currentMetadata = latest.current.node?.metadata || {};
       const settings: CanvasNodeMetadata = {
         generationMode: "video",
-        videoSkillId: skill.id,
-        videoSkillVersion: skill.version,
+        videoSkillId: chosen.id,
+        videoSkillVersion: chosen.version,
         videoSkillInputMode: "instruction",
         skillId: undefined,
         skillVersion: undefined,
         videoMode: recipe.requiresReference
           ? "reference"
-          : metadata.videoMode || "auto",
+          : currentMetadata.videoMode || "auto",
       };
       const { width, height, duration, model } = recipe.defaults;
-      if (width && height && Number.isFinite(width) && Number.isFinite(height))
+      if (
+        (!currentMetadata.size || currentMetadata.size === "auto") &&
+        width &&
+        height &&
+        Number.isFinite(width) &&
+        Number.isFinite(height)
+      )
         settings.size = `${width}x${height}`;
-      if (duration && Number.isFinite(duration))
+      if (!currentMetadata.seconds && duration && Number.isFinite(duration))
         settings.seconds = String(duration);
       if (
         model &&
+        !currentMetadata.model &&
         catalog.video.some(
           (entry) =>
             entry.id === model.replace(/^platform::/, "") && entry.available,
@@ -328,13 +353,15 @@ export function StudioInspector(props: StudioInspectorProps) {
       latest.current.onMetadata(owner, settings);
       setSkills((current) =>
         current.map((entry) =>
-          entry.id === skill.id ? { ...entry, installed: true } : entry,
+          entry.id === chosen.id ? { ...entry, installed: true } : entry,
         ),
       );
       setSkillMessage(c.skillApplied);
+      return true;
     } catch (error) {
       if (!controller.signal.aborted && latest.current.node?.id === owner)
         setSkillError(error instanceof Error ? error.message : c.skillInvalid);
+      return false;
     } finally {
       if (preparation.current === controller) {
         preparation.current = null;
@@ -342,6 +369,70 @@ export function StudioInspector(props: StudioInspectorProps) {
       }
     }
   };
+
+  const generate = async () => {
+    if (preparing || props.busy) return;
+    const owner = node.id;
+    const initialScope = getPlatformInit()?.scopeId;
+    if (
+      mode === "video" &&
+      skillId &&
+      (metadata.videoSkillId !== skillId ||
+        (skill && metadata.videoSkillVersion !== skill.version))
+    ) {
+      if (!skill) {
+        setSkillError(c.skillInvalid);
+        return;
+      }
+      if (!(await prepareSkill(skill))) return;
+    }
+    const current = latest.current.node;
+    if (
+      !current ||
+      current.id !== owner ||
+      currentMode(current) !== mode ||
+      getPlatformInit()?.scopeId !== initialScope
+    )
+      return;
+    const text =
+      current.metadata?.composerContent ??
+      current.metadata?.prompt ??
+      (current.type === "text" ? current.metadata?.content || "" : "");
+    if (text.trim()) latest.current.onGenerate(owner, mode, text.trim());
+  };
+
+  const referenceControls = mode === "video" && (
+    <>
+      <Field title={c.videoMode}>
+        <select
+          value={metadata.videoMode || "auto"}
+          onChange={(event) => patchMetadata({ videoMode: event.target.value })}
+        >
+          <option value="auto">{c.modeAuto}</option>
+          <option value="reference">{c.modeReference}</option>
+          <option value="frames">{c.modeFrames}</option>
+        </select>
+      </Field>
+      {metadata.videoMode === "frames" && (
+        <div className="studio-frame-note">
+          <p>{c.framesHint}</p>
+          <button
+            type="button"
+            className="studio-secondary-button"
+            onClick={() =>
+              patchMetadata({
+                videoFramesReversed: !metadata.videoFramesReversed,
+              })
+            }
+            aria-pressed={Boolean(metadata.videoFramesReversed)}
+          >
+            <ArrowDownUp size={14} />
+            {c.swapFrames}
+          </button>
+        </div>
+      )}
+    </>
+  );
 
   const actionButton = (
     action: string,
@@ -362,66 +453,77 @@ export function StudioInspector(props: StudioInspectorProps) {
   );
 
   return (
-    <div className="studio-inspector" data-studio-inspector-node={node.id}>
-      <div className="studio-inspector-heading">
-        <span>{c.inspector}</span>
-        <span className={cn("studio-node-status", `is-${status}`)}>
-          <i />
-          {statusText}
-        </span>
-      </div>
-      <div className="studio-inspector-node-header">
-        <span className="studio-node-kind">
-          {node.type === "text" ? (
-            <Type size={17} />
-          ) : node.type === "video" ? (
-            <Video size={17} />
-          ) : node.type === "image" ? (
-            <Image size={17} />
-          ) : (
-            <Layers3 size={17} />
-          )}
-        </span>
-        <div>
-          <strong title={node.title}>{node.title || c.untitled}</strong>
-          <span className="studio-node-dimensions">
-            {Math.round(node.width)} × {Math.round(node.height)}
-          </span>
-        </div>
-        <button
-          type="button"
-          className="studio-icon-button"
-          aria-label={c.duplicate}
-          title={c.duplicate}
-          onClick={() => nodeAction("duplicate")}
-        >
-          <Copy size={16} strokeWidth={1.7} />
-        </button>
-      </div>
-      <div
-        className="studio-inspector-tabs"
-        role="group"
-        aria-label={c.inspectNode}
-      >
-        <button
-          type="button"
-          aria-pressed={tab === "compose"}
-          onClick={() => setTab("compose")}
-        >
-          {c.compose}
-        </button>
-        <button
-          type="button"
-          aria-pressed={tab === "properties"}
-          onClick={() => setTab("properties")}
-        >
-          {c.properties}
-        </button>
-      </div>
-      <div className="studio-inspector-scroll">
-        {tab === "compose" ? (
+    <div
+      className={cn(
+        "studio-inspector",
+        props.compact && "studio-inspector-compact",
+      )}
+      data-studio-inspector-node={node.id}
+      data-inspector-section={section}
+    >
+      {!props.compact && (
+        <>
+          <div className="studio-inspector-heading">
+            <span>{c.inspector}</span>
+            <span className={cn("studio-node-status", `is-${status}`)}>
+              <i />
+              {statusText}
+            </span>
+          </div>
+          <div className="studio-inspector-node-header">
+            <span className="studio-node-kind">
+              {node.type === "text" ? (
+                <Type size={17} />
+              ) : node.type === "video" ? (
+                <Video size={17} />
+              ) : node.type === "image" ? (
+                <Image size={17} />
+              ) : (
+                <Layers3 size={17} />
+              )}
+            </span>
+            <div>
+              <strong title={node.title}>{node.title || c.untitled}</strong>
+              <span className="studio-node-dimensions">
+                {Math.round(node.width)} × {Math.round(node.height)}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="studio-icon-button"
+              aria-label={c.duplicate}
+              title={c.duplicate}
+              onClick={() => nodeAction("duplicate")}
+            >
+              <Copy size={16} strokeWidth={1.7} />
+            </button>
+          </div>
+          <div
+            className="studio-inspector-tabs"
+            role="group"
+            aria-label={c.inspectNode}
+          >
+            <button
+              type="button"
+              aria-pressed={tab === "compose"}
+              onClick={() => setTab("compose")}
+            >
+              {c.compose}
+            </button>
+            <button
+              type="button"
+              aria-pressed={tab === "properties"}
+              onClick={() => setTab("properties")}
+            >
+              {c.properties}
+            </button>
+          </div>
+        </>
+      )}
+      <div key={`${node.id}:${section}`} className="studio-inspector-scroll">
+        {section !== "properties" ? (
           <>
-            {node.type === "text" && (
+            {showCompose && !props.compact && node.type === "text" && (
               <Field title={c.content} className="studio-source-text-field">
                 <textarea
                   rows={5}
@@ -433,7 +535,7 @@ export function StudioInspector(props: StudioInspectorProps) {
                 />
               </Field>
             )}
-            {hasMedia && (
+            {showCompose && !props.compact && hasMedia && (
               <div className="studio-source-preview">
                 {node.type === "image" ? (
                   <button
@@ -458,191 +560,189 @@ export function StudioInspector(props: StudioInspectorProps) {
                 )}
               </div>
             )}
-            {["image", "video", "audio"].includes(node.type) && (
-              <section className="studio-inspector-section">
-                <button
-                  type="button"
-                  className="studio-secondary-button studio-wide"
-                  onClick={() => nodeAction("upload")}
-                >
-                  <Upload size={15} />
-                  {c.upload}
-                </button>
-              </section>
-            )}
+            {showCompose &&
+              !props.compact &&
+              ["image", "video", "audio"].includes(node.type) && (
+                <section className="studio-inspector-section">
+                  <button
+                    type="button"
+                    className="studio-secondary-button studio-wide"
+                    onClick={() => nodeAction("upload")}
+                  >
+                    <Upload size={15} />
+                    {c.upload}
+                  </button>
+                </section>
+              )}
             {node.type !== "group" && (
               <>
-                <section className="studio-inspector-section">
-                  <h3>{c.output}</h3>
-                  <div
-                    className="studio-output-switch"
-                    role="group"
-                    aria-label={c.output}
-                  >
-                    {modeOptions.map(({ id, icon: Icon }) => (
+                {showCompose && (
+                  <section className="studio-inspector-section">
+                    {!props.compact && (
+                      <>
+                        <h3>{c.output}</h3>
+                        <div
+                          className="studio-output-switch"
+                          role="group"
+                          aria-label={c.output}
+                        >
+                          {modeOptions.map(({ id, icon: Icon }) => (
+                            <button
+                              type="button"
+                              key={id}
+                              aria-pressed={mode === id}
+                              onClick={() =>
+                                patchMetadata({
+                                  generationMode: id,
+                                  model: undefined,
+                                })
+                              }
+                            >
+                              <Icon size={16} strokeWidth={1.7} />
+                              <span>{c[id]}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    <Field title={c.prompt}>
+                      <textarea
+                        rows={6}
+                        value={prompt}
+                        onChange={(event) => updatePrompt(event.target.value)}
+                        placeholder={c.promptPlaceholder}
+                      />
+                    </Field>
+                    <div className="studio-field-title-row">
+                      <label htmlFor={`${fieldId}-model`}>{c.model}</label>
                       <button
                         type="button"
-                        key={id}
-                        aria-pressed={mode === id}
-                        onClick={() =>
-                          patchMetadata({
-                            generationMode: id,
-                            model: undefined,
-                          })
-                        }
+                        className="studio-text-button"
+                        onClick={() => nodeAction("settings")}
                       >
-                        <Icon size={16} strokeWidth={1.7} />
-                        <span>{c[id]}</span>
+                        {c.configureModel}
+                        <ArrowUpRight size={11} />
                       </button>
-                    ))}
-                  </div>
-                  <Field title={c.prompt}>
-                    <textarea
-                      rows={6}
-                      value={prompt}
-                      onChange={(event) => updatePrompt(event.target.value)}
-                      placeholder={c.promptPlaceholder}
-                    />
-                  </Field>
-                  <div className="studio-field-title-row">
-                    <label htmlFor={`${fieldId}-model`}>{c.model}</label>
-                    <button
-                      type="button"
-                      className="studio-text-button"
-                      onClick={() => nodeAction("settings")}
-                    >
-                      {c.configureModel}
-                      <ArrowUpRight size={11} />
-                    </button>
-                  </div>
-                  <select
-                    id={`${fieldId}-model`}
-                    className="studio-select"
-                    value={selectedModel}
-                    onChange={(event) =>
-                      patchMetadata({ model: event.target.value })
-                    }
-                  >
-                    {!selectedModel && <option value="">{c.modelNone}</option>}
-                    {selectedModel &&
-                      !models.some(
-                        (entry) => entry.value === selectedModel,
-                      ) && (
-                        <option value={selectedModel}>{selectedModel}</option>
-                      )}
-                    {models.map((option) => (
-                      <option
-                        key={option.value}
-                        value={option.value}
-                        disabled={!option.available}
-                      >
-                        {option.name}
-                      </option>
-                    ))}
-                  </select>
-                  {(mode === "image" || mode === "video") && (
-                    <div className="studio-field-pair">
-                      <Field title={c.size}>
-                        <select
-                          value={metadata.size || "auto"}
-                          onChange={(event) =>
-                            patchMetadata({ size: event.target.value })
-                          }
-                        >
-                          {[
-                            ...new Set([
-                              "auto",
-                              "1:1",
-                              "16:9",
-                              "9:16",
-                              "4:3",
-                              "3:4",
-                              ...(metadata.size ? [metadata.size] : []),
-                            ]),
-                          ].map((value) => (
-                            <option key={value} value={value}>
-                              {value === "auto" ? c.automatic : value}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-                      {mode === "image" ? (
-                        <Field title={c.count}>
-                          <input
-                            type="number"
-                            min={1}
-                            max={4}
-                            value={metadata.count || 1}
-                            onChange={(event) => {
-                              const value = event.target.valueAsNumber;
-                              if (Number.isFinite(value))
-                                patchMetadata({
-                                  count: Math.min(
-                                    4,
-                                    Math.max(1, Math.round(value)),
-                                  ),
-                                });
-                            }}
-                          />
-                        </Field>
-                      ) : (
-                        <Field title={c.duration}>
-                          <input
-                            type="number"
-                            min={1}
-                            max={60}
-                            value={metadata.seconds || "8"}
-                            onChange={(event) => {
-                              const value = event.target.valueAsNumber;
-                              if (Number.isFinite(value))
-                                patchMetadata({
-                                  seconds: String(
-                                    Math.min(60, Math.max(1, value)),
-                                  ),
-                                });
-                            }}
-                          />
-                        </Field>
-                      )}
                     </div>
-                  )}
-                  {mode === "video" && (
-                    <>
-                      <Field title={c.videoMode}>
-                        <select
-                          value={metadata.videoMode || "auto"}
-                          onChange={(event) =>
-                            patchMetadata({ videoMode: event.target.value })
-                          }
+                    <select
+                      id={`${fieldId}-model`}
+                      className="studio-select"
+                      value={selectedModel}
+                      onChange={(event) =>
+                        patchMetadata({ model: event.target.value })
+                      }
+                    >
+                      {!selectedModel && (
+                        <option value="">{c.modelNone}</option>
+                      )}
+                      {selectedModel &&
+                        !models.some(
+                          (entry) => entry.value === selectedModel,
+                        ) && (
+                          <option value={selectedModel}>{selectedModel}</option>
+                        )}
+                      {models.map((option) => (
+                        <option
+                          key={option.value}
+                          value={option.value}
+                          disabled={!option.available}
                         >
-                          <option value="auto">{c.modeAuto}</option>
-                          <option value="reference">{c.modeReference}</option>
-                          <option value="frames">{c.modeFrames}</option>
-                        </select>
-                      </Field>
-                      {metadata.videoMode === "frames" && (
-                        <div className="studio-frame-note">
-                          <p>{c.framesHint}</p>
+                          {option.name}
+                        </option>
+                      ))}
+                    </select>
+                    {(mode === "image" || mode === "video") && (
+                      <div className="studio-field-pair">
+                        <Field title={c.size}>
+                          <select
+                            value={metadata.size || "auto"}
+                            onChange={(event) =>
+                              patchMetadata({ size: event.target.value })
+                            }
+                          >
+                            {[
+                              ...new Set([
+                                "auto",
+                                "1:1",
+                                "16:9",
+                                "9:16",
+                                "4:3",
+                                "3:4",
+                                ...(metadata.size ? [metadata.size] : []),
+                              ]),
+                            ].map((value) => (
+                              <option key={value} value={value}>
+                                {value === "auto" ? c.automatic : value}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        {mode === "image" ? (
+                          <Field title={c.count}>
+                            <input
+                              type="number"
+                              min={1}
+                              max={4}
+                              value={metadata.count || 1}
+                              onChange={(event) => {
+                                const value = event.target.valueAsNumber;
+                                if (Number.isFinite(value))
+                                  patchMetadata({
+                                    count: Math.min(
+                                      4,
+                                      Math.max(1, Math.round(value)),
+                                    ),
+                                  });
+                              }}
+                            />
+                          </Field>
+                        ) : (
+                          <Field title={c.duration}>
+                            <input
+                              type="number"
+                              min={1}
+                              max={60}
+                              value={metadata.seconds || "8"}
+                              onChange={(event) => {
+                                const value = event.target.valueAsNumber;
+                                if (Number.isFinite(value))
+                                  patchMetadata({
+                                    seconds: String(
+                                      Math.min(60, Math.max(1, value)),
+                                    ),
+                                  });
+                              }}
+                            />
+                          </Field>
+                        )}
+                      </div>
+                    )}
+                    {!props.compact && referenceControls}
+                    {props.compact && (
+                      <div className="studio-composer-shortcuts">
+                        {mode === "video" && (
                           <button
                             type="button"
-                            className="studio-secondary-button"
-                            onClick={() =>
-                              patchMetadata({
-                                videoFramesReversed:
-                                  !metadata.videoFramesReversed,
-                              })
-                            }
-                            aria-pressed={Boolean(metadata.videoFramesReversed)}
+                            onClick={() => nodeAction("node-skills")}
                           >
-                            <ArrowDownUp size={14} />
-                            {c.swapFrames}
+                            <WandSparkles size={14} />
+                            <span>{skill?.name || c.skill}</span>
+                            <ChevronRight size={13} />
                           </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </section>
-                {mode === "video" && (
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => nodeAction("node-references")}
+                        >
+                          <Link2 size={14} />
+                          <span>{c.connections}</span>
+                          <b>{incoming.length}</b>
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                )}
+                {showSkills && mode === "video" && (
                   <section className="studio-inspector-section">
                     <div className="studio-section-heading">
                       <h3>{c.skill}</h3>
@@ -663,6 +763,33 @@ export function StudioInspector(props: StudioInspectorProps) {
                         />
                       </button>
                     </div>
+                    {skills.length > 0 && (
+                      <div
+                        className="studio-skill-choices"
+                        aria-label={c.skill}
+                      >
+                        {skills.slice(0, 6).map((entry) => (
+                          <button
+                            key={entry.id}
+                            type="button"
+                            aria-pressed={skillId === entry.id}
+                            disabled={preparing || props.busy}
+                            onClick={() => {
+                              setSkillId(entry.id);
+                              void prepareSkill(entry);
+                            }}
+                          >
+                            <WandSparkles size={15} />
+                            <span>{entry.name}</span>
+                            {metadata.videoSkillId === entry.id ? (
+                              <Check size={13} />
+                            ) : (
+                              <ChevronRight size={13} />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <select
                       className="studio-select"
                       value={skillId}
@@ -700,6 +827,9 @@ export function StudioInspector(props: StudioInspectorProps) {
                         ? c.skillEmpty
                         : c.skillHint}
                     </p>
+                    {skillId && metadata.videoSkillId !== skillId && (
+                      <p className="studio-field-hint">{c.skillPending}</p>
+                    )}
                     {skill && (
                       <button
                         className="studio-secondary-button studio-wide"
@@ -711,94 +841,167 @@ export function StudioInspector(props: StudioInspectorProps) {
                         {preparing ? c.skillPreparing : c.skillApply}
                       </button>
                     )}
-                    {skillError && (
-                      <p className="studio-inline-error" role="alert">
-                        {skillError}
-                      </p>
+                    {skillMessage &&
+                      skillId &&
+                      metadata.videoSkillId === skillId && (
+                        <p className="studio-inline-success" role="status">
+                          <Check size={13} />
+                          {skillMessage}
+                        </p>
+                      )}
+                    <div className="studio-skill-management">
+                      <button
+                        type="button"
+                        onClick={() => nodeAction("skill-market")}
+                      >
+                        <FolderOpen size={14} />
+                        {c.skillMarket}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => nodeAction("skill-import")}
+                      >
+                        <Upload size={14} />
+                        {c.skillImport}
+                      </button>
+                    </div>
+                  </section>
+                )}
+                {showSkills && props.compact && mode !== "video" && (
+                  <section className="studio-inspector-section">
+                    <p className="studio-field-hint">{c.skillVideoOnly}</p>
+                    <button
+                      type="button"
+                      className="studio-secondary-button studio-wide"
+                      onClick={() =>
+                        patchMetadata({
+                          generationMode: "video",
+                          model: undefined,
+                        })
+                      }
+                    >
+                      <Video size={15} />
+                      {c.skillSwitchVideo}
+                    </button>
+                    <div className="studio-skill-management">
+                      <button
+                        type="button"
+                        onClick={() => nodeAction("skill-market")}
+                      >
+                        <FolderOpen size={14} />
+                        {c.skillMarket}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => nodeAction("skill-import")}
+                      >
+                        <Upload size={14} />
+                        {c.skillImport}
+                      </button>
+                    </div>
+                  </section>
+                )}
+                {showReferences && (
+                  <section className="studio-inspector-section">
+                    {props.compact && referenceControls}
+                    <div className="studio-section-heading">
+                      <h3>{c.connections}</h3>
+                      <span className="studio-section-count">
+                        {incoming.length}
+                      </span>
+                    </div>
+                    {props.compact && (
+                      <div className="studio-reference-add">
+                        <button
+                          type="button"
+                          className="studio-secondary-button studio-wide"
+                          onClick={() => nodeAction("assets-reference")}
+                        >
+                          <FolderOpen size={15} />
+                          {c.chooseReferences}
+                        </button>
+                        <button
+                          type="button"
+                          className="studio-secondary-button"
+                          onClick={() => nodeAction("upload-reference")}
+                          aria-label={c.upload}
+                          title={c.upload}
+                        >
+                          <Upload size={15} />
+                        </button>
+                      </div>
                     )}
-                    {skillMessage && (
-                      <p className="studio-inline-success" role="status">
-                        <Check size={13} />
-                        {skillMessage}
-                      </p>
+                    {incoming.length === 0 ? (
+                      <p className="studio-field-hint">{c.noConnections}</p>
+                    ) : (
+                      <ol className="studio-reference-list">
+                        {incoming.map((edge, index) => {
+                          const source = props.nodes.find(
+                            (entry) => entry.id === edge.fromNodeId,
+                          );
+                          return (
+                            <li key={edge.id}>
+                              <span className="studio-reference-order">
+                                {index + 1}
+                              </span>
+                              {source?.type === "image" &&
+                              source.metadata?.content ? (
+                                <img src={source.metadata.content} alt="" />
+                              ) : (
+                                <Link2 size={15} />
+                              )}
+                              <span title={source?.title}>
+                                {source?.title || c.sourceMissing}
+                              </span>
+                              <button
+                                type="button"
+                                className="studio-icon-button"
+                                aria-label={`${c.disconnect}: ${source?.title || edge.id}`}
+                                onClick={() =>
+                                  nodeAction(`disconnect:${edge.id}`)
+                                }
+                              >
+                                <Unplug size={14} />
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ol>
                     )}
                   </section>
                 )}
-                <section className="studio-inspector-section">
-                  <div className="studio-section-heading">
-                    <h3>{c.connections}</h3>
-                    <span className="studio-section-count">
-                      {incoming.length}
-                    </span>
-                  </div>
-                  {incoming.length === 0 ? (
-                    <p className="studio-field-hint">{c.noConnections}</p>
-                  ) : (
-                    <ol className="studio-reference-list">
-                      {incoming.map((edge, index) => {
-                        const source = props.nodes.find(
-                          (entry) => entry.id === edge.fromNodeId,
-                        );
-                        return (
-                          <li key={edge.id}>
-                            <span className="studio-reference-order">
-                              {index + 1}
-                            </span>
-                            {source?.type === "image" &&
-                            source.metadata?.content ? (
-                              <img src={source.metadata.content} alt="" />
-                            ) : (
-                              <Link2 size={15} />
-                            )}
-                            <span title={source?.title}>
-                              {source?.title || c.sourceMissing}
-                            </span>
-                            <button
-                              type="button"
-                              className="studio-icon-button"
-                              aria-label={`${c.disconnect}: ${source?.title || edge.id}`}
-                              onClick={() =>
-                                nodeAction(`disconnect:${edge.id}`)
-                              }
-                            >
-                              <Unplug size={14} />
-                            </button>
-                          </li>
-                        );
-                      })}
-                    </ol>
-                  )}
-                </section>
               </>
             )}
-            {(hasMedia || node.type === "text" || node.type === "group") && (
-              <section className="studio-inspector-section">
-                <h3>{node.type === "group" ? c.layout : c.mediaTools}</h3>
-                <div className="studio-action-grid">
-                  {hasMedia && actionButton("download", c.download, Download)}
-                  {hasMedia && actionButton("saveAsset", c.saveAsset, Layers3)}
-                  {node.type === "image" &&
-                    hasMedia &&
-                    imageActions.map(({ action, label, icon }) =>
-                      actionButton(action, c[label], icon),
-                    )}
-                  {node.type === "video" &&
-                    hasMedia &&
-                    videoActions.map(({ action, label, icon }) =>
-                      actionButton(action, c[label], icon),
-                    )}
-                  {node.type === "text" &&
-                    actionButton(
-                      "prepare-video",
-                      c.prepareVideo,
-                      Video,
-                      !metadata.content?.trim(),
-                    )}
-                  {node.type === "group" &&
-                    actionButton("ungroup", c.ungroup, Ungroup)}
-                </div>
-              </section>
-            )}
+            {showCompose &&
+              (hasMedia || node.type === "text" || node.type === "group") && (
+                <section className="studio-inspector-section">
+                  <h3>{node.type === "group" ? c.layout : c.mediaTools}</h3>
+                  <div className="studio-action-grid">
+                    {hasMedia && actionButton("download", c.download, Download)}
+                    {hasMedia &&
+                      actionButton("saveAsset", c.saveAsset, Layers3)}
+                    {node.type === "image" &&
+                      hasMedia &&
+                      imageActions.map(({ action, label, icon }) =>
+                        actionButton(action, c[label], icon),
+                      )}
+                    {node.type === "video" &&
+                      hasMedia &&
+                      videoActions.map(({ action, label, icon }) =>
+                        actionButton(action, c[label], icon),
+                      )}
+                    {node.type === "text" &&
+                      actionButton(
+                        "prepare-video",
+                        c.prepareVideo,
+                        Video,
+                        !metadata.content?.trim(),
+                      )}
+                    {node.type === "group" &&
+                      actionButton("ungroup", c.ungroup, Ungroup)}
+                  </div>
+                </section>
+              )}
           </>
         ) : (
           <>
@@ -911,6 +1114,11 @@ export function StudioInspector(props: StudioInspectorProps) {
             </section>
           </>
         )}
+        {skillError && (
+          <p className="studio-inline-error" role="alert">
+            {skillError}
+          </p>
+        )}
         {metadata.errorDetails && (
           <p
             className="studio-inline-error studio-generation-error"
@@ -920,7 +1128,7 @@ export function StudioInspector(props: StudioInspectorProps) {
           </p>
         )}
       </div>
-      {node.type !== "group" && tab === "compose" && (
+      {node.type !== "group" && section !== "properties" && (
         <div className="studio-generate-footer">
           {props.busy ? (
             <button
@@ -954,10 +1162,11 @@ export function StudioInspector(props: StudioInspectorProps) {
             <button
               type="button"
               className="studio-generate-button"
-              onClick={() => props.onGenerate(node.id, mode, prompt.trim())}
+              onClick={() => void generate()}
               disabled={
                 !prompt.trim() ||
                 preparing ||
+                (Boolean(skillId) && skillLoading) ||
                 !models.some((entry) => entry.available)
               }
             >

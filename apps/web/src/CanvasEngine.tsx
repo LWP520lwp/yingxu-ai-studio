@@ -4,10 +4,10 @@ import type { Asset, Bootstrap, CanvasDocument, Job, Project } from "./types";
 import { installCanvasVideoSkill, listCanvasVideoSkills, prepareCanvasVideoPrompt, prepareCanvasVideoSkill, readCanvasVideoSkill } from "./canvasSkills";
 
 export type CanvasEngineHandle = { command: (command: string, payload?: unknown) => void; request: (command: string, payload?: unknown) => Promise<boolean>; flush: () => Promise<boolean>; isReady: () => boolean };
-export type CanvasPlatformAction = "home" | "projects" | "newProject" | "skills" | "pool" | "settings";
+export type CanvasPlatformAction = "home" | "projects" | "newProject" | "skills" | "skillImport" | "workflow" | "pool" | "settings";
 
 export function parseCanvasPlatformAction(value: unknown): CanvasPlatformAction {
-  if (value === "home" || value === "projects" || value === "newProject" || value === "skills" || value === "pool" || value === "settings") return value;
+  if (value === "home" || value === "projects" || value === "newProject" || value === "skills" || value === "skillImport" || value === "workflow" || value === "pool" || value === "settings") return value;
   throw new Error("此画布入口尚未接入工作台");
 }
 

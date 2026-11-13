@@ -13,9 +13,9 @@
   margin-inline: auto;
   padding: 4px;
   border: 1px solid var(--studio-border);
-  border-radius: 11px;
+  border-radius: 8px;
   background: var(--studio-surface);
-  box-shadow: 0 6px 24px #0003;
+  box-shadow: 0 2px 8px #0002;
   overflow-x: auto;
   pointer-events: auto;
 }
@@ -23,11 +23,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 5px;
   flex-shrink: 0;
   height: 34px;
-  padding: 0 9px;
-  border-radius: 7px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  border-radius: 5px;
   white-space: nowrap;
   color: var(--studio-secondary);
 }
@@ -38,16 +41,19 @@
 }
 .studio-node-composer {
   position: absolute;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   overflow: hidden;
   border: 1px solid var(--studio-border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--studio-surface);
-  box-shadow: 0 12px 36px #0004;
+  box-shadow: 0 4px 16px #0003;
   pointer-events: auto;
 }
 .studio-node-composer .studio-inspector {
-  height: 100%;
+  flex: 1;
+  height: auto;
   min-height: 0;
 }
 .studio-node-composer .studio-inspector-heading {
@@ -74,9 +80,6 @@
   min-height: 76px;
 }
 .studio-node-composer-close {
-  position: absolute;
-  top: 10px;
-  right: 9px;
   z-index: 1;
   display: grid;
   place-items: center;
@@ -84,6 +87,40 @@
   height: 26px;
   border-radius: 5px;
   color: var(--studio-muted);
+  border: 0;
+  background: transparent;
+}
+.studio-node-composer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  flex-shrink: 0;
+  padding: 0 12px 0 16px;
+  color: var(--studio-text);
+  border-bottom: 1px solid var(--studio-border-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+.studio-node-composer-tabs {
+  display: flex;
+  gap: 18px;
+  flex-shrink: 0;
+  min-height: 34px;
+  padding-inline: 16px;
+  border-bottom: 1px solid var(--studio-border-soft);
+}
+.studio-node-composer-tabs button {
+  border: 0;
+  background: transparent;
+  padding: 7px 0;
+  color: var(--studio-muted);
+  font-size: 11px;
+  border-bottom: 2px solid transparent;
+}
+.studio-node-composer-tabs button[aria-pressed="true"] {
+  color: var(--studio-text);
+  border-bottom-color: var(--studio-accent);
 }
 .studio-node-composer-close:hover {
   background: var(--studio-raised);

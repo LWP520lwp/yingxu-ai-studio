@@ -69,6 +69,7 @@ export function SkillMarket({
   sessionKey,
   onLogin,
   onUse,
+  initialImportOpen = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -76,6 +77,7 @@ export function SkillMarket({
   sessionKey?: string | null;
   onLogin: () => void;
   onUse: (skill: ExecutableSkill, definition: SkillDefinition) => Promise<void>;
+  initialImportOpen?: boolean;
 }) {
   const scopeKey = JSON.stringify([open, signedIn, sessionKey ?? null]);
   const currentKey = useRef(scopeKey);
@@ -99,7 +101,7 @@ export function SkillMarket({
   } | null>(null);
   const detail = detailState?.key === scopeKey ? detailState.skill : null;
   const [busy, setBusy] = useState("");
-  const [importOpen, setImportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(initialImportOpen);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importCapability, setImportCapability] = useState<"image" | "video">("video");
   const fileInput = useRef<HTMLInputElement>(null);

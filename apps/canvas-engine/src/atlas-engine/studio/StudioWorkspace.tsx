@@ -48,7 +48,7 @@ import { createStudioTasks } from "./studio-tasks";
 import { createStudioMedia } from "./studio-media";
 import { StudioScene } from "./StudioScene";
 import { StudioContextMenu } from "./StudioContextMenu";
-import { StudioNodeDock } from "./StudioNodeDock";
+import { StudioNodeDock, type StudioNodeSection } from "./StudioNodeDock";
 import { StudioChrome } from "./ui/StudioChrome";
 import { StudioInspector } from "./ui/StudioInspector";
 import { useStudioGestures } from "./useStudioGestures";
@@ -115,7 +115,8 @@ export default function StudioWorkspace({
   useAtlasNodeRegistryVersion((store) => store.version);
   const [tool, setTool] = useState<"select" | "pan">("pan");
   const [notice, setNotice] = useState("");
-  const [library, setLibrary] = useState(false);
+  const [library, setLibrary] = useState(() => window.innerWidth >= 1000);
+  const [referenceTarget, setReferenceTarget] = useState<string | undefined>();
   const [plugins, setPlugins] = useState(false);
   const [codex, setCodex] = useState(false);
   const [overview, setOverview] = useState(false);
@@ -130,6 +131,7 @@ export default function StudioWorkspace({
   const surface = useRef<HTMLDivElement>(null);
   const file = useRef<HTMLInputElement>(null);
   const replace = useRef<string | undefined>(undefined);
+  const uploadReference = useRef<string | undefined>(undefined);
   const [size, setSize] = useState({ width: 1000, height: 700 });
   const sizeRef = useRef(size);
   sizeRef.current = size;
@@ -327,6 +329,23 @@ export default function StudioWorkspace({
     setNotice(word("已收进素材架", "Saved to materials"));
   };
   const action = (name: string, node: CanvasNodeData) => {
+    if (name === "assets-reference") {
+      setReferenceTarget(node.id);
+      setLibrary(true);
+      return;
+    }
+    if (name === "upload-reference") {
+      uploadReference.current = node.id;
+      replace.current = undefined;
+      file.current?.click();
+      return;
+    }
+    if (name === "skill-market" || name === "skill-import") {
+      void openPlatformAction(
+        name === "skill-import" ? "skillImport" : "skills",
+      ).catch(report);
+      return;
+    }
     if (name === "codex") {
       setCodex(true);
       return;
@@ -412,6 +431,7 @@ export default function StudioWorkspace({
       return;
     }
     if (name === "upload") {
+      uploadReference.current = undefined;
       replace.current = node.id;
       file.current?.click();
       return;
@@ -513,9 +533,14 @@ export default function StudioWorkspace({
       session.tidy();
       fit();
     } else if (name === "upload") {
+      uploadReference.current = undefined;
       replace.current = undefined;
       file.current?.click();
-    } else if (name === "assets") setLibrary(true);
+    } else if (name === "assets") {
+      setReferenceTarget(undefined);
+      setLibrary((value) => !value);
+    } else if (name === "skills" || name === "workflow")
+      void openPlatformAction(name).catch(report);
     else if (name === "plugins") setPlugins(true);
     else if (name === "minimap") setOverview((value) => !value);
     else if (name === "theme")
@@ -825,8 +850,10 @@ export default function StudioWorkspace({
     }
     void tasks.generate(id, mode, prompt).catch(report);
   };
-  const inspector = (
+  const inspectorFor = (section?: StudioNodeSection, onAction = action) => (
     <StudioInspector
+      section={section}
+      compact={Boolean(section)}
       node={selected}
       nodes={doc.nodes}
       connections={doc.connections}
@@ -834,11 +861,12 @@ export default function StudioWorkspace({
       busy={selected ? tasks.isRunning(selected.id) : false}
       onPatch={(id, patch) => session.patch(id, patch)}
       onMetadata={(id, patch) => session.metadata(id, patch)}
-      onAction={action}
+      onAction={onAction}
       onGenerate={generate}
       onStop={(id) => tasks.stop(id)}
     />
   );
+  const inspector = inspectorFor();
   return (
     <StudioChrome
       title={title}
@@ -866,6 +894,72 @@ export default function StudioWorkspace({
       notice={notice}
       codexOpen={codex}
       onCodex={() => setCodex((value) => !value)}
+      libraryOpen={library}
+      library={
+        library && (
+          <Suspense
+            fallback={
+              <div className="studio-library-loading" role="status">
+                {word("正在读取素材…", "Loading materials…")}
+              </div>
+            }
+          >
+            <Library
+              embedded
+              referenceOnly={Boolean(referenceTarget)}
+              nodes={doc.nodes}
+              insertLabel={
+                referenceTarget
+                  ? word("添加为节点参考", "Add as reference")
+                  : undefined
+              }
+              onUpload={() => {
+                uploadReference.current = referenceTarget;
+                replace.current = undefined;
+                file.current?.click();
+              }}
+              onClose={() => {
+                setLibrary(false);
+                setReferenceTarget(undefined);
+              }}
+              onInsert={async (payload) => {
+                const target = referenceTarget;
+                if (
+                  target &&
+                  payload.kind !== "image" &&
+                  payload.kind !== "text"
+                )
+                  throw new Error(
+                    word(
+                      "请选择图片或文字作为参考素材。",
+                      "Choose an image or text reference.",
+                    ),
+                  );
+                const inserted = await media.insertAsset(payload, target);
+                if (!inserted)
+                  throw new Error(
+                    word(
+                      "素材未能加入画布，请检查文件后重试。",
+                      "Could not add this asset. Check the file and retry.",
+                    ),
+                  );
+                if (
+                  target &&
+                  session.read().nodes.some((node) => node.id === target)
+                ) {
+                  session.select([target]);
+                  setNotice(
+                    word(
+                      "素材已加入并连接到当前节点",
+                      "Material added and connected to this node",
+                    ),
+                  );
+                }
+              }}
+            />
+          </Suspense>
+        )
+      }
       inspector={
         <>
           {inspector}
@@ -951,7 +1045,7 @@ export default function StudioWorkspace({
           node={selected}
           viewport={doc.viewport}
           size={size}
-          composer={inspector}
+          composer={inspectorFor}
           onMode={(generationMode) =>
             session.metadata(selected.id, {
               generationMode,
@@ -961,7 +1055,10 @@ export default function StudioWorkspace({
             })
           }
           onAction={action}
-          onAssets={() => setLibrary(true)}
+          onAssets={() => {
+            setReferenceTarget(undefined);
+            setLibrary(true);
+          }}
         />
       )}
       {!doc.nodes.length && (
@@ -1044,37 +1141,38 @@ export default function StudioWorkspace({
         multiple
         accept="image/*,video/*,audio/*"
         onChange={(event) => {
-          if (event.target.files)
+          if (event.target.files) {
+            const target = uploadReference.current;
+            const uploads = Array.from(event.target.files).filter(
+              (file) => !target || file.type.startsWith("image/"),
+            );
+            if (target && uploads.length !== event.target.files.length)
+              setNotice(
+                word(
+                  "参考素材仅支持图片；视频和音频请作为独立素材上传。",
+                  "Use images as generation references. Import video and audio as separate materials.",
+                ),
+              );
             void media
-              .importFiles(event.target.files, replace.current)
+              .importFiles(uploads, replace.current, target)
+              .then((inserted) => {
+                if (
+                  !inserted ||
+                  !target ||
+                  !alive() ||
+                  !session.read().nodes.some((node) => node.id === target)
+                )
+                  return;
+                session.select([target]);
+              })
               .catch(report);
+          }
+          uploadReference.current = undefined;
           replace.current = undefined;
           event.target.value = "";
         }}
       />
       <Suspense fallback={null}>
-        {library && (
-          <Library
-            nodes={doc.nodes}
-            onUpload={() => {
-              setLibrary(false);
-              replace.current = undefined;
-              file.current?.click();
-            }}
-            onClose={() => setLibrary(false)}
-            onInsert={async (payload) => {
-              const inserted = await media.insertAsset(payload);
-              if (!inserted)
-                throw new Error(
-                  word(
-                    "素材未能加入画布，请检查文件后重试。",
-                    "Could not add this asset. Check the file and retry.",
-                  ),
-                );
-              setLibrary(false);
-            }}
-          />
-        )}
         {plugins && <Plugins open onClose={() => setPlugins(false)} />}
         {codex && (
           <CodexPanel

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { DropdownMenu } from "radix-ui";
+import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
   AudioLines,
@@ -56,6 +57,8 @@ export type StudioChromeProps = {
   onScale: (value: number) => void;
   notice: string;
   inspector?: ReactNode;
+  library?: ReactNode;
+  libraryOpen: boolean;
   codexOpen: boolean;
   onCodex: () => void;
 };
@@ -119,6 +122,8 @@ const documentCommands: {
 
 export function StudioChrome(props: StudioChromeProps) {
   const c = useStudioCopy();
+  const { i18n } = useTranslation();
+  const zh = !i18n.resolvedLanguage?.startsWith("en");
   const [name, setName] = useState(props.title);
   const [inspectorVisible, setInspectorVisible] = useState(false);
   const cancelRename = useRef(false);
@@ -303,6 +308,66 @@ export function StudioChrome(props: StudioChromeProps) {
         </div>
       </header>
       <div className="studio-editor-layout">
+        <nav
+          className="studio-resource-rail"
+          aria-label={zh ? "创作资源" : "Creative resources"}
+        >
+          {[
+            {
+              command: "assets",
+              label: c.assets,
+              short: zh ? "资产" : "Assets",
+              icon: FolderOpen,
+            },
+            {
+              command: "upload",
+              label: c.upload,
+              short: zh ? "上传" : "Upload",
+              icon: Upload,
+            },
+            {
+              command: "skills",
+              label: zh ? "Skill 技能库" : "Skill library",
+              short: "Skill",
+              icon: Sparkles,
+            },
+            {
+              command: "workflow",
+              label: zh ? "剧本工作流" : "Script workflow",
+              short: zh ? "工作流" : "Flow",
+              icon: Workflow,
+            },
+            {
+              command: "plugins",
+              label: c.plugins,
+              short: zh ? "扩展" : "Add-ons",
+              icon: Wrench,
+            },
+          ].map(({ command, label, short, icon: Icon }) => (
+            <button
+              type="button"
+              key={command}
+              aria-label={label}
+              title={label}
+              aria-pressed={
+                command === "assets" ? props.libraryOpen : undefined
+              }
+              className={cn(
+                "studio-resource-button",
+                command === "assets" && props.libraryOpen && "is-active",
+              )}
+              onClick={() => props.onCommand(command)}
+            >
+              <Icon size={19} strokeWidth={1.6} aria-hidden="true" />
+              <span>{short}</span>
+            </button>
+          ))}
+        </nav>
+        {props.libraryOpen && props.library && (
+          <aside className="studio-library-region" aria-label={c.assets}>
+            {props.library}
+          </aside>
+        )}
         <section
           className="studio-canvas-region"
           aria-label={c.workspace}
@@ -365,29 +430,7 @@ export function StudioChrome(props: StudioChromeProps) {
                     />
                   ))}
                 </div>
-                <div className="studio-rail-divider" />
-                <div className="studio-tool-cluster">
-                  <ToolButton
-                    label={c.upload}
-                    icon={Upload}
-                    onClick={() => props.onCommand("upload")}
-                  />
-                  <ToolButton
-                    label={c.plugins}
-                    icon={Wrench}
-                    onClick={() => props.onCommand("plugins")}
-                  />
-                </div>
               </div>
-              <button
-                type="button"
-                className="studio-assets-button"
-                onClick={() => props.onCommand("assets")}
-                title={c.assets}
-              >
-                <FolderOpen size={18} strokeWidth={1.7} aria-hidden="true" />
-                <span>{c.assets}</span>
-              </button>
             </nav>
           </div>
         </section>

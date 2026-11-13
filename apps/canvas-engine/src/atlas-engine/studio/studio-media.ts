@@ -196,7 +196,11 @@ export function createStudioMedia(
     return committed;
   }
 
-  async function importFiles(input: FileList | File[], replaceId?: string) {
+  async function importFiles(
+    input: FileList | File[],
+    replaceId?: string,
+    referenceTargetId?: string,
+  ) {
     const files = Array.from(input);
     if (!files.length) return;
     const replace = replaceId
@@ -212,7 +216,7 @@ export function createStudioMedia(
       );
       return;
     }
-    await transaction(async (signal, save, check) => {
+    return transaction(async (signal, save, check) => {
       const point = center();
       const results: CanvasNodeData[] = new Array(files.length);
       let cursor = 0;
@@ -284,29 +288,91 @@ export function createStudioMedia(
               : node,
           ),
         }));
+      } else if (referenceTargetId) {
+        const target = port
+          .read()
+          .nodes.find((node) => node.id === referenceTargetId);
+        if (!target)
+          throw new Error(
+            words(
+              "参考目标已不存在，请重新选择节点。",
+              "The reference target no longer exists. Select a node again.",
+            ),
+          );
+        if (results.some((node) => node.type !== CanvasNodeType.Image))
+          throw new Error(
+            words(
+              "生成参考仅支持图片。",
+              "Generation references must be images.",
+            ),
+          );
+        results.forEach((node, index) => {
+          node.position = {
+            x: target.position.x - node.width - 100,
+            y: target.position.y + index * 100,
+          };
+        });
+        port.change((document) => ({
+          ...document,
+          nodes: [...document.nodes, ...results],
+          connections: [
+            ...document.connections,
+            ...results.map((node) => edge(node.id, target.id)),
+          ],
+        }));
       } else port.insert(results);
     }, replace);
   }
 
-  async function insertAsset(payload: InsertAssetPayload) {
+  async function insertAsset(
+    payload: InsertAssetPayload,
+    referenceTargetId?: string,
+  ) {
     return transaction(async (signal, save, check) => {
       const point = center();
+      const insert = (node: CanvasNodeData) => {
+        check();
+        if (!referenceTargetId) {
+          port.insert([node]);
+          return;
+        }
+        const target = port
+          .read()
+          .nodes.find((item) => item.id === referenceTargetId);
+        if (!target)
+          throw new Error(
+            words(
+              "参考目标已不存在，请重新选择节点。",
+              "The reference target no longer exists. Select a node again.",
+            ),
+          );
+        const inputCount = port
+          .read()
+          .connections.filter((item) => item.toNodeId === target.id).length;
+        node.position = {
+          x: target.position.x - node.width - 100,
+          y: target.position.y + inputCount * 72,
+        };
+        port.change((document) => ({
+          ...document,
+          nodes: [...document.nodes, node],
+          connections: [...document.connections, edge(node.id, target.id)],
+        }));
+      };
       if (payload.kind === "text") {
-        port.insert([
-          {
-            id: `studio-text-${io.id()}`,
-            type: CanvasNodeType.Text,
-            title: payload.title,
-            position: point,
-            width: 360,
-            height: 240,
-            metadata: { content: payload.content, status: "success" },
-          },
-        ]);
+        insert({
+          id: `studio-text-${io.id()}`,
+          type: CanvasNodeType.Text,
+          title: payload.title,
+          position: point,
+          width: 360,
+          height: 240,
+          metadata: { content: payload.content, status: "success" },
+        });
         return;
       }
       if (payload.kind === "video" || payload.kind === "audio") {
-        port.insert([
+        insert(
           nodeFor(
             payload.kind === "audio"
               ? CanvasNodeType.Audio
@@ -324,7 +390,7 @@ export function createStudioMedia(
             },
             point,
           ),
-        ]);
+        );
         return;
       }
       const url = await io.resolveImage(payload.storageKey, payload.dataUrl);
@@ -352,7 +418,7 @@ export function createStudioMedia(
         save(media, true);
       }
       check();
-      port.insert([nodeFor(CanvasNodeType.Image, payload.title, media, point)]);
+      insert(nodeFor(CanvasNodeType.Image, payload.title, media, point));
     });
   }
 
