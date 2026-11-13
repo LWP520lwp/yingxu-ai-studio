@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as ts from "typescript";
+import { createInstance } from "i18next";
 
 import enUS from "@/i18n/locales/en-US";
 import zhCN from "@/i18n/locales/zh-CN";
@@ -38,6 +39,72 @@ function interpolationTokens(message: string) {
     .sort();
 }
 
+function staticKeyRequests(expression: ts.Expression): string[][] {
+  if (ts.isStringLiteralLike(expression)) return [[expression.text]];
+  if (ts.isArrayLiteralExpression(expression)) {
+    // i18next resolves an array as an ordered list of fallbacks.
+    return [
+      expression.elements.flatMap((entry) =>
+        ts.isStringLiteralLike(entry) ? [entry.text] : [],
+      ),
+    ];
+  }
+  if (ts.isConditionalExpression(expression)) {
+    return [
+      ...staticKeyRequests(expression.whenTrue),
+      ...staticKeyRequests(expression.whenFalse),
+    ];
+  }
+  return [];
+}
+
+const dynamicMessageKeys = [
+  ...[
+    "horizontal",
+    "pitch",
+    "distance",
+    "free",
+    "fixed",
+    "originalMode",
+    "maxReached",
+    "targetReached",
+  ].map((key) => `canvas.editors.${key}`),
+  ...["high", "bilinear", "nearest"].flatMap((key) => [
+    `canvas.editors.${key}`,
+    `canvas.editors.${key}Description`,
+  ]),
+  ...["image", "video", "text", "audio"].map(
+    (key) => `settingsPanels.model.capabilities.${key}`,
+  ),
+  ...["openai", "gemini"].map((key) => `modelPlugin.templates.${key}`),
+  ...[
+    "add_node",
+    "update_node",
+    "delete_node",
+    "delete_connections",
+    "connect_nodes",
+    "set_viewport",
+    "select_nodes",
+    "run_generation",
+  ].map((key) => `canvas.agentOps.${key}`),
+  ...[
+    "testFailed",
+    "downloadFailed",
+    "downloadTimeout",
+    "emptyUpload",
+    "uploadFailed",
+    "directoryFailed",
+    "requestTimeout",
+    "connectionFailed",
+    "urlRequired",
+    "authenticationFailed",
+    "pathMissing",
+    "responseFailed",
+    "syncFailed",
+    "invalidManifest",
+  ].map((key) => `config.webdav.errors.${key}`),
+];
+
 describe("locale message parity", () => {
   it("resolves literal translation keys used by production code", () => {
     const locales = [collectMessages(zhCN), collectMessages(enUS)];
@@ -63,15 +130,20 @@ describe("locale message parity", () => {
               node.expression.name.text === "t"))
         ) {
           const key = node.arguments[0];
-          if (
-            key &&
-            ts.isStringLiteralLike(key) &&
-            locales.some((messages) => !messages.has(key.text))
-          ) {
-            const { line } = syntax.getLineAndCharacterOfPosition(
-              key.getStart(syntax),
-            );
-            missing.push(`${file}:${line + 1}: ${key.text}`);
+          if (key) {
+            for (const alternatives of staticKeyRequests(key)) {
+              if (
+                !alternatives.length ||
+                locales.every((messages) =>
+                  alternatives.some((name) => messages.has(name)),
+                )
+              )
+                continue;
+              const { line } = syntax.getLineAndCharacterOfPosition(
+                key.getStart(syntax),
+              );
+              missing.push(`${file}:${line + 1}: ${alternatives.join(" | ")}`);
+            }
           }
         }
         ts.forEachChild(node, visit);
@@ -80,6 +152,57 @@ describe("locale message parity", () => {
     }
 
     expect(missing).toEqual([]);
+  });
+
+  it("keeps dynamic editor, model, operation and sync message contracts", () => {
+    for (const messages of [collectMessages(zhCN), collectMessages(enUS)]) {
+      for (const key of dynamicMessageKeys) {
+        expect(messages.has(key), key).toBe(true);
+      }
+    }
+  });
+
+  it("renders fallback lists and placeholders in each supported language", async () => {
+    const translator = createInstance();
+    await translator.init({
+      resources: {
+        "zh-CN": { translation: zhCN },
+        "en-US": { translation: enUS },
+      },
+      lng: "zh-CN",
+      fallbackLng: false,
+      initAsync: false,
+    });
+    for (const language of ["zh-CN", "en-US"]) {
+      await translator.changeLanguage(language);
+      const messages = collectMessages(language === "zh-CN" ? zhCN : enUS);
+      for (const [key, message] of messages) {
+        const variables = Object.fromEntries(
+          interpolationTokens(message).map((name) => [name, `sample-${name}`]),
+        );
+        const result = translator.t(
+          ["missing.message.for.fallback", key],
+          variables,
+        );
+        expect(result, `${language}: ${key}`).not.toBe(key);
+        expect(result, `${language}: ${key}`).not.toContain("{{");
+      }
+    }
+  });
+
+  it("recognizes conditional keys and translation fallback arrays", () => {
+    const source = ts.createSourceFile(
+      "requests.ts",
+      't(flag ? "on" : "off"); t(["new", "old"]);',
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const calls = source.statements.map(
+      (statement) =>
+        (statement as ts.ExpressionStatement).expression as ts.CallExpression,
+    );
+    expect(staticKeyRequests(calls[0].arguments[0])).toEqual([["on"], ["off"]]);
+    expect(staticKeyRequests(calls[1].arguments[0])).toEqual([["new", "old"]]);
   });
 
   it("keeps the same message paths in Chinese and English", () => {

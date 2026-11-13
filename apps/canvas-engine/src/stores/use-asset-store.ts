@@ -8,11 +8,11 @@ import { nanoid } from "nanoid";
 
 import {
   decodeAssetStorageValue,
-  mapWithConcurrency,
   normalizeAssetCollection,
   reduceAssetCollection,
   type PersistedAssetValue,
 } from "@/lib/asset-library-model";
+import { restoreAssetMedia } from "@/lib/asset-hydration";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { LEGACY_STORAGE_KEYS } from "@/lib/legacy-data-compatibility";
 import {
@@ -24,7 +24,13 @@ import {
 } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
 import type { Asset } from "@/types/asset";
-export type { Asset, AssetKind, ImageAsset, TextAsset, VideoAsset } from "@/types/asset";
+export type {
+  Asset,
+  AssetKind,
+  ImageAsset,
+  TextAsset,
+  VideoAsset,
+} from "@/types/asset";
 
 type AssetStore = {
   hydrated: boolean;
@@ -48,7 +54,6 @@ export function assetCoverUrl(asset: Asset) {
 }
 
 const ASSET_STORE_KEY = "yingxu-atlas:asset_store:v2";
-const HYDRATION_CONCURRENCY = 4;
 let cleanupQueued = false;
 let pendingCleanupExtras: unknown[] = [];
 
@@ -85,11 +90,12 @@ const assetStorage: PersistStorage<AssetStore> = {
     if (!persisted) return null;
 
     const assets = normalizeAssetCollection(persisted.state.assets);
-    const hydratedAssets = await mapWithConcurrency(
-      assets,
-      HYDRATION_CONCURRENCY,
-      hydrateStoredAsset,
-    );
+    const hydratedAssets = await restoreAssetMedia(assets, {
+      readImage: resolveImageUrl,
+      readVideo: resolveMediaUrl,
+      saveImage: uploadImage,
+      loadPreview: ensureImagePreview,
+    });
 
     return {
       ...persisted,
@@ -109,59 +115,6 @@ async function readStorageValue(
     return decodeAssetStorageValue(serialized);
   } catch {
     return null;
-  }
-}
-
-async function hydrateStoredAsset(asset: Asset): Promise<Asset> {
-  if (asset.kind === "video" && asset.data.storageKey) {
-    try {
-      return {
-        ...asset,
-        data: {
-          ...asset.data,
-          url: await resolveMediaUrl(asset.data.storageKey, asset.data.url),
-        },
-      };
-    } catch {
-      return asset;
-    }
-  }
-
-  if (asset.kind !== "image") return asset;
-
-  if (asset.data.storageKey) {
-    void ensureImagePreview(asset.data.storageKey).catch(() => undefined);
-    try {
-      const [dataUrl, coverUrl] = await Promise.all([
-        resolveImageUrl(asset.data.storageKey, asset.data.dataUrl),
-        asset.coverUrl.startsWith("blob:")
-          ? resolveImageUrl(asset.data.storageKey, asset.coverUrl)
-          : Promise.resolve(asset.coverUrl),
-      ]);
-      return { ...asset, coverUrl, data: { ...asset.data, dataUrl } };
-    } catch {
-      return asset;
-    }
-  }
-
-  if (!asset.data.dataUrl.startsWith("data:image/")) return asset;
-  try {
-    const image = await uploadImage(asset.data.dataUrl);
-    return {
-      ...asset,
-      coverUrl: asset.coverUrl.startsWith("data:image/")
-        ? image.url
-        : asset.coverUrl,
-      data: {
-        ...asset.data,
-        dataUrl: image.url,
-        storageKey: image.storageKey,
-        bytes: image.bytes,
-        mimeType: image.mimeType,
-      },
-    };
-  } catch {
-    return asset;
   }
 }
 

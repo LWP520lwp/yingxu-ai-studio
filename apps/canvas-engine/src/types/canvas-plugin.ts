@@ -3,7 +3,11 @@ import type { ComponentType, ReactNode } from "react";
 import type { CanvasAgentOp } from "@/atlas-engine/agent/canvas-operations";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import type { CanvasResourceKind } from "@/atlas-engine/model/resource-references";
-import type { CanvasConnection, CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
+import type {
+  CanvasConnection,
+  CanvasNodeData,
+  CanvasNodeMetadata,
+} from "@/types/canvas";
 
 export interface CanvasNodeResource {
   kind: CanvasResourceKind;
@@ -58,9 +62,18 @@ export interface GenerateTextResult {
 }
 
 export interface CanvasPluginAi {
-  generateImage(prompt: string, options?: GenerateImageOptions): Promise<GenerateImageResult>;
-  generateVideo(prompt: string, options?: GenerateVideoOptions): Promise<GenerateVideoResult>;
-  generateText(prompt: string, options?: GenerateTextOptions): Promise<GenerateTextResult>;
+  generateImage(
+    prompt: string,
+    options?: GenerateImageOptions,
+  ): Promise<GenerateImageResult>;
+  generateVideo(
+    prompt: string,
+    options?: GenerateVideoOptions,
+  ): Promise<GenerateVideoResult>;
+  generateText(
+    prompt: string,
+    options?: GenerateTextOptions,
+  ): Promise<GenerateTextResult>;
   listModels(capability?: PluginModelCapability): ModelOption[];
   defaultModel(capability: PluginModelCapability): string;
 }
@@ -87,7 +100,9 @@ export interface CanvasNodeContext {
   scale: number;
   isSelected: boolean;
   updateMetadata(patch: CanvasNodeMetadata): void;
-  updateNode(patch: Partial<Pick<CanvasNodeData, "title" | "width" | "height">>): void;
+  updateNode(
+    patch: Partial<Pick<CanvasNodeData, "title" | "width" | "height">>,
+  ): void;
   getNode(id: string): CanvasNodeData | null;
   getNodes(): CanvasNodeData[];
   getConnections(): CanvasConnection[];
@@ -100,20 +115,6 @@ export interface CanvasNodeContext {
   openPanel(): void;
   closePanel(): void;
   storage: PluginStorage;
-}
-
-export interface CanvasPluginHost {
-  getNode(id: string): CanvasNodeData | null;
-  getNodes(): CanvasNodeData[];
-  getConnections(): CanvasConnection[];
-  getUpstream(nodeId: string): CanvasNodeData[];
-  getDownstream(nodeId: string): CanvasNodeData[];
-  updateNode(nodeId: string, patch: Partial<Pick<CanvasNodeData, "title" | "width" | "height">>): void;
-  updateMetadata(nodeId: string, patch: CanvasNodeMetadata): void;
-  applyOps(ops: CanvasAgentOp[]): void;
-  ai: CanvasPluginAi;
-  openPanel(nodeId: string): void;
-  closePanel(nodeId?: string): void;
 }
 
 export interface CanvasBuiltinPanelConfig {

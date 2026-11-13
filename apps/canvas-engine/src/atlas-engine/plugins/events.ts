@@ -1,5 +1,4 @@
-import { createScopedStorage } from "@/lib/localforage-storage";
-import type { PluginStorage } from "@/types/canvas-plugin";
+export { createAtlasPluginStorage } from "./storage";
 
 type EventHandler = (payload?: unknown) => void;
 
@@ -50,25 +49,4 @@ export function emitAtlasPluginEvent(topicName: string, payload?: unknown) {
 
 export function onAtlasPluginEvent(topicName: string, handler: EventHandler) {
   return hub.subscribe(topicName, handler);
-}
-
-const stores = new Map<string, ReturnType<typeof createScopedStorage>>();
-
-export function createAtlasPluginStorage(owner: string): PluginStorage {
-  const storeName = `plugin_${owner.replace(/[^a-zA-Z0-9_]/g, "_")}`;
-  let store = stores.get(storeName);
-  if (!store) {
-    store = createScopedStorage(storeName);
-    stores.set(storeName, store);
-  }
-
-  return {
-    get: (key) => store!.getItem(key),
-    set: async (key, value) => {
-      await store!.setItem(key, value);
-    },
-    remove: async (key) => {
-      await store!.removeItem(key);
-    },
-  };
 }

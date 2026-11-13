@@ -912,6 +912,8 @@ export default function StudioWorkspace({
       config,
       theme,
       open: setPluginPanel,
+      close: (id) =>
+        setPluginPanel((active) => (active === id ? null : active)),
       generate: (id, mode, prompt) => {
         void tasks.generate(id, mode, prompt).catch(report);
       },

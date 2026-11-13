@@ -9,13 +9,6 @@ export type CanvasAssistantReference = {
   text?: string;
 };
 
-export type CanvasAssistantImage = {
-  id: string;
-  dataUrl: string;
-  storageKey?: string;
-  prompt: string;
-};
-
 export type CanvasAssistantMessage = {
   id: string;
   role: "user" | "assistant" | "system" | "tool" | "error";

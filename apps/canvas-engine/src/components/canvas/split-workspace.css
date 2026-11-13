@@ -1,0 +1,228 @@
+.split-workspace-modal.ant-modal .ant-modal-container {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 22px;
+}
+.split-workspace {
+  --split-border: color-mix(in srgb, currentColor 13%, transparent);
+  color: var(--foreground);
+}
+.split-workspace-heading,
+.split-workspace-controls,
+.split-workspace-review,
+.split-workspace-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.split-workspace-heading {
+  padding: 24px 26px 20px;
+}
+.split-workspace-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  opacity: 0.52;
+}
+.split-workspace-heading h2 {
+  margin: 5px 0 0;
+  font-size: 20px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+.split-workspace-controls {
+  padding: 12px 26px;
+  border-block: 1px solid var(--split-border);
+  flex-wrap: wrap;
+}
+.split-workspace-counts,
+.split-workspace-add,
+.split-workspace-selection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.split-workspace-counts {
+  gap: 18px;
+}
+.split-workspace-counts label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+}
+.split-workspace-counts .ant-input-number {
+  width: 70px;
+}
+.split-workspace-preview {
+  position: relative;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+.split-workspace-surface {
+  height: clamp(300px, 47vh, 540px);
+  border-radius: 0;
+  background-color: transparent;
+  background-image: radial-gradient(
+    color-mix(in srgb, currentColor 15%, transparent) 0.7px,
+    transparent 0.7px
+  );
+  background-size: 14px 14px;
+}
+.split-workspace-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 13px;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  background: var(--background);
+  opacity: 0.85;
+}
+.split-workspace-guide {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  z-index: 1;
+  touch-action: none;
+  outline: none;
+}
+.split-workspace-guide-horizontal {
+  left: 0;
+  width: 100%;
+  height: 22px;
+  transform: translateY(-50%);
+  cursor: ns-resize;
+}
+.split-workspace-guide-vertical {
+  top: 0;
+  height: 100%;
+  width: 22px;
+  transform: translateX(-50%);
+  cursor: ew-resize;
+}
+.split-workspace-guide-track {
+  position: absolute;
+  background: currentColor;
+  box-shadow: 0 0 0 1px #0008;
+  opacity: 0.8;
+}
+.split-workspace-guide-horizontal .split-workspace-guide-track {
+  height: 1px;
+  width: 100%;
+  top: 50%;
+  left: 0;
+}
+.split-workspace-guide-vertical .split-workspace-guide-track {
+  width: 1px;
+  height: 100%;
+  left: 50%;
+  top: 0;
+}
+.split-workspace-guide-grip {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 1px solid #ffffffb3;
+  border-radius: 5px;
+  background: #17202cdd;
+  color: #fff;
+  font:
+    10px/1 ui-monospace,
+    monospace;
+  box-shadow: 0 2px 6px #0003;
+}
+.split-workspace-guide-horizontal .split-workspace-guide-grip {
+  top: 2px;
+  left: 6px;
+}
+.split-workspace-guide-vertical .split-workspace-guide-grip {
+  left: 2px;
+  top: 6px;
+}
+.split-workspace-guide[data-selected="true"],
+.split-workspace-guide:focus-visible {
+  color: #5eead4;
+  z-index: 2;
+}
+.split-workspace-guide:focus-visible .split-workspace-guide-grip {
+  outline: 2px solid #5eead4;
+  outline-offset: 2px;
+}
+.split-workspace-guide[data-selected="true"] .split-workspace-guide-track,
+.split-workspace-guide:hover .split-workspace-guide-track {
+  opacity: 1;
+  box-shadow:
+    0 0 0 1px #0008,
+    0 0 7px currentColor;
+}
+.split-workspace-review {
+  min-height: 57px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--split-border);
+  flex-wrap: wrap;
+}
+.split-workspace-selection {
+  font-size: 12px;
+}
+.split-workspace-selection .ant-input-number {
+  width: 100px;
+}
+.split-workspace-muted {
+  margin: 0;
+  color: color-mix(in srgb, currentColor 58%, transparent);
+  font-size: 11px;
+  line-height: 1.65;
+}
+.split-workspace-footer {
+  padding: 22px 26px 24px;
+}
+.split-workspace-output {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 5px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.split-workspace-output span {
+  font:
+    11px/1.4 ui-monospace,
+    monospace;
+  opacity: 0.5;
+}
+.split-workspace-footer .ant-btn {
+  flex-shrink: 0;
+  border-radius: 11px;
+}
+@media (max-width: 640px) {
+  .split-workspace-heading {
+    padding: 20px 16px 16px;
+  }
+  .split-workspace-heading h2 {
+    font-size: 17px;
+  }
+  .split-workspace-controls,
+  .split-workspace-review {
+    padding-inline: 16px;
+  }
+  .split-workspace-add {
+    flex-wrap: wrap;
+  }
+  .split-workspace-footer {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 18px 16px;
+  }
+  .split-workspace-output {
+    justify-content: space-between;
+  }
+}

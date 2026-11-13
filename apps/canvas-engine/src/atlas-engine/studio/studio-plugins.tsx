@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { CanvasAgentOp } from "@/atlas-engine/agent/canvas-operations";
 import type { CanvasNodeContext } from "@/types/canvas-plugin";
-import type { CanvasNodeData } from "@/types/canvas";
+import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 import type { AiConfig } from "@/stores/use-config-store";
 import {
   getAtlasNodeDefinition,
@@ -15,6 +15,47 @@ import {
 import { createAtlasPluginGeneration } from "@/atlas-engine/plugins/generation-adapter";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { StudioSession, makeStudioNode, studioId } from "./studio-document";
+
+type GraphView = {
+  nodes: CanvasNodeData[];
+  edges: CanvasConnection[];
+  byId: Map<string, CanvasNodeData>;
+  inputs: Map<string, Set<string>>;
+  outputs: Map<string, Set<string>>;
+};
+const graphViews = new WeakMap<StudioSession, GraphView>();
+
+/** Contexts share one graph projection per immutable document revision. */
+function graphFor(session: StudioSession): GraphView {
+  const document = session.read();
+  const previous = graphViews.get(session);
+  if (
+    previous?.nodes === document.nodes &&
+    previous.edges === document.connections
+  )
+    return previous;
+  const next: GraphView = {
+    nodes: document.nodes,
+    edges: document.connections,
+    byId: new Map(document.nodes.map((node) => [node.id, node])),
+    inputs: new Map(),
+    outputs: new Map(),
+  };
+  for (const edge of document.connections) {
+    if (!next.byId.has(edge.fromNodeId) || !next.byId.has(edge.toNodeId))
+      continue;
+    for (const [index, owner, peer] of [
+      [next.inputs, edge.toNodeId, edge.fromNodeId],
+      [next.outputs, edge.fromNodeId, edge.toNodeId],
+    ] as const) {
+      let ids = index.get(owner);
+      if (!ids) index.set(owner, (ids = new Set()));
+      ids.add(peer);
+    }
+  }
+  graphViews.set(session, next);
+  return next;
+}
 
 export function applyStudioPluginOperations(
   session: StudioSession,
@@ -80,6 +121,7 @@ export function studioPluginContext(
     config: AiConfig;
     theme: keyof typeof canvasThemes;
     open: (id: string | null) => void;
+    close: (id: string) => void;
     generate: (
       id: string,
       mode: "image" | "video" | "text" | "audio",
@@ -88,28 +130,19 @@ export function studioPluginContext(
   },
 ): CanvasNodeContext {
   const current = () =>
-    session.alive() &&
-    session
-      .read()
-      .nodes.some((item) => item.id === node.id && item.type === node.type);
+    session.alive() && graphFor(session).byId.get(node.id)?.type === node.type;
   const peers = (up: boolean) => {
-    const ids = new Set(
-      session
-        .read()
-        .connections.filter(
-          (edge) => (up ? edge.toNodeId : edge.fromNodeId) === node.id,
-        )
-        .map((edge) => (up ? edge.fromNodeId : edge.toNodeId)),
-    );
-    return session.read().nodes.filter((item) => ids.has(item.id));
+    if (!current()) return [];
+    const graph = graphFor(session);
+    const ids = (up ? graph.inputs : graph.outputs).get(node.id);
+    return ids ? graph.nodes.filter((item) => ids.has(item.id)) : [];
   };
   return {
     node,
     theme: canvasThemes[options.theme],
     scale: session.read().viewport.k,
     isSelected: session.snapshot().selection.has(node.id),
-    getNode: (id) =>
-      session.read().nodes.find((item) => item.id === id) || null,
+    getNode: (id) => graphFor(session).byId.get(id) || null,
     getNodes: () => session.read().nodes,
     getConnections: () => session.read().connections,
     getUpstream: () => peers(true),
@@ -118,12 +151,24 @@ export function studioPluginContext(
       if (current()) session.metadata(node.id, patch);
     },
     updateNode: (patch) => {
-      if (current()) session.patch(node.id, patch);
+      if (!current()) return;
+      const accepted: Partial<
+        Pick<CanvasNodeData, "title" | "width" | "height">
+      > = {};
+      if (typeof patch.title === "string") accepted.title = patch.title;
+      for (const key of ["width", "height"] as const) {
+        const value = patch[key];
+        if (typeof value === "number" && Number.isFinite(value) && value > 0)
+          accepted[key] = value;
+      }
+      session.patch(node.id, accepted);
     },
     openPanel: () => {
       if (current()) options.open(node.id);
     },
-    closePanel: () => options.open(null),
+    closePanel: () => {
+      if (current()) options.close(node.id);
+    },
     emit: emitAtlasPluginEvent,
     on: onAtlasPluginEvent,
     storage: createAtlasPluginStorage(getAtlasNodeOwner(node.type)),
