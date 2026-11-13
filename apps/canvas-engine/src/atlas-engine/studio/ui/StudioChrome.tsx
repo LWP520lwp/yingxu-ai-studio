@@ -232,7 +232,11 @@ export function StudioChrome(props: StudioChromeProps) {
                 <DropdownMenu.RadioGroup
                   value={props.background}
                   onValueChange={(value) => {
-                    if (value === "lines" || value === "dots" || value === "none")
+                    if (
+                      value === "lines" ||
+                      value === "dots" ||
+                      value === "none"
+                    )
                       props.onBackground(value);
                   }}
                   aria-label={c.background}
@@ -244,7 +248,9 @@ export function StudioChrome(props: StudioChromeProps) {
                       className="studio-menu-item"
                     >
                       <span aria-hidden="true" style={{ width: 16 }}>
-                        {props.background === value ? <Check size={16} /> : null}
+                        {props.background === value ? (
+                          <Check size={16} />
+                        ) : null}
                       </span>
                       <span>{c[value]}</span>
                     </DropdownMenu.RadioItem>
@@ -300,92 +306,98 @@ export function StudioChrome(props: StudioChromeProps) {
         </div>
       </header>
       <div className="studio-editor-layout">
-        <nav className="studio-tool-rail" aria-label={c.tools}>
-          <div className="studio-tool-cluster">
-            <ToolButton
-              label={`${c.select} · V`}
-              icon={MousePointer2}
-              active={props.tool === "select"}
-              onClick={() => props.onTool("select")}
-            />
-            <ToolButton
-              label={`${c.pan} · H`}
-              icon={Hand}
-              active={props.tool === "pan"}
-              onClick={() => props.onTool("pan")}
-            />
-          </div>
-          <div className="studio-rail-divider" />
-          <div className="studio-tool-cluster" aria-label={c.create}>
-            {creationTools.map(({ type, label, icon }) => (
-              <ToolButton
-                key={type}
-                label={c[label]}
-                icon={icon}
-                onClick={() => props.onCreate(type)}
-              />
-            ))}
-          </div>
-          <div className="studio-rail-divider" />
-          <div className="studio-tool-cluster">
-            <ToolButton
-              label={c.upload}
-              icon={Upload}
-              onClick={() => props.onCommand("upload")}
-            />
-            <ToolButton
-              label={c.assets}
-              icon={FolderOpen}
-              onClick={() => props.onCommand("assets")}
-            />
-            <ToolButton
-              label={c.plugins}
-              icon={Wrench}
-              onClick={() => props.onCommand("plugins")}
-            />
-          </div>
-          <span className="studio-rail-signature" aria-hidden="true">
-            YX
-          </span>
-        </nav>
-        <section className="studio-canvas-region" aria-label={c.workspace}>
+        <section
+          className="studio-canvas-region"
+          aria-label={c.workspace}
+          data-multi-selection={props.selectedCount > 1 ? "" : undefined}
+        >
           {props.children}
-          {props.selectedCount > 1 && (
-            <div
-              className="studio-selection-strip"
-              role="toolbar"
-              aria-label={c.multiSelection}
-            >
-              <span className="studio-selection-count">
-                {props.selectedCount} {c.selected}
+          <div className="studio-canvas-dock">
+            {props.selectedCount > 1 && (
+              <div
+                className="studio-selection-strip"
+                role="toolbar"
+                aria-label={c.multiSelection}
+              >
+                <span className="studio-selection-count">
+                  {props.selectedCount} {c.selected}
+                </span>
+                <ToolButton
+                  label={c.group}
+                  icon={Layers3}
+                  onClick={() => props.onCommand("group")}
+                />
+                <ToolButton
+                  label={c.ungroup}
+                  icon={Ungroup}
+                  onClick={() => props.onCommand("ungroup")}
+                />
+                <ToolButton
+                  label={c.duplicate}
+                  icon={Copy}
+                  onClick={() => props.onCommand("duplicate")}
+                />
+                <ToolButton
+                  label={`${c.video} · ${c.group}`}
+                  icon={Video}
+                  onClick={() => props.onCommand("merge")}
+                />
+                <ToolButton
+                  label={c.delete}
+                  icon={Trash2}
+                  onClick={() => props.onCommand("delete")}
+                />
+              </div>
+            )}
+            <nav className="studio-tool-rail" aria-label={c.tools}>
+              <div className="studio-tool-cluster">
+                <ToolButton
+                  label={`${c.select} · V`}
+                  icon={MousePointer2}
+                  active={props.tool === "select"}
+                  onClick={() => props.onTool("select")}
+                />
+                <ToolButton
+                  label={`${c.pan} · H`}
+                  icon={Hand}
+                  active={props.tool === "pan"}
+                  onClick={() => props.onTool("pan")}
+                />
+              </div>
+              <div className="studio-rail-divider" />
+              <div className="studio-tool-cluster" aria-label={c.create}>
+                {creationTools.map(({ type, label, icon }) => (
+                  <ToolButton
+                    key={type}
+                    label={c[label]}
+                    icon={icon}
+                    onClick={() => props.onCreate(type)}
+                  />
+                ))}
+              </div>
+              <div className="studio-rail-divider" />
+              <div className="studio-tool-cluster">
+                <ToolButton
+                  label={c.upload}
+                  icon={Upload}
+                  onClick={() => props.onCommand("upload")}
+                />
+                <ToolButton
+                  label={c.assets}
+                  icon={FolderOpen}
+                  onClick={() => props.onCommand("assets")}
+                />
+                <ToolButton
+                  label={c.plugins}
+                  icon={Wrench}
+                  onClick={() => props.onCommand("plugins")}
+                />
+              </div>
+              <span className="studio-rail-signature" aria-hidden="true">
+                YX
               </span>
-              <ToolButton
-                label={c.group}
-                icon={Layers3}
-                onClick={() => props.onCommand("group")}
-              />
-              <ToolButton
-                label={c.ungroup}
-                icon={Ungroup}
-                onClick={() => props.onCommand("ungroup")}
-              />
-              <ToolButton
-                label={c.duplicate}
-                icon={Copy}
-                onClick={() => props.onCommand("duplicate")}
-              />
-              <ToolButton
-                label={`${c.video} · ${c.group}`}
-                icon={Video}
-                onClick={() => props.onCommand("merge")}
-              />
-              <ToolButton
-                label={c.delete}
-                icon={Trash2}
-                onClick={() => props.onCommand("delete")}
-              />
-            </div>
-          )}
+            </nav>
+          </div>
         </section>
         {props.inspector && inspectorVisible && (
           <aside className="studio-inspector-region" aria-label={c.inspector}>

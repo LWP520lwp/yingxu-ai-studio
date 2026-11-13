@@ -43,6 +43,7 @@ import {
 import { createStudioTasks } from "./studio-tasks";
 import { createStudioMedia } from "./studio-media";
 import { StudioScene } from "./StudioScene";
+import { StudioContextMenu } from "./StudioContextMenu";
 import { StudioChrome } from "./ui/StudioChrome";
 import { StudioInspector } from "./ui/StudioInspector";
 import { useStudioGestures } from "./useStudioGestures";
@@ -77,7 +78,7 @@ const editable = (target: EventTarget | null) =>
   target instanceof Element &&
   Boolean(
     target.closest(
-      "input,textarea,select,[contenteditable=true],[role=dialog],.ant-modal",
+      "input,textarea,select,[contenteditable=true],[role=dialog],[role=menu],.ant-modal",
     ),
   );
 
@@ -163,15 +164,11 @@ export default function StudioWorkspace({
   const persist = useCallback(() => {
     if (alive()) {
       const current = session.read();
-      useCanvasStore
-        .getState()
-        .updateProject(projectId, {
-          ...current,
-          backgroundMode:
-            current.backgroundMode === "none"
-              ? "blank"
-              : current.backgroundMode,
-        });
+      useCanvasStore.getState().updateProject(projectId, {
+        ...current,
+        backgroundMode:
+          current.backgroundMode === "none" ? "blank" : current.backgroundMode,
+      });
     }
   }, [alive, projectId, session]);
   useLayoutEffect(persist, [doc, persist]);
@@ -285,13 +282,11 @@ export default function StudioWorkspace({
       source: "canvas",
     };
     if (node.type === "text")
-      useAssetStore
-        .getState()
-        .addAsset({
-          ...base,
-          kind: "text",
-          data: { content: meta.content || "" },
-        });
+      useAssetStore.getState().addAsset({
+        ...base,
+        kind: "text",
+        data: { content: meta.content || "" },
+      });
     else if (node.type === "image" || node.type === "video") {
       const data = {
         storageKey: meta.storageKey,
@@ -302,18 +297,16 @@ export default function StudioWorkspace({
           meta.mimeType || (node.type === "image" ? "image/png" : "video/mp4"),
       };
       if (!meta.content) return;
-      useAssetStore
-        .getState()
-        .addAsset(
-          node.type === "image"
-            ? {
-                ...base,
-                coverUrl: meta.content,
-                kind: "image",
-                data: { ...data, dataUrl: meta.content },
-              }
-            : { ...base, kind: "video", data: { ...data, url: meta.content } },
-        );
+      useAssetStore.getState().addAsset(
+        node.type === "image"
+          ? {
+              ...base,
+              coverUrl: meta.content,
+              kind: "image",
+              data: { ...data, dataUrl: meta.content },
+            }
+          : { ...base, kind: "video", data: { ...data, url: meta.content } },
+      );
     } else return;
     setNotice(word("已收进素材架", "Saved to materials"));
   };
@@ -494,7 +487,7 @@ export default function StudioWorkspace({
     else if (name === "redo") session.redo();
     else if (name === "duplicate") session.clone();
     else if (name === "delete") {
-      for (const id of state.selection) tasks.stop(id);
+      for (const id of session.snapshot().selection) tasks.stop(id);
       session.remove();
     } else if (name === "group")
       session.group(word("创作分组", "Creative group"));
@@ -872,60 +865,68 @@ export default function StudioWorkspace({
         </>
       }
     >
-      <AtlasCanvasViewport
-        containerRef={surface}
-        viewport={doc.viewport}
-        tool={tool}
-        backgroundMode={
-          doc.backgroundMode === "none" ? "blank" : doc.backgroundMode
-        }
-        onViewportChange={(viewport) =>
-          session.change((current) => ({ ...current, viewport }), false)
-        }
-        onCanvasMouseDown={gestures.onCanvasDown}
-        onCanvasDoubleClick={(event) => {
-          if (
-            !(event.target instanceof Element) ||
-            !event.target.closest("[data-node-id]")
-          )
-            create("text");
-        }}
-        onDrop={(event) => {
-          event.preventDefault();
-          void media.importFiles(event.dataTransfer.files).catch(report);
-        }}
+      <StudioContextMenu
+        session={session}
+        onCommand={command}
+        onCreate={create}
+        onBeforeOpen={gestures.cancel}
+        onClose={() => surface.current?.focus({ preventScroll: true })}
       >
-        <StudioScene
-          document={doc}
-          selection={state.selection}
-          edge={state.edge}
-          size={size}
-          wire={gestures.wire}
-          marquee={gestures.marquee}
-          onNodeDown={gestures.onNodeDown}
-          onConnect={gestures.onConnect}
-          onResize={gestures.onResize}
-          onSelect={(id) => session.select([id])}
-          onEdge={(id) => session.select([], id)}
-          onTitle={(id, name) => session.patch(id, { title: name })}
-          onContent={(id, content) => session.metadata(id, { content })}
-          onAction={action}
-          renderExtension={(node) =>
-            node.type === "platform:composition" ? (
-              <Suspense fallback={null}>
-                <Sequence
-                  node={node}
-                  nodes={doc.nodes}
-                  connections={doc.connections}
-                  onMetadata={(patch) => session.metadata(node.id, patch)}
-                />
-              </Suspense>
-            ) : (
-              studioExtensionContent(node, context(node))
-            )
+        <AtlasCanvasViewport
+          containerRef={surface}
+          viewport={doc.viewport}
+          tool={tool}
+          backgroundMode={
+            doc.backgroundMode === "none" ? "blank" : doc.backgroundMode
           }
-        />
-      </AtlasCanvasViewport>
+          onViewportChange={(viewport) =>
+            session.change((current) => ({ ...current, viewport }), false)
+          }
+          onCanvasMouseDown={gestures.onCanvasDown}
+          onCanvasDoubleClick={(event) => {
+            if (
+              !(event.target instanceof Element) ||
+              !event.target.closest("[data-node-id]")
+            )
+              create("text");
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            void media.importFiles(event.dataTransfer.files).catch(report);
+          }}
+        >
+          <StudioScene
+            document={doc}
+            selection={state.selection}
+            edge={state.edge}
+            size={size}
+            wire={gestures.wire}
+            marquee={gestures.marquee}
+            onNodeDown={gestures.onNodeDown}
+            onConnect={gestures.onConnect}
+            onResize={gestures.onResize}
+            onSelect={(id) => session.select([id])}
+            onEdge={(id) => session.select([], id)}
+            onTitle={(id, name) => session.patch(id, { title: name })}
+            onContent={(id, content) => session.metadata(id, { content })}
+            onAction={action}
+            renderExtension={(node) =>
+              node.type === "platform:composition" ? (
+                <Suspense fallback={null}>
+                  <Sequence
+                    node={node}
+                    nodes={doc.nodes}
+                    connections={doc.connections}
+                    onMetadata={(patch) => session.metadata(node.id, patch)}
+                  />
+                </Suspense>
+              ) : (
+                studioExtensionContent(node, context(node))
+              )
+            }
+          />
+        </AtlasCanvasViewport>
+      </StudioContextMenu>
       {!doc.nodes.length && (
         <section className="studio-welcome">
           <span className="studio-welcome-index">01 / CREATIVE SPACE</span>
@@ -946,8 +947,8 @@ export default function StudioWorkspace({
           </div>
           <small>
             {word(
-              "左侧创建节点 · 拖动两侧端口建立连接 · 空格拖动画布",
-              "Create on the left · Link side ports · Hold Space to pan",
+              "底部创建节点 · 拖动两侧端口建立连接 · 空格拖动画布",
+              "Create below · Link side ports · Hold Space to pan",
             )}
           </small>
         </section>

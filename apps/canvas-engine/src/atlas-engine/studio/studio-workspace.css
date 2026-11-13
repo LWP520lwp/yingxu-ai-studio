@@ -1,3 +1,11 @@
+.studio-context-surface {
+  position: absolute;
+  inset: 0;
+}
+.studio-command-menu .studio-menu-item[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
 .studio-welcome {
   position: absolute;
   inset: 0;

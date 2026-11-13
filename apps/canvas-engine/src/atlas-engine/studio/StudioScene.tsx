@@ -144,10 +144,6 @@ const StudioNode = memo(
           zIndex: group ? 1 : selected ? 4 : 3,
         }}
         onMouseDown={(event) => props.onNodeDown(event, node)}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          props.onSelect(node.id);
-        }}
       >
         <header className="studio-node-heading">
           <Icon size={15} aria-hidden="true" />
