@@ -20,7 +20,15 @@ import {
 import { useTranslation } from "react-i18next";
 import type { CanvasNodeData, Position } from "@/types/canvas";
 import type { StudioDocument } from "./studio-document";
+import {
+  studioPortPosition,
+  studioViewBounds,
+  studioWireInBounds,
+  studioWirePath,
+} from "./studio-scene-geometry";
 import "./studio-scene.css";
+
+export { studioPortPosition, studioWirePath } from "./studio-scene-geometry";
 
 export type StudioWire = {
   nodeId: string;
@@ -74,20 +82,6 @@ const glyphs = {
   config: SlidersHorizontal,
   group: Layers,
 };
-export function studioPortPosition(
-  node: CanvasNodeData,
-  side: "source" | "target",
-): Position {
-  return {
-    x: node.position.x + (side === "source" ? node.width : 0),
-    y: node.position.y + Math.min(74, node.height / 2),
-  };
-}
-export function studioWirePath(from: Position, to: Position) {
-  const reach = Math.max(64, Math.min(320, Math.abs(to.x - from.x) * 0.55));
-  return `M${from.x},${from.y} C${from.x + reach},${from.y} ${to.x - reach},${to.y} ${to.x},${to.y}`;
-}
-
 const StudioNode = memo(
   function StudioNode({
     node,
@@ -406,7 +400,9 @@ export function StudioScene(props: Props) {
     for (const edge of doc.connections) {
       const from = wire.side === "source" ? edge.toNodeId : edge.fromNodeId;
       const to = wire.side === "source" ? edge.fromNodeId : edge.toNodeId;
-      adjacency.set(from, [...(adjacency.get(from) || []), to]);
+      const neighbours = adjacency.get(from);
+      if (neighbours) neighbours.push(to);
+      else adjacency.set(from, [to]);
       if (
         (wire.side === "source" ? edge.fromNodeId : edge.toNodeId) ===
         wire.nodeId
@@ -425,19 +421,20 @@ export function StudioScene(props: Props) {
       }
     return blocked;
   }, [wire?.nodeId, wire?.side, doc.connections]);
-  const left = (-view.x - 500) / view.k;
-  const top = (-view.y - 500) / view.k;
-  const right = (size.width - view.x + 500) / view.k;
-  const bottom = (size.height - view.y + 500) / view.k;
-  const visible = doc.nodes.filter(
-    (node) =>
-      selection.has(node.id) ||
-      (node.position.x + node.width >= left &&
-        node.position.x <= right &&
-        node.position.y + node.height >= top &&
-        node.position.y <= bottom),
+  const bounds = studioViewBounds(view, size);
+  const { left, top, right, bottom } = bounds;
+  const visible = useMemo(
+    () =>
+      doc.nodes.filter(
+        (node) =>
+          selection.has(node.id) ||
+          (node.position.x + node.width >= left &&
+            node.position.x <= right &&
+            node.position.y + node.height >= top &&
+            node.position.y <= bottom),
+      ),
+    [doc.nodes, selection, left, top, right, bottom],
   );
-  const visibleIds = new Set(visible.map((node) => node.id));
   const source = wire ? nodes.get(wire.nodeId) : undefined;
   const { i18n } = useTranslation();
   const zh = !i18n.resolvedLanguage?.startsWith("en");
@@ -468,20 +465,16 @@ export function StudioScene(props: Props) {
         {doc.connections.map((edge) => {
           const from = nodes.get(edge.fromNodeId);
           const to = nodes.get(edge.toNodeId);
-          if (
-            !from ||
-            !to ||
-            (!visibleIds.has(from.id) && !visibleIds.has(to.id))
-          )
-            return null;
-          const path = studioWirePath(
-            studioPortPosition(from, "source"),
-            studioPortPosition(to, "target"),
-          );
+          if (!from || !to) return null;
+          const fromPort = studioPortPosition(from, "source");
+          const toPort = studioPortPosition(to, "target");
           const active =
             edge.id === props.edge ||
             selection.has(from.id) ||
             selection.has(to.id);
+          if (!active && !studioWireInBounds(fromPort, toPort, bounds))
+            return null;
+          const path = studioWirePath(fromPort, toPort);
           return (
             <g key={edge.id} className={active ? "is-active" : ""}>
               <path

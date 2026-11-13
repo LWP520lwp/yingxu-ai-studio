@@ -229,49 +229,25 @@ export function useStudioGestures(options: Options) {
           gesture.journal = true;
         }
         if (gesture.kind === "move") {
-          session.change((doc) => {
-            let changed = false;
-            const nodes = doc.nodes.map((node) => {
-              const start = gesture.positions.get(node.id);
-              if (!start) return node;
-              const position = {
-                x: start.x + dx / gesture.scale,
-                y: start.y + dy / gesture.scale,
-              };
-              if (
-                position.x === node.position.x &&
-                position.y === node.position.y
-              )
-                return node;
-              changed = true;
-              return { ...node, position };
-            });
-            return changed ? { ...doc, nodes } : doc;
+          session.changeGeometry((node) => {
+            const start = gesture.positions.get(node.id);
+            return start
+              ? {
+                  position: {
+                    x: start.x + dx / gesture.scale,
+                    y: start.y + dy / gesture.scale,
+                  },
+                }
+              : undefined;
           });
         } else {
           const geometry = studioResizeGeometry(gesture.node, gesture.corner, {
             x: dx / gesture.scale,
             y: dy / gesture.scale,
           });
-          session.change((doc) => {
-            const current = doc.nodes.find(
-              (node) => node.id === gesture.node.id,
-            );
-            if (
-              !current ||
-              (current.width === geometry.width &&
-                current.height === geometry.height &&
-                current.position.x === geometry.position.x &&
-                current.position.y === geometry.position.y)
-            )
-              return doc;
-            return {
-              ...doc,
-              nodes: doc.nodes.map((node) =>
-                node.id === gesture.node.id ? { ...node, ...geometry } : node,
-              ),
-            };
-          });
+          session.changeGeometry((node) =>
+            node.id === gesture.node.id ? geometry : undefined,
+          );
         }
       } else if (gesture.kind === "pan") {
         session.moveViewport({

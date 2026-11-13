@@ -51,6 +51,7 @@ vi.mock("@/stores/use-config-store", () => ({
 
 import {
   CanvasNodeType,
+  type CanvasAssistantSession,
   type CanvasConnection,
   type CanvasNodeData,
 } from "@/types/canvas";
@@ -62,6 +63,7 @@ import {
   atlasGenerationCount as getGenerationCount,
   hydrateAtlasAssistantImages as hydrateAssistantImages,
   hydrateAtlasCanvasImages as hydrateCanvasImages,
+  resolveAtlasMetadataReferences,
   atlasImageExtension as imageExtension,
   isAtlasAudioFile as isAudioFile,
 } from "@/atlas-engine/workflows/generation-runtime";
@@ -108,16 +110,14 @@ beforeEach(() => {
     .mockReset()
     .mockImplementation(async (key: string) => `resolved:${key}`);
   storage.ensureImagePreview.mockReset().mockResolvedValue(undefined);
-  storage.uploadImage
-    .mockReset()
-    .mockImplementation(async () => ({
-      url: "/api/assets/new/content",
-      storageKey: "asset:new",
-      width: 640,
-      height: 480,
-      bytes: 1234,
-      mimeType: "image/png",
-    }));
+  storage.uploadImage.mockReset().mockImplementation(async () => ({
+    url: "/api/assets/new/content",
+    storageKey: "asset:new",
+    width: 640,
+    height: 480,
+    bytes: 1234,
+    mimeType: "image/png",
+  }));
 });
 
 describe("canvas generation support", () => {
@@ -305,5 +305,153 @@ describe("canvas generation support", () => {
       },
       { id: "text", text: "keep" },
     ]);
+  });
+
+  it("shares one restoration budget across sessions, messages and inline uploads", async () => {
+    let active = 0;
+    let maximum = 0;
+    const complete = async <T>(value: T) => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      active -= 1;
+      return value;
+    };
+    storage.resolveImageUrl.mockImplementation((key: string) =>
+      complete(`resolved:${key}`),
+    );
+    storage.uploadImage.mockImplementation((data: string) =>
+      complete({
+        url: `/stored/${data.split(",")[1]}`,
+        storageKey: `image:${data.split(",")[1]}`,
+      }),
+    );
+    const sessions: CanvasAssistantSession[] = Array.from(
+      { length: 6 },
+      (_, s) => ({
+        id: `s${s}`,
+        title: `Session ${s}`,
+        createdAt: "now",
+        updatedAt: "now",
+        messages: Array.from({ length: 3 }, (_, m) => ({
+          id: `m${m}`,
+          role: "assistant",
+          text: "unchanged",
+          references: [
+            {
+              id: "stored",
+              type: CanvasNodeType.Image,
+              title: "stored",
+              storageKey: `image:${s}-${m}`,
+            },
+            {
+              id: "inline",
+              type: CanvasNodeType.Image,
+              title: "inline",
+              dataUrl: `data:image/png;base64,${s}-${m}`,
+            },
+            {
+              id: "text",
+              type: CanvasNodeType.Text,
+              title: "text",
+              text: "keep",
+            },
+          ],
+        })),
+      }),
+    );
+    const original = structuredClone(sessions);
+    const restored = await hydrateAssistantImages(sessions);
+
+    expect(maximum).toBe(4);
+    expect(storage.resolveImageUrl).toHaveBeenCalledTimes(18);
+    expect(storage.uploadImage).toHaveBeenCalledTimes(18);
+    expect(sessions).toEqual(original);
+    for (let s = 0; s < sessions.length; s++)
+      for (let m = 0; m < 3; m++) {
+        expect(restored[s].messages[m].references).toMatchObject([
+          { id: "stored", dataUrl: `resolved:image:${s}-${m}` },
+          {
+            id: "inline",
+            dataUrl: `/stored/${s}-${m}`,
+            storageKey: `image:${s}-${m}`,
+          },
+          { id: "text", text: "keep" },
+        ]);
+        expect(restored[s].messages[m].references?.[2]).toBe(
+          sessions[s].messages[m].references?.[2],
+        );
+      }
+  });
+
+  it("reuses sessions without restorable media and preserves absent references", async () => {
+    const sessions: CanvasAssistantSession[] = [
+      {
+        id: "s",
+        title: "Text session",
+        createdAt: "now",
+        updatedAt: "now",
+        messages: [{ id: "m", role: "user", text: "keep" }],
+      },
+    ];
+    expect(await hydrateAssistantImages(sessions)).toBe(sessions);
+    expect(sessions[0].messages[0]).not.toHaveProperty("references");
+    expect(storage.resolveImageUrl).not.toHaveBeenCalled();
+    expect(storage.uploadImage).not.toHaveBeenCalled();
+  });
+
+  it("stops scheduling new assistant media after failure without changing the source", async () => {
+    const sessions: CanvasAssistantSession[] = [
+      {
+        id: "s",
+        title: "session",
+        createdAt: "now",
+        updatedAt: "now",
+        messages: [
+          {
+            id: "m",
+            role: "assistant",
+            text: "keep",
+            references: Array.from({ length: 20 }, (_, index) => ({
+              id: String(index),
+              type: CanvasNodeType.Image,
+              title: "image",
+              storageKey: `image:${index}`,
+            })),
+          },
+        ],
+      },
+    ];
+    const original = structuredClone(sessions);
+    storage.resolveImageUrl.mockRejectedValueOnce(
+      new Error("storage unavailable"),
+    );
+    await expect(hydrateAssistantImages(sessions)).rejects.toThrow(
+      "storage unavailable",
+    );
+    expect(storage.resolveImageUrl).toHaveBeenCalledTimes(4);
+    expect(sessions).toEqual(original);
+  });
+
+  it("limits edit-reference restoration and keeps missing references explicit", async () => {
+    const references = Array.from(
+      { length: 12 },
+      (_, index) => `image:${index}`,
+    );
+    const restored = await resolveAtlasMetadataReferences({
+      generationType: "edit",
+      references,
+    });
+    expect(storage.maxImageResolutions).toBe(4);
+    expect(restored?.map((reference) => reference.dataUrl)).toEqual(
+      references.map((key) => `resolved:${key}`),
+    );
+    storage.resolveImageUrl.mockResolvedValueOnce("");
+    expect(
+      await resolveAtlasMetadataReferences({
+        generationType: "edit",
+        references: ["image:missing"],
+      }),
+    ).toBeNull();
   });
 });

@@ -19,6 +19,7 @@ import {
 import type { ReferenceImage } from "@/types/image";
 import {
   CanvasNodeType,
+  type CanvasAssistantReference,
   type CanvasAssistantSession,
   type CanvasConnection,
   type CanvasGenerationMode,
@@ -111,8 +112,10 @@ export async function resolveAtlasMetadataReferences(
   if (metadata.generationType !== "edit") return [];
   const saved = metadata.references || [];
   if (saved.length === 0) return null;
-  const resolved = await Promise.all(
-    saved.map(async (locator, index) => {
+  const resolved = await mapConcurrent(
+    saved,
+    IMAGE_RESTORE_CONCURRENCY,
+    async (locator, index) => {
       const storageKey = locator.startsWith("image:") ? locator : undefined;
       const dataUrl = storageKey
         ? await resolveImageUrl(storageKey, "")
@@ -125,7 +128,7 @@ export async function resolveAtlasMetadataReferences(
         dataUrl,
         ...(storageKey ? { storageKey } : {}),
       } satisfies ReferenceImage;
-    }),
+    },
   );
   return resolved.every((item): item is ReferenceImage => Boolean(item))
     ? resolved
@@ -207,22 +210,36 @@ async function restoreAssistantReference<
   return reference;
 }
 
-export function hydrateAtlasAssistantImages(
+export async function hydrateAtlasAssistantImages(
   sessions: CanvasAssistantSession[],
 ) {
-  return Promise.all(
-    sessions.map(async (session) => ({
-      ...session,
-      messages: await Promise.all(
-        session.messages.map(async (message) => ({
-          ...message,
-          references: await Promise.all(
-            (message.references || []).map(restoreAssistantReference),
-          ),
-        })),
-      ),
-    })),
+  const work: { references: CanvasAssistantReference[]; index: number }[] = [];
+  const needsRestore = (reference: CanvasAssistantReference) =>
+    Boolean(
+      reference.storageKey || reference.dataUrl?.startsWith("data:image/"),
+    );
+  const restored = sessions.map((session) => {
+    let changed = false;
+    const messages = session.messages.map((message) => {
+      if (!message.references?.some(needsRestore)) return message;
+      changed = true;
+      const references = message.references.slice();
+      references.forEach((reference, index) => {
+        if (needsRestore(reference)) work.push({ references, index });
+      });
+      return { ...message, references };
+    });
+    return changed ? { ...session, messages } : session;
+  });
+  // A single budget covers every session and message, including inline uploads.
+  await mapConcurrent(
+    work,
+    IMAGE_RESTORE_CONCURRENCY,
+    async ({ references, index }) => {
+      references[index] = await restoreAssistantReference(references[index]);
+    },
   );
+  return work.length ? restored : sessions;
 }
 
 export function atlasGenerationCount(input: string) {

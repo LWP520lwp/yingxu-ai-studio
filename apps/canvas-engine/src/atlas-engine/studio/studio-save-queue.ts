@@ -8,6 +8,7 @@ export function createStudioSaveQueue(
   let quiet: ReturnType<typeof setTimeout> | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
   let dirty = false;
+  let scheduledAt = 0;
   const cancel = () => {
     clearTimeout(quiet);
     clearTimeout(deadline);
@@ -17,13 +18,27 @@ export function createStudioSaveQueue(
     cancel();
     if (!dirty) return;
     dirty = false;
-    save();
+    try {
+      save();
+    } catch (error) {
+      dirty = true;
+      throw error;
+    }
+  };
+  const afterQuietPeriod = () => {
+    quiet = undefined;
+    const remaining = delay - (performance.now() - scheduledAt);
+    if (remaining > 0) {
+      quiet = setTimeout(afterQuietPeriod, remaining);
+    } else {
+      flush();
+    }
   };
   return {
     schedule() {
       dirty = true;
-      clearTimeout(quiet);
-      quiet = setTimeout(flush, delay);
+      scheduledAt = performance.now();
+      quiet ??= setTimeout(afterQuietPeriod, delay);
       deadline ??= setTimeout(flush, maxDelay);
     },
     flush,

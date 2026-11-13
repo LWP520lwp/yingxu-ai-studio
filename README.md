@@ -163,7 +163,7 @@ docker compose --env-file .env.local up -d
 docker compose --env-file .env.local --profile workers up -d
 ```
 
-Docker 与本机独立服务默认使用相同端口，不能同时启动；切换前需要有计划地停止自己启动的对应服务或修改端口。MySQL 8.0 本机 datadir 不可直接挂到 MySQL 8.4 容器，应使用逻辑备份/恢复迁移。Redis 镜像版本与开源许可证应按最终分发方式重新核对。
+Docker 与本机独立服务默认使用相同端口，不能同时启动；切换前需要有计划地停止自己启动的对应服务或修改端口。MySQL 8.0 本机 datadir 不可直接挂到 MySQL 8.4 容器，应使用逻辑备份/恢复迁移。
 
 ## 验证记录
 

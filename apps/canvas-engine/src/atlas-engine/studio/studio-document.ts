@@ -33,6 +33,32 @@ export type StudioSnapshot = {
 const finite = (n: number, fallback = 0) => (Number.isFinite(n) ? n : fallback);
 export const STUDIO_ZOOM_LIMITS = { minScale: 0.12, maxScale: 3 } as const;
 export const studioId = () => crypto.randomUUID();
+type StudioGeometry = Pick<CanvasNodeData, "position" | "width" | "height">;
+
+function normalizeNodeGeometry(
+  node: CanvasNodeData,
+  patch?: Partial<StudioGeometry>,
+): CanvasNodeData {
+  const position = patch?.position ?? node.position;
+  const width = Math.max(80, finite(patch?.width ?? node.width, 320));
+  const height = Math.max(64, finite(patch?.height ?? node.height, 210));
+  const x = finite(position.x),
+    y = finite(position.y);
+  if (
+    width === node.width &&
+    height === node.height &&
+    x === node.position.x &&
+    y === node.position.y
+  )
+    return node;
+  return {
+    ...node,
+    width,
+    height,
+    position:
+      x === node.position.x && y === node.position.y ? node.position : { x, y },
+  };
+}
 
 export function makeStudioNode(
   type: string,
@@ -60,18 +86,7 @@ export function normalizeStudioDocument(input: StudioDocument): StudioDocument {
   const validNodes = input.nodes.filter(
     (node) => node.id && !ids.has(node.id) && Boolean(ids.add(node.id)),
   );
-  const normalized = validNodes.map((node) => {
-    const width = Math.max(80, finite(node.width, 320)),
-      height = Math.max(64, finite(node.height, 210));
-    const x = finite(node.position.x),
-      y = finite(node.position.y);
-    return width === node.width &&
-      height === node.height &&
-      x === node.position.x &&
-      y === node.position.y
-      ? node
-      : { ...node, width, height, position: { x, y } };
-  });
+  const normalized = validNodes.map((node) => normalizeNodeGeometry(node));
   const nodes =
     normalized.length === input.nodes.length &&
     normalized.every((node, index) => node === input.nodes[index])
@@ -150,11 +165,12 @@ export class StudioSession {
     document: StudioDocument,
     selection = this.current.selection,
     edge = this.current.edge,
+    nodeIdsUnchanged = false,
   ) {
     if (this.closed) return;
     const sameNodes = document.nodes === this.current.document.nodes;
     const ids =
-      sameNodes && selection === this.current.selection
+      (sameNodes || nodeIdsUnchanged) && selection === this.current.selection
         ? null
         : new Set(document.nodes.map((node) => node.id));
     this.current = {
@@ -206,6 +222,34 @@ export class StudioSession {
     if (before === after) return;
     if (history && !this.checkpoint) this.remember(before);
     this.publish(normalizeStudioDocument(after));
+  };
+  /** Geometry cannot change node identities or connections; validate only the touched nodes. */
+  changeGeometry = (
+    update: (
+      node: Readonly<CanvasNodeData>,
+    ) => Partial<StudioGeometry> | undefined,
+    history = true,
+  ) => {
+    if (this.closed) return;
+    const before = this.read();
+    let nodes = before.nodes;
+    for (let index = 0; index < before.nodes.length; index++) {
+      const node = before.nodes[index];
+      const patch = update(node);
+      if (!patch) continue;
+      const next = normalizeNodeGeometry(node, patch);
+      if (next === node) continue;
+      if (nodes === before.nodes) nodes = before.nodes.slice();
+      nodes[index] = next;
+    }
+    if (nodes === before.nodes) return;
+    if (history && !this.checkpoint) this.remember(before);
+    this.publish(
+      { ...before, nodes },
+      this.current.selection,
+      this.current.edge,
+      true,
+    );
   };
   beginGesture(ids?: Iterable<string>) {
     if (!this.checkpoint) {

@@ -6,6 +6,82 @@ const node = (id: string, x = 0, y = 0, metadata: CanvasNodeData["metadata"] = {
 const document = (nodes: CanvasNodeData[] = [node("a"), node("b", 500, 200)], patch: Partial<StudioDocument> = {}): StudioDocument => ({ nodes, connections: [], viewport: { x: 0, y: 0, k: 1 }, backgroundMode: "dots", showImageInfo: false, ...patch });
 
 describe("independent studio document journal", () => {
+  it("moves and resizes nodes without reading connections or replacing selection and untouched nodes", () => {
+    const readEdge = vi.fn();
+    const connection = new Proxy({ id: "ab", fromNodeId: "a", toNodeId: "b" }, {
+      get(target, property, receiver) {
+        readEdge(property);
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const session = new StudioSession(document(undefined, { connections: [connection] }));
+    session.select(["a"], "ab");
+    const before = session.snapshot();
+    readEdge.mockClear();
+    session.beginGesture(["a"]);
+    for (let frame = 1; frame <= 60; frame++) {
+      session.changeGeometry(item => item.id === "a"
+        ? { position: { x: frame, y: frame * 2 }, width: 320 + frame }
+        : undefined);
+    }
+    session.endGesture();
+    expect(readEdge).not.toHaveBeenCalled();
+    expect(session.read().connections).toBe(before.document.connections);
+    expect(session.read().viewport).toBe(before.document.viewport);
+    expect(session.read().nodes[1]).toBe(before.document.nodes[1]);
+    expect(session.read().nodes[0].metadata).toBe(before.document.nodes[0].metadata);
+    expect(session.snapshot().selection).toBe(before.selection);
+    expect(session.snapshot().edge).toBe("ab");
+    expect(session.read().nodes[0]).toMatchObject({ position: { x: 60, y: 120 }, width: 380 });
+    session.undo();
+    expect(session.read().nodes[0]).toMatchObject({ position: { x: 0, y: 0 }, width: 320 });
+    expect(session.snapshot().undo).toBe(false);
+    session.redo();
+    expect(session.read().nodes[0]).toMatchObject({ position: { x: 60, y: 120 }, width: 380 });
+  });
+
+  it("normalizes geometry patches while ignoring topology fields, then skips unchanged frames", () => {
+    const session = new StudioSession(document());
+    session.changeGeometry(item => item.id === "a" ? {
+      id: "cannot-replace-node",
+      title: "cannot-replace-content",
+      width: -20,
+      height: Infinity,
+      position: { x: NaN, y: Infinity },
+    } : undefined);
+    expect(session.read().nodes[0]).toMatchObject({ id: "a", title: "a", width: 80, height: 210, position: { x: 0, y: 0 } });
+    const before = session.snapshot();
+    const listener = vi.fn(); session.subscribe(listener);
+    session.changeGeometry(item => item.id === "a"
+      ? { width: -20, height: Infinity, position: { x: NaN, y: Infinity } }
+      : undefined);
+    session.changeGeometry(() => undefined);
+    expect(session.snapshot()).toBe(before);
+    expect(listener).not.toHaveBeenCalled();
+    session.dispose();
+    session.changeGeometry(() => ({ width: 1000 }));
+    expect(session.snapshot()).toBe(before);
+  });
+
+  it("uses the latest nodes and media results during a geometry gesture, including structural edits", () => {
+    const session = new StudioSession(document());
+    session.beginGesture(["a", "b"]);
+    session.changeGeometry(item => ({ position: { x: item.position.x + 20, y: item.position.y + 10 } }));
+    session.metadata("a", { content: "completed-media", status: "success" }, false);
+    session.remove(new Set(["b"]));
+    session.insert([node("completed", 900, 400)]);
+    session.changeGeometry(item => item.id === "a" || item.id === "b"
+      ? { position: { x: 80, y: 50 } }
+      : undefined);
+    session.endGesture();
+    session.undo();
+    expect(session.read().nodes.map(item => item.id)).toEqual(["a", "completed"]);
+    expect(session.read().nodes[0]).toMatchObject({ position: { x: 0, y: 0 }, metadata: { content: "completed-media", status: "success" } });
+    expect(session.read().nodes[1].position).toEqual({ x: 900, y: 400 });
+    session.redo();
+    expect(session.read().nodes[0].position).toEqual({ x: 80, y: 50 });
+  });
+
   it("camera frames preserve graph and selection identity, do not touch history, and reject non-finite geometry", () => {
     const session = new StudioSession(document());
     session.select(["a"]);

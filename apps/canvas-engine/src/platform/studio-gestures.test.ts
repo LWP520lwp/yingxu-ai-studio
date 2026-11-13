@@ -36,6 +36,28 @@ describe("smart hand navigation", () => {
 });
 
 describe("independent studio gesture geometry", () => {
+  it("moves a nested group and its selected members as one undoable geometry gesture", () => {
+    const root = { ...node("group", 20, 30), type: "group" };
+    const nested = { ...node("nested", 50, 60), type: "group", metadata: { groupId: "group" } };
+    const member = { ...node("member", 70, 90), metadata: { groupId: "nested", content: "kept" } };
+    const outside = node("outside", 900, 1000);
+    const session = new StudioSession(documentWith(root, nested, member, outside));
+    const moving = studioMoveSet(session.read().nodes, new Set(["group", "member"]));
+    session.beginGesture(moving);
+    session.changeGeometry(item => moving.has(item.id)
+      ? { position: { x: item.position.x + 140, y: item.position.y - 40 } }
+      : undefined);
+    session.endGesture();
+    expect(session.read().nodes.map(item => item.position)).toEqual([
+      { x: 160, y: -10 }, { x: 190, y: 20 }, { x: 210, y: 50 }, { x: 900, y: 1000 },
+    ]);
+    expect(session.read().nodes[3]).toBe(outside);
+    expect(session.read().nodes[2].metadata).toBe(member.metadata);
+    session.undo();
+    expect(session.read().nodes.map(item => item.position)).toEqual([root.position, nested.position, member.position, outside.position]);
+    expect(session.snapshot().undo).toBe(false);
+  });
+
   it("expands nested groups once and tolerates malformed membership cycles", () => {
     const root = { ...node("group"), type: "group", metadata: { groupId: "nested" } };
     const nested = { ...node("nested"), type: "group", metadata: { groupId: "group" } };
