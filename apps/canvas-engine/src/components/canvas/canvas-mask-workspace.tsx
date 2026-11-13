@@ -1,4 +1,4 @@
-import { Button, Input, Modal, Slider, Tooltip } from "antd";
+import { Button, Modal, Slider, Tooltip } from "antd";
 import {
   Brush,
   Eraser,
@@ -13,6 +13,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -72,6 +73,7 @@ export function CanvasNodeMaskEditDialog({
   onConfirm: (payload: CanvasImageMaskEditPayload) => void;
 }) {
   const { t } = useTranslation();
+  const promptField = useId();
   const maskCanvasRef = useRef<HTMLCanvasElement>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement>(null);
   const baseMaskRef = useRef<HTMLCanvasElement>(null);
@@ -540,33 +542,17 @@ export function CanvasNodeMaskEditDialog({
               </div>
             ) : null}
           </div>
-          <div>
-            <label
-              htmlFor="mask-edit-instructions"
-              className="mb-2 block text-sm font-medium"
-            >
-              {t("canvas.editors.editInstructions")}
-            </label>
-            <Input.TextArea
-              id="mask-edit-instructions"
-              rows={6}
-              value={prompt}
-              status={error && !prompt.trim() ? "error" : undefined}
+          <fieldset className="min-w-0 rounded-xl border px-3 pb-3">
+            <legend className="px-2 text-sm font-semibold"><label htmlFor={promptField}>{t("canvas.editors.editInstructions")}</label></legend>
+            <p id={`${promptField}-help`} className="mb-3 mt-1 text-xs leading-relaxed opacity-60">{t("canvas.editors.maskHint")}</p>
+            <textarea id={promptField} value={prompt} rows={6}
+              aria-invalid={Boolean(error && !prompt.trim())}
+              aria-describedby={`${promptField}-help${error ? ` ${promptField}-error` : ""}`}
+              className="block w-full resize-y rounded-md border bg-transparent p-3 text-sm leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
               placeholder={t("canvas.editors.maskPlaceholder")}
-              onChange={(event) => {
-                setPrompt(event.target.value);
-                setError("");
-              }}
-            />
-            {error ? (
-              <div
-                role="alert"
-                className="mt-2 text-xs font-medium text-red-600"
-              >
-                {error}
-              </div>
-            ) : null}
-          </div>
+              onChange={event => { setPrompt(event.target.value); setError(""); }} />
+            {error && <p id={`${promptField}-error`} className="mb-0 mt-3 text-xs font-medium text-red-600" role="alert">{error}</p>}
+          </fieldset>
           <footer className="mt-auto flex flex-wrap items-center justify-between gap-2">
             <Button icon={<RotateCcw size={15} />} onClick={reset}>
               {t("canvas.editors.reset")}

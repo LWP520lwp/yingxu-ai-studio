@@ -9,9 +9,9 @@
 - License: MIT
 - Copyright: Copyright (c) 2026 basketikun
 
-The React web canvas source has been copied and modified for this workbench. Local changes integrate platform projects, authenticated assets, model capabilities, generation jobs, same-origin window RPC, and MySQL-backed native canvas snapshots. The upstream author is credited for the imported canvas implementation. This adaptation does not imply endorsement by the upstream author.
+This repository historically imported the React web canvas from the revision above. The current Studio page, document journal, gestures, tool rail, inspector, generation and media controllers, and Codex panel have since been reimplemented. Obsolete page components and agent interfaces have been removed. This notice records the historical import and is retained while the provenance review of remaining distributed modules is completed. It does not imply endorsement by the upstream author.
 
-The migrated source remains in `apps/canvas-engine`; the upstream license text is stored under `apps/canvas-engine/legal/`. Dependencies retain their respective licenses; this notice covers the imported infinite-canvas source.
+The license text is stored under `apps/canvas-engine/legal/`. Shared syntax, standard dimensions, compatibility fields, and a numerical overlap score do not establish authorship or determine whether a license obligation remains. Dependencies retain their respective licenses; this notice covers the historical infinite-canvas import rather than claiming that every current canvas module has that origin.
 
 ### MIT License
 

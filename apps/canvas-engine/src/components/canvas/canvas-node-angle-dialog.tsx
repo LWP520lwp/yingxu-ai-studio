@@ -1,156 +1,311 @@
-import { useEffect, useState } from "react";
-import { Button, Modal } from "antd";
-import { Camera, RotateCcw, WandSparkles } from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import { Modal } from "antd";
+import { Camera, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { atlasBoundedAngle as boundedAngle } from "@/atlas-engine/surface/image-editing-geometry";
-import type { AtlasImageAngle as ImageAngleTransform } from "@/atlas-engine/workflows/image-processing";
+import type { AtlasImageAngle } from "@/atlas-engine/workflows/image-processing";
 
-export type CanvasImageAngleParams = ImageAngleTransform;
-
-const ANGLE_CONTROLS = [
-    { field: "horizontalAngle", label: "horizontal", min: -60, max: 60, step: 1, suffix: "deg" },
-    { field: "pitchAngle", label: "pitch", min: -45, max: 45, step: 1, suffix: "deg" },
-    { field: "cameraDistance", label: "distance", min: 1, max: 10, step: 0.1, suffix: "" },
-] as const;
-
-export const DEFAULT_IMAGE_ANGLE_PARAMS: CanvasImageAngleParams = {
-    horizontalAngle: 0,
-    pitchAngle: 9,
-    cameraDistance: 4.8,
-    wideAngle: false,
+export type CanvasImageAngleParams = AtlasImageAngle;
+type AngleDialogProps = {
+  open: boolean;
+  dataUrl: string;
+  onClose(): void;
+  onConfirm(value: CanvasImageAngleParams): void;
 };
+type NumericAxis = "horizontalAngle" | "pitchAngle" | "cameraDistance";
+const cameraAxes: ReadonlyArray<{
+  key: NumericAxis;
+  label: "horizontal" | "pitch" | "distance";
+  low: number;
+  high: number;
+  step: number;
+  initial: number;
+}> = [
+  {
+    key: "horizontalAngle",
+    label: "horizontal",
+    low: -60,
+    high: 60,
+    step: 1,
+    initial: 0,
+  },
+  {
+    key: "pitchAngle",
+    label: "pitch",
+    low: -45,
+    high: 45,
+    step: 1,
+    initial: 0,
+  },
+  {
+    key: "cameraDistance",
+    label: "distance",
+    low: 1,
+    high: 10,
+    step: 0.1,
+    initial: 5,
+  },
+];
+export const DEFAULT_IMAGE_ANGLE_PARAMS = Object.fromEntries([
+  ...cameraAxes.map((axis) => [axis.key, axis.initial]),
+  ["wideAngle", false],
+]) as CanvasImageAngleParams;
 
-export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (params: CanvasImageAngleParams) => void }) {
-    const { t } = useTranslation();
-    const [params, setParams] = useState(DEFAULT_IMAGE_ANGLE_PARAMS);
-
-    useEffect(() => {
-        if (open) setParams(DEFAULT_IMAGE_ANGLE_PARAMS);
-    }, [dataUrl, open]);
-
-    const update = <Key extends keyof CanvasImageAngleParams>(key: Key, value: CanvasImageAngleParams[Key]) => {
-        setParams((current) => normalizeImageAngleParams({ ...current, [key]: value }));
-    };
-
-    return (
-        <Modal title={t("canvas.editors.angleTitle")} open={open && Boolean(dataUrl)} onCancel={onClose} footer={null} width={920} centered destroyOnHidden>
-            <div className="grid gap-5 md:grid-cols-[minmax(280px,1fr)_minmax(320px,0.95fr)]">
-                <section className="flex min-h-[330px] flex-col overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900" aria-label={t("canvas.editors.angleTitle")}>
-                    <div className="flex items-center gap-2 border-b border-neutral-200 px-4 py-3 text-sm font-medium dark:border-neutral-700">
-                        <Camera aria-hidden="true" className="size-4 opacity-70" />
-                        <span>{t("canvas.editors.angleTitle")}</span>
-                    </div>
-                    <div className="grid flex-1 place-items-center overflow-hidden p-6" style={{ perspective: "700px" }}>
-                        <div className="relative grid place-items-center">
-                            <img src={dataUrl} alt={t("canvas.editors.angleDescription")} className="max-h-64 max-w-full rounded-md object-contain shadow-xl" draggable={false} style={{ transform: previewTransform(params) }} />
-                            <div aria-hidden="true" className="absolute -bottom-6 left-1/2 h-5 w-20 -translate-x-1/2 rounded-[50%] border border-neutral-300 bg-neutral-300/30 dark:border-neutral-600 dark:bg-neutral-500/20" />
-                        </div>
-                    </div>
-                    <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
-                        <Button icon={<RotateCcw aria-hidden="true" className="size-4" />} onClick={() => setParams(DEFAULT_IMAGE_ANGLE_PARAMS)}>
-                            {t("canvas.editors.reset")}
-                        </Button>
-                    </div>
-                </section>
-
-                <section className="flex flex-col justify-center gap-6 py-2" aria-label={t("canvas.editors.angleDescription")}>
-                    <p className="text-sm leading-6 text-neutral-500">{t("canvas.editors.angleDescription")}</p>
-                    <div className="space-y-5">
-                        {ANGLE_CONTROLS.map(({ field, label, ...range }) => (
-                            <AngleControl key={field} {...range} label={t(`canvas.editors.${label}`)} value={params[field]} onChange={(value) => update(field, value)} />
-                        ))}
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 pt-4 dark:border-neutral-700">
-                        <span className="text-sm font-medium">{t("canvas.editors.lens")}</span>
-                        <div className="flex gap-1 rounded-md border border-neutral-200 p-1 dark:border-neutral-700" role="group" aria-label={t("canvas.editors.lens")}>
-                            {[
-                                { value: false, label: t("canvas.editors.standard") },
-                                { value: true, label: t("canvas.editors.wide") },
-                            ].map((lens) => (
-                                <button
-                                    key={String(lens.value)}
-                                    type="button"
-                                    aria-pressed={params.wideAngle === lens.value}
-                                    className="min-h-9 rounded px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600"
-                                    style={params.wideAngle === lens.value ? { background: "var(--accent)", color: "var(--accent-foreground)" } : undefined}
-                                    onClick={() => update("wideAngle", lens.value)}
-                                >
-                                    {lens.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-200 pt-4 dark:border-neutral-700">
-                        <Button onClick={onClose}>{t("common.cancel")}</Button>
-                        <Button type="primary" icon={<WandSparkles aria-hidden="true" className="size-4" />} onClick={() => onConfirm(normalizeImageAngleParams(params))}>
-                            {t("canvas.editors.aiGenerate")}
-                        </Button>
-                    </div>
-                </section>
-            </div>
-        </Modal>
+export function normalizeImageAngleParams(
+  input: CanvasImageAngleParams,
+): CanvasImageAngleParams {
+  const result = {
+    ...DEFAULT_IMAGE_ANGLE_PARAMS,
+    wideAngle: input.wideAngle === true,
+  };
+  for (const axis of cameraAxes)
+    result[axis.key] = Math.max(
+      axis.low,
+      Math.min(
+        axis.high,
+        Number.isFinite(input[axis.key]) ? input[axis.key] : axis.initial,
+      ),
     );
+  return result;
 }
 
-function AngleControl({ label, value, min, max, step, suffix = "", onChange }: { label: string; value: number; min: number; max: number; step: number; suffix?: string; onChange: (value: number) => void }) {
-    return (
-        <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium">{label}</span>
-                <label className="flex items-center gap-1 rounded border border-neutral-200 px-2 dark:border-neutral-700">
-                    <input
-                        aria-label={label}
-                        type="number"
-                        min={min}
-                        max={max}
-                        step={step}
-                        value={value}
-                        onChange={(event) => {
-                            const next = Number(event.target.value);
-                            if (Number.isFinite(next)) onChange(next);
-                        }}
-                        className="w-16 bg-transparent py-1 text-right font-mono text-sm tabular-nums outline-none"
-                    />
-                    <span className="text-xs text-neutral-500">{suffix}</span>
-                </label>
-            </div>
-            <input
-                aria-label={`${label} slider`}
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                value={value}
-                onChange={(event) => onChange(Number(event.target.value))}
-                className="h-2 w-full cursor-pointer accent-teal-700"
+/** This diagram represents requested camera placement; the source image stays unmodified. */
+export function angleCameraPosition(input: CanvasImageAngleParams) {
+  const value = normalizeImageAngleParams(input);
+  const yaw = (value.horizontalAngle * Math.PI) / 180;
+  const radius = 30 + value.cameraDistance * 4;
+  return {
+    x: 110 + Math.sin(yaw) * radius,
+    y: 76 + Math.cos(yaw) * radius,
+    elevation: value.pitchAngle,
+  };
+}
+
+export function CanvasNodeAngleDialog({
+  open,
+  dataUrl,
+  onClose,
+  onConfirm,
+}: AngleDialogProps) {
+  const { t, i18n } = useTranslation();
+  const zh = i18n.language.startsWith("zh");
+  const id = useId();
+  const [camera, setCamera] = useState(() => ({
+    ...DEFAULT_IMAGE_ANGLE_PARAMS,
+  }));
+  useEffect(() => {
+    if (open) setCamera({ ...DEFAULT_IMAGE_ANGLE_PARAMS });
+  }, [open, dataUrl]);
+  const point = angleCameraPosition(camera);
+  const update = (key: NumericAxis, value: number) =>
+    setCamera((current) =>
+      normalizeImageAngleParams({ ...current, [key]: value }),
+    );
+  return (
+    <Modal
+      open={open && Boolean(dataUrl)}
+      onCancel={onClose}
+      title={t("canvas.editors.angleTitle")}
+      width={860}
+      footer={null}
+      destroyOnHidden
+      centered
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit,minmax(270px,1fr))",
+          gap: 24,
+        }}
+      >
+        <figure
+          style={{
+            margin: 0,
+            background: "var(--muted)",
+            borderRadius: 8,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <img
+            src={dataUrl}
+            alt={zh ? "原始参考图" : "Original reference"}
+            style={{
+              width: "100%",
+              height: 245,
+              objectFit: "contain",
+              padding: 14,
+            }}
+          />
+          <figcaption
+            style={{ padding: "12px 16px", fontSize: 12, opacity: 0.7 }}
+          >
+            {zh
+              ? "保留原始参考，按机位要求重新生成。"
+              : "The original guides a new image from your requested viewpoint."}
+          </figcaption>
+          <svg
+            viewBox="0 0 220 170"
+            role="img"
+            aria-label={
+              zh
+                ? "目标机位示意图，俯视方向"
+                : "Requested camera position, top view"
+            }
+            style={{ width: "100%", height: 160 }}
+          >
+            <ellipse
+              cx="110"
+              cy="76"
+              rx="80"
+              ry="64"
+              fill="none"
+              stroke="currentColor"
+              opacity=".15"
+              strokeDasharray="3 5"
             />
-        </div>
-    );
-}
-
-export function normalizeImageAngleParams(params: CanvasImageAngleParams): CanvasImageAngleParams {
-    return {
-        horizontalAngle: boundedAngle(params.horizontalAngle, -60, 60),
-        pitchAngle: boundedAngle(params.pitchAngle, -45, 45),
-        cameraDistance: boundedAngle(params.cameraDistance, 1, 10),
-        wideAngle: params.wideAngle === true,
-    };
-}
-
-export function formatAngleValue(value: number) {
-    return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
-export function previewTransform(params: CanvasImageAngleParams) {
-    const safeParams = normalizeImageAngleParams(params);
-    const scale = 1.08 - safeParams.cameraDistance * 0.035 + (safeParams.wideAngle ? -0.08 : 0);
-    const rotateY = roundCssValue(safeParams.horizontalAngle * -0.45, 2);
-    const rotateX = roundCssValue(safeParams.pitchAngle * 0.35, 2);
-    const previewScale = roundCssValue(Math.max(0.72, Math.min(1.08, scale)), 3);
-    return `rotateY(${rotateY}deg) rotateX(${rotateX}deg) scale(${previewScale})`;
-}
-
-function roundCssValue(value: number, decimals: number) {
-    const factor = 10 ** decimals;
-    return Math.round(value * factor) / factor;
+            <path
+              d={`M110 76 L${point.x} ${point.y}`}
+              stroke="#71ab95"
+              strokeWidth="2"
+            />
+            <rect
+              x="101"
+              y="67"
+              width="18"
+              height="18"
+              rx="3"
+              fill="currentColor"
+              opacity=".65"
+            />
+            <circle cx={point.x} cy={point.y} r="9" fill="#71ab95" />
+            <text
+              x="110"
+              y="24"
+              textAnchor="middle"
+              fontSize="10"
+              fill="currentColor"
+              opacity=".65"
+            >
+              {zh ? "主体 / 机位" : "SUBJECT / CAMERA"}
+            </text>
+          </svg>
+        </figure>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onConfirm(normalizeImageAngleParams(camera));
+          }}
+          style={{ display: "flex", flexDirection: "column", gap: 20 }}
+        >
+          <p style={{ margin: 0, lineHeight: 1.8, opacity: 0.65 }}>
+            {t("canvas.editors.angleDescription")}
+          </p>
+          {cameraAxes.map((axis) => (
+            <label
+              key={axis.key}
+              htmlFor={`${id}-${axis.key}`}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 76px",
+                gap: "8px 14px",
+                alignItems: "center",
+              }}
+            >
+              <span>{t(`canvas.editors.${axis.label}`)}</span>
+              <input
+                id={`${id}-${axis.key}`}
+                type="number"
+                min={axis.low}
+                max={axis.high}
+                step={axis.step}
+                value={camera[axis.key]}
+                onChange={(event) =>
+                  update(axis.key, event.target.valueAsNumber)
+                }
+                style={{
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  padding: 6,
+                  borderRadius: 4,
+                  width: "100%",
+                }}
+              />
+              <input
+                aria-label={`${t(`canvas.editors.${axis.label}`)} slider`}
+                type="range"
+                min={axis.low}
+                max={axis.high}
+                step={axis.step}
+                value={camera[axis.key]}
+                onChange={(event) =>
+                  update(axis.key, event.target.valueAsNumber)
+                }
+                style={{
+                  gridColumn: "1/-1",
+                  width: "100%",
+                  accentColor: "#71ab95",
+                }}
+              />
+            </label>
+          ))}
+          <label style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input
+              type="checkbox"
+              checked={camera.wideAngle}
+              onChange={(event) =>
+                setCamera((current) => ({
+                  ...current,
+                  wideAngle: event.target.checked,
+                }))
+              }
+            />
+            {t("canvas.editors.wide")}
+          </label>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginTop: "auto",
+              paddingTop: 12,
+              borderTop: "1px solid var(--border)",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setCamera({ ...DEFAULT_IMAGE_ANGLE_PARAMS })}
+              style={{
+                display: "flex",
+                gap: 6,
+                marginRight: "auto",
+                alignItems: "center",
+              }}
+            >
+              <RotateCcw size={14} />
+              {t("canvas.editors.reset")}
+            </button>
+            <button type="button" onClick={onClose} style={{ padding: 10 }}>
+              {t("common.cancel")}
+            </button>
+            <button
+              type="submit"
+              style={{
+                display: "flex",
+                gap: 7,
+                alignItems: "center",
+                padding: "10px 14px",
+                background: "#39715c",
+                color: "white",
+                borderRadius: 5,
+              }}
+            >
+              <Camera size={15} />
+              {t("canvas.editors.aiGenerate")}
+            </button>
+          </div>
+        </form>
+      </div>
+    </Modal>
+  );
 }

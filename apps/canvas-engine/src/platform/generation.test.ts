@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { PlatformInit } from "./rpc";
+import zhCN from "@/i18n/locales/zh-CN";
+
+const generationErrors = zhCN.canvas.platformGeneration;
 
 const harness = vi.hoisted(() => ({
     init: null as PlatformInit | null,
@@ -77,13 +80,13 @@ describe("supported platform generation", () => {
     it("rejects missing or excess frames before uploads or Skill preparation", async () => {
         const references = serviceReferences();
         const selected = config({ model: "platform::muse-service-video", videoMode: "frames" });
-        await expect(createVideoGenerationTask(selected, "转场", [])).rejects.toThrow("连接首帧");
+        await expect(createVideoGenerationTask(selected, "转场", [])).rejects.toThrow(generationErrors.firstFrameRequired);
         await expect(createVideoGenerationTask(selected, "转场", references.slice(0, 3))).rejects.toThrow("最多支持 2 张");
         expect(harness.request).not.toHaveBeenCalled();
         expect(harness.convert).not.toHaveBeenCalled();
     });
     it("blocks an unreviewed legacy Skill before any request, preserving its original text", async () => {
-        await expect(createVideoGenerationTask(config({ model: "platform::muse-video", videoSkillReviewRequired: true, videoSkillId: "fight-video", videoSkillVersion: "1.0.0" }), "原文与配方尚未分开")).rejects.toThrow("确认旧配置");
+        await expect(createVideoGenerationTask(config({ model: "platform::muse-video", videoSkillReviewRequired: true, videoSkillId: "fight-video", videoSkillVersion: "1.0.0" }), "原文与配方尚未分开")).rejects.toThrow(generationErrors.skillReviewRequired);
         expect(harness.request).not.toHaveBeenCalled();
     });
     it("puts the selected video Skill's prepared text on the real job alongside its reference image", async () => {
@@ -115,7 +118,7 @@ describe("supported platform generation", () => {
     });
     it("blocks reference images before uploading to a text-only custom channel", async () => {
         harness.init!.models.image = [{ id: "channel:personal:gpt-image-1", available: true, caps: { supportsReferenceImages: false } }];
-        await expect(createPlatformGeneration(config({ model: "platform::channel:personal:gpt-image-1" }), "image", "森林", [reference()])).rejects.toThrow("移除参考图");
+        await expect(createPlatformGeneration(config({ model: "platform::channel:personal:gpt-image-1" }), "image", "森林", [reference()])).rejects.toThrow(generationErrors.referencesUnsupported);
         expect(harness.convert).not.toHaveBeenCalled();
         expect(harness.request).not.toHaveBeenCalled();
     });
@@ -173,12 +176,12 @@ describe("supported platform generation", () => {
 describe("unsupported settings fail before upload or submission", () => {
     it.each([
         ["image", { quality: "high" }, "图片质量"],
-        ["image", { background: "transparent" }, "图片背景"],
-        ["image", { background: "opaque" }, "图片背景"],
+        ["image", { background: "transparent" }, generationErrors.imageBackgroundUnsupported],
+        ["image", { background: "opaque" }, generationErrors.imageBackgroundUnsupported],
         ["video", { videoGenerateAudio: "true" }, "视频音轨"],
         ["video", { videoGenerateAudio: "false" }, "视频音轨"],
-        ["video", { videoWatermark: "true" }, "视频水印"],
-        ["video", { videoWatermark: "false" }, "视频水印"],
+        ["video", { videoWatermark: "true" }, generationErrors.videoWatermarkUnsupported],
+        ["video", { videoWatermark: "false" }, generationErrors.videoWatermarkUnsupported],
         ["video", { videoMode: "frames" }, "首尾帧"],
         ["video", { videoMode: "edit" }, "视频模式"],
     ] as const)("rejects %s settings %j", async (kind, patch, message) => {
@@ -196,10 +199,10 @@ describe("unsupported settings fail before upload or submission", () => {
     });
 
     it.each([
-        ["image", { size: "invalid-size" }, "尺寸无效"],
+        ["image", { size: "invalid-size" }, generationErrors.sizeInvalid],
         ["image", { size: "8192x1024" }, "64–4096"],
         ["video", { videoSeconds: "30" }, "2–20 秒"],
-        ["video", { vquality: "2k" }, "分辨率无效"],
+        ["video", { vquality: "2k" }, generationErrors.videoResolutionInvalid],
     ] as const)("rejects invalid %s bounds %j", async (kind, patch, message) => {
         await expect(createPlatformGeneration(config({ model: kind === "video" ? "platform::muse-video" : "platform::muse-image", ...patch }), kind, "森林", [reference()])).rejects.toThrow(message);
         expect(harness.request).not.toHaveBeenCalled();
@@ -212,7 +215,7 @@ describe("unsupported settings fail before upload or submission", () => {
 
     it("blocks unavailable models, text and audio generation", async () => {
         harness.init!.models.image[0].available = false;
-        await expect(generatePlatformImages(config(), "森林")).rejects.toThrow("当前不可用");
+        await expect(generatePlatformImages(config(), "森林")).rejects.toThrow(generationErrors.modelUnavailable);
         await expect(requestImageQuestion(config(), [], () => undefined)).rejects.toThrow("文本生成");
         await expect(requestAudioGeneration(config(), "朗读")).rejects.toThrow("音频生成");
         expect(harness.request).not.toHaveBeenCalled();
@@ -269,7 +272,7 @@ describe("cancellation and uncertain external state", () => {
 
     it("stops on uncertain external state without replaying the request", async () => {
         harness.request.mockResolvedValueOnce(job({ status: "unknown_external" }));
-        await expect(waitForPlatformGeneration(task())).rejects.toThrow("不会自动重复提交");
+        await expect(waitForPlatformGeneration(task())).rejects.toThrow(generationErrors.externalStatusUnknown);
         expect(harness.request.mock.calls.map((call) => call[0])).toEqual(["jobs.status"]);
     });
 

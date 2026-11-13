@@ -1,0 +1,203 @@
+.studio-sequence {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  height: 100%;
+  padding: 10px;
+  color: var(--studio-text, #d9e7ed);
+  background: var(--studio-surface, #101c27);
+  font-size: 11px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.studio-sequence button,
+.studio-sequence select,
+.studio-sequence input {
+  font: inherit;
+  color: inherit;
+}
+.studio-sequence button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 17%, transparent);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+.studio-sequence button:hover:not(:disabled) {
+  border-color: #82b4ad;
+  background: #82b4ad18;
+}
+.studio-sequence button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.studio-sequence :is(button, input, select):focus-visible {
+  outline: 2px solid #98d1bd;
+  outline-offset: 2px;
+}
+.studio-sequence-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.studio-sequence-controls > strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+.studio-sequence-controls > span {
+  margin-right: auto;
+  color: var(--studio-muted, #91a7b3);
+  font-variant-numeric: tabular-nums;
+}
+.studio-sequence-viewer {
+  display: grid;
+  place-items: center;
+  min-height: 100px;
+  height: 155px;
+  flex-shrink: 0;
+  border: 1px solid #ffffff16;
+  border-radius: 5px;
+  background: #050a10;
+  overflow: hidden;
+}
+.studio-sequence-viewer video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.studio-sequence-empty {
+  display: grid;
+  place-items: center;
+  color: #839bab;
+  text-align: center;
+}
+.studio-sequence-empty p {
+  margin: 8px 0;
+  font-size: 12px;
+}
+.studio-sequence-rail {
+  display: flex;
+  gap: 6px;
+  min-height: 49px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 0 5px;
+  overflow-x: auto;
+  list-style: none;
+  scrollbar-width: thin;
+}
+.studio-sequence-rail li {
+  flex: 0 0 124px;
+  min-width: 0;
+}
+.studio-sequence-rail button {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-columns: 23px 1fr;
+  gap: 3px 6px;
+  justify-content: start;
+  text-align: left;
+}
+.studio-sequence-rail button > span {
+  grid-row: span 2;
+  color: #86b3b4;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.studio-sequence-rail strong {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 500;
+}
+.studio-sequence-rail small {
+  color: var(--studio-muted, #8fa6b4);
+  font-variant-numeric: tabular-nums;
+}
+.studio-sequence-rail .is-current button {
+  background: #82b4ad16;
+  border-color: #82b4ad;
+}
+.studio-sequence-editor {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px solid var(--studio-border-soft, #ffffff14);
+}
+.studio-sequence-order {
+  display: flex;
+  gap: 3px;
+  align-self: center;
+}
+.studio-sequence-order button {
+  padding: 5px;
+  min-width: 25px;
+}
+.studio-sequence-editor label {
+  display: grid;
+  gap: 4px;
+  color: var(--studio-muted, #9cb0bc);
+  font-size: 10px;
+}
+.studio-sequence input[type="number"] {
+  width: 67px;
+  min-width: 0;
+  padding: 4px 5px;
+  background: var(--studio-field, #00000020);
+  border: 1px solid var(--studio-border, #ffffff22);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.studio-sequence-volume {
+  flex: 1;
+  min-width: 80px;
+}
+.studio-sequence input[type="range"] {
+  width: 100%;
+  height: 24px;
+  accent-color: var(--studio-accent, #91bfb2);
+}
+.studio-sequence-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 27px;
+}
+.studio-sequence-add select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--studio-border, #ffffff1a);
+  border-radius: 4px;
+  background: var(--studio-surface, #101c27);
+}
+.studio-sequence-add > span {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--studio-muted, #8fa6b4);
+}
+.studio-sequence-error {
+  margin: 0;
+  padding: 7px 9px;
+  border-left: 2px solid #d6a17f;
+  background: #d6a17f0d;
+  color: var(--studio-danger, #e1b394);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}

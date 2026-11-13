@@ -1,0 +1,148 @@
+.codex-studio-drawer .ant-drawer-content {
+  background: var(--background, #171b20);
+  color: var(--foreground, #e8edef);
+}
+.codex-studio-drawer .ant-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 24px;
+}
+.codex-studio-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.codex-studio-eyebrow {
+  color: #95ccb9;
+  font-size: 10px;
+  font-weight: 650;
+}
+.codex-studio-intro h2 {
+  margin: 10px 0;
+  font-size: 22px;
+  line-height: 1.45;
+  text-wrap: balance;
+}
+.codex-studio-intro p,
+.codex-studio-fields p,
+.codex-studio-footnote {
+  margin: 0;
+  color: var(--muted-foreground, #a4aeb3);
+  font-size: 12px;
+  line-height: 1.75;
+  text-wrap: pretty;
+}
+.codex-studio-connection {
+  border-block: 1px solid var(--border, #333d42);
+  padding: 14px 0;
+}
+.codex-studio-connection summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.codex-studio-connection summary span {
+  margin-left: auto;
+  color: var(--muted-foreground, #a4aeb3);
+  font-size: 11px;
+}
+.codex-studio-fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.codex-studio-fields label,
+.codex-studio-composer {
+  display: grid;
+  gap: 9px;
+  font-size: 12px;
+}
+.codex-studio-composer > label:not(:first-child) {
+  margin-top: 10px;
+}
+.codex-studio-composer .ant-select {
+  width: 100%;
+}
+.codex-studio-submit {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  margin-top: 8px;
+}
+.codex-studio-submit > span {
+  max-width: 180px;
+  color: var(--muted-foreground, #a4aeb3);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.codex-studio-pending {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted-foreground, #a4aeb3);
+}
+.codex-studio-proposal {
+  border-top: 1px solid var(--border, #333d42);
+  padding-top: 18px;
+}
+.codex-studio-proposal-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.codex-studio-proposal-heading h3 {
+  font-size: 15px;
+  margin: 0;
+}
+.codex-studio-proposal-heading span {
+  font-size: 11px;
+  color: var(--muted-foreground, #a4aeb3);
+  font-variant-numeric: tabular-nums;
+}
+.codex-studio-proposal > p {
+  font-size: 12px;
+  line-height: 1.8;
+}
+.codex-studio-proposal ol {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+  display: grid;
+  gap: 0;
+  max-height: 310px;
+  overflow: auto;
+}
+.codex-studio-proposal li {
+  padding: 12px 0;
+  border-top: 1px solid var(--border, #333d42);
+}
+.codex-studio-proposal li > span {
+  display: block;
+  font-size: 9px;
+  margin-bottom: 5px;
+  color: #95ccb9;
+}
+.codex-studio-proposal li > strong {
+  font-size: 13px;
+}
+.codex-studio-proposal li > p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted-foreground, #a4aeb3);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 5px 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.codex-studio-proposal .codex-studio-footnote {
+  margin-top: 12px;
+}

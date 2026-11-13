@@ -1,0 +1,117 @@
+.studio-welcome {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  padding: 40px;
+  text-align: center;
+  color: var(--studio-text);
+}
+.studio-welcome-index {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--studio-accent);
+  margin-bottom: 25px;
+}
+.studio-welcome h1 {
+  font-size: clamp(28px, 3.4vw, 46px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  margin: 0 0 16px;
+}
+.studio-welcome p {
+  color: var(--studio-secondary);
+  max-width: 370px;
+  line-height: 1.9;
+  margin: 0 0 28px;
+}
+.studio-welcome div {
+  display: flex;
+  gap: 10px;
+  pointer-events: auto;
+}
+.studio-welcome button {
+  border: 1px solid var(--studio-border);
+  background: var(--studio-raised);
+  padding: 11px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.studio-welcome button:first-child {
+  background: var(--studio-accent);
+  color: var(--studio-accent-ink);
+  border-color: transparent;
+}
+.studio-welcome small {
+  color: var(--studio-muted);
+  margin-top: 25px;
+  font-size: 10px;
+}
+.studio-document-map {
+  position: absolute;
+  z-index: 20;
+  bottom: 18px;
+  left: 18px;
+  width: 260px;
+  background: var(--studio-surface);
+  border: 1px solid var(--studio-border);
+  border-radius: 9px;
+  box-shadow: 0 10px 35px #0002;
+  padding: 12px;
+}
+.studio-document-map header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.studio-document-map header button {
+  font-size: 20px;
+  cursor: pointer;
+}
+.studio-document-map input {
+  width: 100%;
+  background: var(--studio-field);
+  border: 1px solid var(--studio-border);
+  padding: 8px;
+  border-radius: 4px;
+  outline-offset: 3px;
+}
+.studio-document-map > div {
+  max-height: 240px;
+  overflow: auto;
+  margin-top: 8px;
+}
+.studio-document-map > div button {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.studio-document-map > div button:hover {
+  background: var(--studio-raised);
+}
+.studio-document-map > div span {
+  color: var(--studio-accent);
+  font-size: 9px;
+  min-width: 46px;
+  padding-top: 3px;
+}
+.studio-extension-panel {
+  padding: 16px;
+  border-top: 1px solid var(--studio-border);
+}
+.studio-extension-panel > button {
+  color: var(--studio-accent);
+  margin-bottom: 10px;
+}
+.studio-canvas-region {
+  --atlas-canvas-bg: var(--studio-field);
+}

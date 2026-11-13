@@ -21,7 +21,7 @@ vi.mock("@/i18n", () => ({ default: { t: (key: string) => key } }));
 vi.mock("@/atlas-engine/model/node-registry", () => ({ getAtlasNodeDefinition: () => undefined }));
 vi.mock("@/services/image-storage", () => ({ imageToDataUrl: vi.fn() }));
 
-import { buildNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
+import { buildNodeGenerationContext } from "@/atlas-engine/workflows/node-generation-context";
 import { canvasSkillPrompt, prepareTextVideo, selectImageModel, selectVideoModel, textVideoPrompt, videoSkillMetadata, type CanvasVideoSkill, type PreparedCanvasSkill } from "./skill-video";
 
 const skill: CanvasVideoSkill = { id: "action-technique", name: "打斗技巧", version: "1.0.0", installed: false, requiresReference: false };

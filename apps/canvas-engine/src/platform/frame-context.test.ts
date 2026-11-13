@@ -49,7 +49,7 @@ vi.mock("@/services/image-storage", () => ({
 import {
   buildNodeGenerationContext,
   frameReferenceIssue,
-} from "@/components/canvas/canvas-node-generation";
+} from "@/atlas-engine/workflows/node-generation-context";
 import { createPlatformGeneration } from "./generation";
 import { defaultConfig } from "@/stores/use-config-store";
 

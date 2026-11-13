@@ -1,4 +1,7 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M32 8L58 54H46L32 29L18 54H6L32 8Z" fill="currentColor"/>
-  <path d="M32 40L40 54H24L32 40Z" fill="currentColor"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>映序 YX</title>
+  <rect width="64" height="64" rx="16" fill="#172A30"/>
+  <path d="M13 18 25 32 37 18M25 32V47" stroke="#7CE3C6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m39 34 12 13m0-13L39 47" stroke="#F0C87D" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="49" cy="18" r="3" fill="#7CE3C6"/>
 </svg>

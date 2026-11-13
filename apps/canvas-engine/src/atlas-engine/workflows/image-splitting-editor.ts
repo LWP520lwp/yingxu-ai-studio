@@ -58,7 +58,7 @@ export function reduceSplitEditorState(
     case "add-line": {
       const lines = linesFor(state.params, action.axis);
       if (lines.length >= MAX_GRID_SIZE - 1) return state;
-      const spot = findLineSpot(lines);
+      const spot = chooseSplitInsertionPoint(lines);
       const nextLines = [...lines, spot].sort((a, b) => a - b);
       return commit(
         state,
@@ -207,18 +207,17 @@ function buildGridLines(count: number) {
   );
 }
 
-function findLineSpot(lines: number[]) {
-  const cuts = [0, ...lines, 1].sort((a, b) => a - b);
-  let spot = 0.5;
-  let max = 0;
-  for (let index = 0; index < cuts.length - 1; index += 1) {
-    const gap = cuts[index + 1] - cuts[index];
-    if (gap > max) {
-      max = gap;
-      spot = cuts[index] + gap / 2;
-    }
-  }
-  return spot;
+function chooseSplitInsertionPoint(lines: readonly number[]) {
+  // Rank the existing image regions by area along this axis. The leading
+  // region wins ties, so repeated additions remain spatially predictable.
+  const boundaries = [...lines, 1].sort((left, right) => left - right);
+  const regions = boundaries.map((end, index) => {
+    const start = boundaries[index - 1] ?? 0;
+    return { start, end, span: end - start };
+  });
+  regions.sort((left, right) => right.span - left.span || left.start - right.start);
+  const region = regions[0];
+  return (region.start + region.end) / 2;
 }
 
 function clampLine(value: number, min: number, max: number) {

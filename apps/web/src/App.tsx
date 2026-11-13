@@ -24,6 +24,7 @@ import {
   Sparkle,
   SquaresFour,
   Stack,
+  TerminalWindow,
   Trash,
   UploadSimple,
   WarningCircle,
@@ -966,6 +967,11 @@ function Workbench() {
               </span>
             </button>
           ))}
+          {mode === "canvas" && <button className="rail-button" onClick={() => setModal("story")}
+            disabled={!project || !bootstrap?.user || readyCanvasProject !== project.id}
+            title="连续剧本工作流：角色档案与五镜头分镜" aria-label="打开连续剧本工作流">
+            <FilmStrip size={21}/><span>剧本工作流</span>
+          </button>}
           <div className="rail-drafts"><span className="rail-section-label">我的草稿</span>
             <button className="rail-button" onClick={() => void returnToLibrary("canvas")} title="画布草稿"><FolderSimple size={21}/><span>画布草稿</span></button>
             <button className="rail-button" onClick={() => void returnToLibrary("science")} title="科普草稿"><FilmStrip size={21}/><span>科普草稿</span></button>
@@ -1123,8 +1129,11 @@ function Workbench() {
               <ClockCounterClockwise size={16} />生成记录
             </button>}
             {mode === "canvas" && (
-              <button className="button secondary" disabled={!project || !bootstrap?.user || readyCanvasProject !== project.id} onClick={() => setModal("story")}>
-                <FilmStrip size={16} />分镜 Agent
+              <button className="button secondary" onClick={() => {
+                if (engineRef.current) engineRef.current.command("openAgent");
+                else setNotice("请先打开一个画布草稿，再连接 Codex。");
+              }} title="连接本机 Codex，规划画布节点与关系">
+                <TerminalWindow size={16} />Codex
               </button>
             )}
             {mode === "canvas" && (

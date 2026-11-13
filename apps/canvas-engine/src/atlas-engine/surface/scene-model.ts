@@ -1,9 +1,7 @@
 import type { CanvasResourceReference } from "@/atlas-engine/model/resource-references";
 import type { CanvasNodeData, SelectionBox } from "@/types/canvas";
-import type {
-  AtlasNodeCardProps,
-  AtlasReferenceMode,
-} from "./atlas-node-card-contracts";
+
+type ReferenceAvailability = "target" | "disabled" | "available";
 
 export type AtlasSceneSelection = {
   nodes: ReadonlySet<string>;
@@ -39,7 +37,7 @@ const emptyReferences: CanvasResourceReference[] = [];
 function referenceMode(
   node: CanvasNodeData,
   references: AtlasSceneReferences,
-): AtlasReferenceMode | undefined {
+): ReferenceAvailability | undefined {
   if (!references.owner) return undefined;
   if (references.owner === node.id) return "target";
   return references.connected.has(node.id) || !references.accepts(node)
@@ -75,7 +73,7 @@ export function atlasSceneNodeView(
     groupChildCount: presentation.childCounts.get(node.id) ?? 0,
     batchExpanded: presentation.expanded.has(node.id),
     mentionReferences: presentation.mentions.get(node.id) ?? emptyReferences,
-  } satisfies Partial<AtlasNodeCardProps>;
+  };
 }
 
 export function atlasMarqueeBounds(box: SelectionBox) {

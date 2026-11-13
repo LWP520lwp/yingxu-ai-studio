@@ -3,10 +3,61 @@ param(
     [switch]$SkipBuild,
     [switch]$SkipInfra,
     [switch]$WithBrowserWorker,
+    [switch]$WithCodexBridge,
     [int]$ApiPort = 0,
     [int]$FrontendPort = 0
 )
 . (Join-Path $PSScriptRoot 'common.ps1')
+
+function Start-WorkbenchCodexBridge {
+    param([string]$ProjectRoot, [string]$NodeBinary, [int]$WebPort)
+    if (Test-WorkbenchPort -Port 4599) { throw 'Port 4599 is occupied; the existing service was kept running.' }
+    $codexCommand = Get-Command codex.exe,codex -ErrorAction SilentlyContinue | Select-Object -First 1
+    $codexPath = if ($env:CODEX_BIN) { $env:CODEX_BIN } elseif ($codexCommand) { $codexCommand.Source } else { $null }
+    if (-not $codexPath) { throw 'Install Codex CLI and run codex login before enabling its bridge.' }
+
+    # Capture startup output in memory. The per-process token is shown only in
+    # this local terminal; it never enters log files or the process record.
+    $launch = New-Object Diagnostics.ProcessStartInfo
+    $launch.FileName = $NodeBinary
+    $launch.Arguments = '"' + (Join-Path $ProjectRoot 'apps\codex-bridge\src\server.mjs') + '"'
+    $launch.WorkingDirectory = $ProjectRoot
+    $launch.UseShellExecute = $false
+    $launch.CreateNoWindow = $true
+    $launch.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+    $launch.RedirectStandardOutput = $true
+    $launch.RedirectStandardError = $true
+    $launch.EnvironmentVariables['CODEX_BIN'] = $codexPath
+    $launch.EnvironmentVariables['CODEX_BRIDGE_PORT'] = '4599'
+    $launch.EnvironmentVariables['CODEX_BRIDGE_ORIGINS'] = "http://localhost:$WebPort,http://127.0.0.1:$WebPort"
+    $bridge = New-Object Diagnostics.Process
+    $bridge.StartInfo = $launch
+    $bridgeStarted = $false
+    try {
+        if (-not $bridge.Start()) { throw 'Codex bridge process did not start.' }
+        $bridgeStarted = $true
+        $bridgeToken = $null
+        for ($lineIndex = 0; $lineIndex -lt 4; $lineIndex++) {
+            $lineTask = $bridge.StandardOutput.ReadLineAsync()
+            if (-not $lineTask.Wait(5000)) { throw 'Codex bridge startup timed out.' }
+            $line = $lineTask.Result
+            if ($null -eq $line) { throw 'Codex bridge exited during startup.' }
+            if ($line -match '^Local session token: ([A-Za-z0-9_-]{43})$') { $bridgeToken = $Matches[1] }
+        }
+        if (-not $bridgeToken) { throw 'Codex bridge did not return a session token.' }
+        Wait-WorkbenchPort -Port 4599 -TimeoutSeconds 5
+        Write-Host 'Codex bridge: http://127.0.0.1:4599'
+        Write-Host "Local session token: $bridgeToken"
+        Write-Host 'Paste it into the canvas Codex panel. No generation starts until you submit a request.'
+        $bridgeToken = $null
+        return $bridge
+    } catch {
+        if ($bridgeStarted -and -not $bridge.HasExited) { $bridge.Kill(); $bridge.WaitForExit(2000) | Out-Null }
+        $bridge.Dispose()
+        throw
+    }
+}
+
 $projectRoot = Get-WorkbenchProjectRoot
 if (-not $SkipInfra) { & (Join-Path $PSScriptRoot 'start-infra.ps1') }
 Import-WorkbenchEnvironment
@@ -111,6 +162,14 @@ try {
     $frontend = Start-Process -FilePath $nodeBinary -ArgumentList @("`"$viteBinary`"", '--host', '127.0.0.1', '--port', $env:WEB_PORT, '--strictPort') -WorkingDirectory $webRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logRoot 'web.stdout.log') -RedirectStandardError (Join-Path $logRoot 'web.stderr.log')
     $processes += @{name='web';pid=$frontend.Id;startedAt=$frontend.StartTime.ToUniversalTime().ToString('o');path=$nodeBinary}
     Wait-WorkbenchPort -Port ([int]$env:WEB_PORT)
+    if ($WithCodexBridge) {
+        try {
+            $codexBridge = Start-WorkbenchCodexBridge -ProjectRoot $projectRoot -NodeBinary $nodeBinary -WebPort ([int]$env:WEB_PORT)
+            $processes += @{name='codex-bridge';pid=$codexBridge.Id;startedAt=$codexBridge.StartTime.ToUniversalTime().ToString('o');path=$nodeBinary}
+        } catch {
+            Write-Warning "Codex bridge was not started: $($_.Exception.Message) API, Web, MySQL and Redis are unaffected."
+        }
+    }
 } finally {
     if ($processes.Count -gt 0) {
         # Keep prior app records (including different-port dev instances) so a new
@@ -123,4 +182,5 @@ Write-Host "Frontend: http://localhost:$env:WEB_PORT"
 Write-Host "API: http://localhost:$env:APP_PORT/api/bootstrap"
 Write-Host "Logs: $logRoot"
 if (-not $WithBrowserWorker) { Write-Host 'Browser worker was not started. Use -WithBrowserWorker or scripts/start-browser-worker.ps1 when needed.' }
+if (-not $WithCodexBridge) { Write-Host 'Codex bridge was not started. Use -WithCodexBridge or npm run codex:bridge when needed.' }
 Write-Host 'This is a local development server; no 5000-user capacity claim is implied.'

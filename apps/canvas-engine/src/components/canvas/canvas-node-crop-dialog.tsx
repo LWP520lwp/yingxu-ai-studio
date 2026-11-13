@@ -1,9 +1,10 @@
 import {
   useEffect,
+  useId,
   useReducer,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Button, Modal, Segmented } from "antd";
+import { Button, Modal } from "antd";
 import { Check, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -41,6 +42,7 @@ export function CanvasNodeCropDialog({
   onConfirm,
 }: CropDialogProps) {
   const { t } = useTranslation();
+  const presetField = useId();
   const [session, dispatch] = useReducer(
     transitionCropEditorSession,
     undefined,
@@ -122,10 +124,6 @@ export function CanvasNodeCropDialog({
     dispatch({ type: "nudge", direction, coarse: event.shiftKey });
   };
 
-  const changeRatioPreset = (value: string | number) => {
-    dispatch({ type: "choose-preset", preset: String(value), image });
-  };
-
   return (
     <Modal
       title={t("canvas.editors.cropTitle")}
@@ -169,22 +167,16 @@ export function CanvasNodeCropDialog({
           hint={t("canvas.editors.cropHint")}
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2">
-          <div className="flex flex-wrap items-center gap-3 text-sm opacity-80">
-            <span>
+        <fieldset className="grid gap-3 rounded-xl border p-4 sm:grid-cols-[minmax(0,1fr)_210px]">
+          <legend className="px-2 text-xs font-semibold uppercase tracking-wide opacity-60">{t("canvas.editors.adjustCrop")}</legend>
+          <div className="grid gap-1 text-sm tabular-nums" aria-live="polite">
+            <output>
               {t("canvas.editors.cropSize", {
                 size: pixelCrop
                   ? `${pixelCrop.width} x ${pixelCrop.height}`
                   : t("canvas.editors.unknown"),
               })}
-            </span>
-            <span>
-              {t("canvas.editors.ratio", {
-                ratio: pixelCrop
-                  ? cropRatio(pixelCrop.width, pixelCrop.height)
-                  : t("canvas.editors.unknown"),
-              })}
-            </span>
+            </output>
             {image ? (
               <span>
                 {t("canvas.editors.original", {
@@ -194,18 +186,16 @@ export function CanvasNodeCropDialog({
               </span>
             ) : null}
           </div>
-          <Segmented
-            size="small"
-            options={[
-              { label: t("canvas.editors.free"), value: "free" },
-              { label: t("canvas.editors.fixed"), value: "fixed" },
-              { label: t("canvas.editors.originalMode"), value: "original" },
-              ...["1:1", "4:3", "16:9", "9:16"],
-            ]}
-            value={ratioPreset}
-            onChange={changeRatioPreset}
-          />
-        </div>
+          <label htmlFor={presetField} className="flex flex-col justify-center gap-2 text-xs opacity-90">
+            {t("canvas.editors.ratio", { ratio: pixelCrop ? cropRatio(pixelCrop.width, pixelCrop.height) : t("canvas.editors.unknown") })}
+            <select id={presetField} value={ratioPreset}
+              className="h-10 rounded-md border bg-transparent px-3 text-sm"
+              onChange={event => dispatch({ type: "choose-preset", preset: event.target.value, image })}>
+              {(["free", "fixed", "original"] as const).map(value => <option key={value} value={value}>{t(`canvas.editors.${value === "original" ? "originalMode" : value}`)}</option>)}
+              <optgroup label={t("canvas.editors.fixed")}>{["1:1", "4:3", "16:9", "9:16"].map(value => <option key={value} value={value}>{value}</option>)}</optgroup>
+            </select>
+          </label>
+        </fieldset>
 
         <div className="flex items-center justify-end gap-2">
           <Button onClick={() => dispatch({ type: "reset" })}>

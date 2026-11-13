@@ -9,9 +9,9 @@ import {
   runPromptSource,
 } from "@/services/api/prompt-source-runtime";
 import {
-  isHttpUrl,
-  validatePromptSourceDraft,
-} from "@/components/layout/prompt-source-editor-drawer";
+  isPromptSourceAddress,
+  inspectPromptSourceInput,
+} from "@/services/api/prompt-source-input";
 
 describe("prompt source formats and requests", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -121,13 +121,13 @@ describe("prompt source formats and requests", () => {
   });
 
   it("validates only HTTP(S) URLs and trims persisted fields", () => {
-    expect(isHttpUrl("https://example.com/prompts.json")).toBe(true);
-    expect(isHttpUrl("javascript:alert(1)")).toBe(false);
-    expect(isHttpUrl("https://user:secret@example.com/prompts.json")).toBe(
+    expect(isPromptSourceAddress("https://example.com/prompts.json")).toBe(true);
+    expect(isPromptSourceAddress("javascript:alert(1)")).toBe(false);
+    expect(isPromptSourceAddress("https://user:secret@example.com/prompts.json")).toBe(
       false,
     );
     expect(
-      validatePromptSourceDraft(
+      inspectPromptSourceInput(
         createPromptSource({
           name: "  My source ",
           url: " https://example.com/a.json ",
@@ -144,5 +144,17 @@ describe("prompt source formats and requests", () => {
         builtIn: false,
       },
     });
+  });
+
+  it.each(["", "/prompts.json", "file:///catalog.json", "data:application/json,[]", "ftp://example.com/catalog.json", "https://example.com:bad/"])("rejects an unusable catalog address: %s", (address) => {
+    expect(isPromptSourceAddress(address)).toBe(false);
+  });
+
+  it("reports the first invalid field without silently enabling or trusting a custom source", () => {
+    const input = { name: "", url: "invalid", homepage: "invalid", enabled: false, builtIn: true };
+    expect(inspectPromptSourceInput(input)).toEqual({ valid: false, reason: "name" });
+    expect(inspectPromptSourceInput({ ...input, name: "Source" })).toEqual({ valid: false, reason: "url" });
+    expect(inspectPromptSourceInput({ ...input, name: "Source", url: "http://localhost:8080/prompts.json" })).toEqual({ valid: false, reason: "homepage" });
+    expect(inspectPromptSourceInput({ ...input, name: "Source", url: "http://localhost:8080/prompts.json", homepage: "" })).toMatchObject({ valid: true, value: { enabled: false, builtIn: false, homepage: "" } });
   });
 });
