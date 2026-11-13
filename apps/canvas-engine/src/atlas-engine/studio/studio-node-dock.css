@@ -16,7 +16,7 @@
   justify-content: center;
   padding: 4px;
   border: 1px solid var(--studio-border);
-  border-radius: 10px;
+  border-radius: 16px;
   background: var(--studio-surface);
   box-shadow: 0 2px 8px #0002;
   overflow-x: auto;
@@ -33,7 +33,7 @@
   border: 0;
   background: transparent;
   font-size: 11px;
-  border-radius: 5px;
+  border-radius: 11px;
   white-space: nowrap;
   color: var(--studio-secondary);
 }
@@ -51,7 +51,7 @@
   width: 100%;
   overflow: hidden;
   border: 1px solid var(--studio-border);
-  border-radius: 14px;
+  border-radius: 24px;
   background: var(--studio-surface);
   box-shadow: 0 4px 16px #0003;
   pointer-events: auto;

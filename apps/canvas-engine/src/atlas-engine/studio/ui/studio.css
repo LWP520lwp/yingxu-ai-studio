@@ -1156,7 +1156,7 @@ html:not(.dark) .studio-inspector select {
 /* Node surfaces share the shell's neutral palette; media carries the colour. */
 .studio-workspace .studio-node {
   border: 1px solid #42454f;
-  border-radius: 8px;
+  border-radius: var(--studio-node-radius);
   background: #212228;
   color: var(--studio-text);
   box-shadow: 0 2px 5px #0002;
@@ -1169,7 +1169,7 @@ html:not(.dark) .studio-inspector select {
 }
 .studio-workspace .studio-node.is-group {
   border: 1px solid #636773;
-  border-radius: 8px;
+  border-radius: var(--studio-node-radius);
   background: #dce1f008;
   box-shadow: none;
 }
@@ -1210,11 +1210,24 @@ html:not(.dark) .studio-inspector select {
   color: var(--studio-danger);
 }
 .studio-workspace .studio-node-body {
-  border-radius: 0 0 7px 7px;
+  border-radius: 0 0 calc(var(--studio-node-radius) - 1px)
+    calc(var(--studio-node-radius) - 1px);
 }
 .studio-workspace .studio-node-body > img,
 .studio-workspace .studio-node-body > video {
   background: #101115;
+  border-radius: inherit;
+}
+.studio-workspace [data-studio-node="image"] .studio-node-body {
+  align-items: center;
+  justify-content: center;
+}
+.studio-workspace [data-studio-node="image"] .studio-node-body > img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 16px;
 }
 .studio-workspace .studio-node-text {
   padding: 16px;
@@ -1273,7 +1286,11 @@ html:not(.dark) .studio-inspector select {
   outline-offset: 3px;
 }
 .studio-workspace [data-studio-gesture="move"] .studio-node.is-selected,
-.studio-workspace [data-studio-gesture="move"] .studio-node.is-selected .studio-node-heading button {
+.studio-workspace
+  [data-studio-gesture="move"]
+  .studio-node.is-selected
+  .studio-node-heading
+  button {
   cursor: grabbing;
 }
 .studio-workspace [data-studio-gesture="move"] .studio-node.is-selected {
@@ -1295,7 +1312,8 @@ html:not(.dark) .studio-inspector select {
 .studio-workspace .studio-node-error {
   padding: 8px 12px;
   border-top: 1px solid #ad756332;
-  border-radius: 0 0 7px 7px;
+  border-radius: 0 0 calc(var(--studio-node-radius) - 1px)
+    calc(var(--studio-node-radius) - 1px);
   background: #322624;
   color: #e2b6a6;
 }

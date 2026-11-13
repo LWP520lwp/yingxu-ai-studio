@@ -151,6 +151,11 @@ const StudioNode = memo(
     };
     const group = node.type === "group";
     const content = meta.content || "";
+    const generating = meta.status === "loading";
+    const output = meta.generationMode || node.type;
+    const generatingLabel = zh
+      ? `正在生成${output === "video" ? "视频" : output === "audio" ? "音频" : output === "text" ? "文本" : "图片"}`
+      : `Generating ${output === "video" ? "video" : output === "audio" ? "audio" : output === "text" ? "text" : "image"}`;
     return (
       <article
         data-node-id={node.id}
@@ -164,6 +169,7 @@ const StudioNode = memo(
         }}
         onPointerDown={(event) => props.onNodeDown(event, node)}
         tabIndex={0}
+        aria-busy={generating}
         aria-label={`${zh ? "节点" : "Node"}: ${node.title}`}
         onKeyDown={(event) => {
           if (event.target !== event.currentTarget || event.key !== "Enter")
@@ -213,7 +219,8 @@ const StudioNode = memo(
                 : props.onAction("preview", node)
             }
           >
-            {node.type === "text" ? (
+            {generating && node.type !== "text" ? null : node.type ===
+              "text" ? (
               editor === "content" ? (
                 <textarea
                   {...commonEditor}
@@ -283,6 +290,17 @@ const StudioNode = memo(
                   </span>
                 </div>
               )
+            )}
+            {generating && node.type !== "text" && (
+              <div className="studio-generation-status" role="status">
+                <div className="studio-generation-orbit" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                </div>
+                <span>{generatingLabel}</span>
+              </div>
             )}
           </div>
         )}
