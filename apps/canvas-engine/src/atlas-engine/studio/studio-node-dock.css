@@ -1,19 +1,20 @@
 .studio-node-dock {
   position: absolute;
+  inset: 0;
   z-index: 25;
   pointer-events: none;
 }
 .studio-node-quickbar {
+  position: absolute;
   display: flex;
   align-items: center;
   gap: 3px;
   width: max-content;
-  max-width: 100%;
   height: 44px;
-  margin-inline: auto;
+  justify-content: center;
   padding: 4px;
   border: 1px solid var(--studio-border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--studio-surface);
   box-shadow: 0 2px 8px #0002;
   overflow-x: auto;
@@ -46,7 +47,7 @@
   width: 100%;
   overflow: hidden;
   border: 1px solid var(--studio-border);
-  border-radius: 8px;
+  border-radius: 14px;
   background: var(--studio-surface);
   box-shadow: 0 4px 16px #0003;
   pointer-events: auto;
@@ -94,13 +95,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 42px;
+  min-height: 36px;
   flex-shrink: 0;
   padding: 0 12px 0 16px;
   color: var(--studio-text);
-  border-bottom: 1px solid var(--studio-border-soft);
+  border-bottom: none;
   font-size: 12px;
   font-weight: 600;
+}
+.studio-node-composer-header > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .studio-node-composer-tabs {
   display: flex;

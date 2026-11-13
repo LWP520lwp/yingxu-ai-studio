@@ -9,6 +9,7 @@ import {
   Code2,
   Copy,
   Download,
+  Files,
   FolderOpen,
   Frame,
   Fullscreen,
@@ -59,6 +60,8 @@ export type StudioChromeProps = {
   inspector?: ReactNode;
   library?: ReactNode;
   libraryOpen: boolean;
+  drafts?: ReactNode;
+  draftsOpen?: boolean;
   codexOpen: boolean;
   onCodex: () => void;
 };
@@ -140,6 +143,16 @@ export function StudioChrome(props: StudioChromeProps) {
   };
   const zoom = (value: number) =>
     props.onScale(Math.min(3, Math.max(0.1, value)));
+  const leftPanel =
+    props.draftsOpen && props.drafts
+      ? {
+          id: "drafts",
+          label: zh ? "节点草稿" : "Node drafts",
+          content: props.drafts,
+        }
+      : props.libraryOpen && props.library
+        ? { id: "assets", label: c.assets, content: props.library }
+        : null;
   return (
     <main className="studio-workspace" data-studio-workspace>
       <header className="studio-project-bar">
@@ -314,6 +327,12 @@ export function StudioChrome(props: StudioChromeProps) {
         >
           {[
             {
+              command: "drafts",
+              label: zh ? "节点草稿" : "Node drafts",
+              short: zh ? "草稿" : "Drafts",
+              icon: Files,
+            },
+            {
               command: "assets",
               label: c.assets,
               short: zh ? "资产" : "Assets",
@@ -350,11 +369,13 @@ export function StudioChrome(props: StudioChromeProps) {
               aria-label={label}
               title={label}
               aria-pressed={
-                command === "assets" ? props.libraryOpen : undefined
+                command === "assets" || command === "drafts"
+                  ? leftPanel?.id === command
+                  : undefined
               }
               className={cn(
                 "studio-resource-button",
-                command === "assets" && props.libraryOpen && "is-active",
+                leftPanel?.id === command && "is-active",
               )}
               onClick={() => props.onCommand(command)}
             >
@@ -363,9 +384,9 @@ export function StudioChrome(props: StudioChromeProps) {
             </button>
           ))}
         </nav>
-        {props.libraryOpen && props.library && (
-          <aside className="studio-library-region" aria-label={c.assets}>
-            {props.library}
+        {leftPanel && (
+          <aside className="studio-library-region" aria-label={leftPanel.label}>
+            {leftPanel.content}
           </aside>
         )}
         <section

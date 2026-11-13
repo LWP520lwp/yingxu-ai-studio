@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { studioNodePlacement } from "@/atlas-engine/studio/studio-node-placement";
+import {
+  studioNodeEditingView,
+  studioNodePlacement,
+} from "@/atlas-engine/studio/studio-node-placement";
 import { makeStudioNode } from "@/atlas-engine/studio/studio-document";
 
 const viewport = { x: 0, y: 0, k: 1 };
@@ -11,13 +14,30 @@ const node = (x: number, y: number, width = 260, height = 150) => ({
 });
 
 describe("selected node controls in screen space", () => {
+  it("makes room for an oversized node without changing document geometry", () => {
+    const selected = node(300, 100, 360, 900);
+    const original = structuredClone(selected);
+    const size = { width: 800, height: 700 };
+    const view = studioNodeEditingView(selected, viewport, size);
+    const p = studioNodePlacement(selected, view, size)!;
+    expect(p.panelHeight).toBeGreaterThanOrEqual(300);
+    expect(p.panelY).toBeGreaterThan(
+      selected.position.y * view.k + view.y + selected.height * view.k,
+    );
+    expect(view.k).toBeLessThan(1);
+    expect(selected).toEqual(original);
+  });
+  it("preserves the viewport when editing room is sufficient", () => {
+    expect(studioNodeEditingView(node(240, 210), viewport, canvas)).toBe(
+      viewport,
+    );
+  });
   it("keeps a downward composer above the persistent tool dock", () => {
     const placement = studioNodePlacement(node(240, 220), viewport, {
       width: 600,
       height: 560,
     })!;
-    expect(placement.panelBelow).toBe(true);
-    expect(placement.y + 54 + placement.panelHeight).toBeLessThanOrEqual(
+    expect(placement.panelY + placement.panelHeight).toBeLessThanOrEqual(
       560 - 76,
     );
   });
@@ -38,7 +58,9 @@ describe("selected node controls in screen space", () => {
       expect(placement.width).toBe(354);
       expect(placement.y + 44 + 12).toBeCloseTo(210);
       expect(placement.panelBelow).toBe(true);
-      expect(placement.panelHeight).toBe(430);
+      expect(placement.panelY).toBe(372);
+      expect(placement.panelWidth).toBe(680);
+      expect(placement.panelHeight).toBeGreaterThanOrEqual(300);
     },
   );
 
@@ -50,7 +72,7 @@ describe("selected node controls in screen space", () => {
     )!;
     expect(placement.y).toBe(117);
     expect(placement.panelBelow).toBe(true);
-    expect(placement.panelHeight).toBe(430);
+    expect(placement.panelHeight).toBeGreaterThanOrEqual(300);
   });
 
   it("opens the panel upward for nodes near the lower edge", () => {
@@ -61,8 +83,9 @@ describe("selected node controls in screen space", () => {
     )!;
     expect(placement.y).toBe(594);
     expect(placement.panelBelow).toBe(false);
-    expect(placement.panelHeight).toBe(430);
-    expect(placement.y - 12 - placement.panelHeight).toBeGreaterThanOrEqual(12);
+    expect(placement.panelHeight).toBeGreaterThanOrEqual(300);
+    expect(placement.panelY).toBeGreaterThanOrEqual(12);
+    expect(placement.panelY + placement.panelHeight + 12).toBe(placement.y);
   });
 
   it.each([

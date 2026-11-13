@@ -1,0 +1,310 @@
+.studio-prompt-composer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  color: var(--studio-text);
+  background: var(--studio-surface);
+}
+.studio-prompt-references {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 18px 0;
+}
+.studio-prompt-reference-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--studio-muted);
+  font-size: 11px;
+}
+.studio-prompt-reference-items {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px;
+  scrollbar-width: thin;
+}
+.studio-prompt-reference,
+.studio-prompt-add-reference {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  border: 1px solid var(--studio-border);
+  border-radius: 5px;
+  color: var(--studio-secondary);
+  background: var(--studio-raised);
+}
+.studio-prompt-reference img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.studio-prompt-reference > span {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 2px 1px;
+  color: #fff;
+  background: #121416cc;
+  font-size: 8px;
+  line-height: 1.3;
+  text-align: center;
+}
+.studio-prompt-add-reference {
+  width: 30px;
+  height: 30px;
+  border-style: dashed;
+  background: transparent;
+}
+.studio-prompt-overflow {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.studio-prompt-input {
+  display: flex;
+  flex: 1;
+  min-height: 80px;
+  padding: 14px 18px 8px;
+}
+.studio-prompt-input textarea {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 80px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  resize: none;
+  color: var(--studio-text);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.8;
+  scrollbar-width: thin;
+}
+.studio-prompt-input textarea::placeholder {
+  color: var(--studio-muted);
+}
+.studio-prompt-input:focus-within {
+  box-shadow: inset 2px 0 0 var(--studio-border);
+}
+.studio-prompt-error {
+  flex-shrink: 0;
+  max-height: 56px;
+  overflow-y: auto;
+  margin: 0 18px 8px;
+  color: var(--studio-danger, #dd7777);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.studio-prompt-controls {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 8px 14px 14px 18px;
+}
+.studio-prompt-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.studio-prompt-skill,
+.studio-prompt-model,
+.studio-prompt-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 31px;
+  padding: 0 9px;
+  border: 1px solid var(--studio-border-soft);
+  border-radius: 5px;
+  color: var(--studio-secondary);
+  background: transparent;
+  font-size: 11px;
+}
+.studio-prompt-skill > span {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-prompt-model {
+  max-width: 205px;
+}
+.studio-prompt-model select {
+  min-width: 0;
+  max-width: 155px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline-offset: -1px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-overflow: ellipsis;
+  appearance: none;
+}
+.studio-prompt-model option {
+  color: var(--studio-text);
+  background: var(--studio-surface);
+}
+.studio-prompt-options svg {
+  flex-shrink: 0;
+}
+.studio-prompt-setting-unit {
+  padding-left: 6px;
+  border-left: 1px solid var(--studio-border);
+  color: var(--studio-muted);
+  font-variant-numeric: tabular-nums;
+}
+.studio-prompt-skill:hover:not(:disabled),
+.studio-prompt-settings:hover:not(:disabled),
+.studio-prompt-reference:hover,
+.studio-prompt-add-reference:hover {
+  border-color: var(--studio-border);
+  color: var(--studio-text);
+  background: var(--studio-raised);
+}
+.studio-prompt-parameters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 260px;
+  max-width: calc(100vw - 24px);
+  padding: 14px;
+}
+.studio-prompt-parameter-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--studio-border-soft);
+  color: var(--studio-text);
+  font-size: 12px;
+  font-weight: 500;
+}
+.studio-prompt-parameters > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--studio-secondary);
+  font-size: 11px;
+}
+.studio-prompt-parameters :is(select, input) {
+  width: 132px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--studio-border);
+  border-radius: 4px;
+  color: var(--studio-text);
+  background: var(--studio-surface);
+  font: inherit;
+}
+.studio-prompt-parameters > p {
+  margin: 0;
+  color: var(--studio-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.studio-prompt-swap,
+.studio-prompt-configure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  min-height: 28px;
+  padding: 4px 0;
+  border: 0;
+  color: var(--studio-secondary);
+  background: transparent;
+  font-size: 11px;
+  text-align: left;
+}
+.studio-prompt-swap {
+  justify-content: flex-start;
+}
+.studio-prompt-swap[aria-pressed="true"],
+.studio-prompt-swap:hover,
+.studio-prompt-configure:hover {
+  color: var(--studio-text);
+}
+.studio-prompt-configure {
+  padding-top: 12px;
+  border-top: 1px solid var(--studio-border-soft);
+}
+.studio-prompt-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--studio-text);
+  border-radius: 50%;
+  color: var(--studio-surface);
+  background: var(--studio-text);
+}
+.studio-prompt-submit:hover:not(:disabled) {
+  opacity: 0.86;
+}
+.studio-prompt-submit:disabled,
+.studio-prompt-options button:disabled,
+.studio-prompt-options select:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.studio-prompt-submit.is-stop {
+  border-color: var(--studio-border);
+  color: var(--studio-text);
+  background: var(--studio-raised);
+}
+@media (max-width: 600px) {
+  .studio-prompt-references {
+    gap: 8px;
+    padding-inline: 12px;
+  }
+  .studio-prompt-reference-label {
+    font-size: 10px;
+  }
+  .studio-prompt-input {
+    padding-inline: 12px;
+  }
+  .studio-prompt-controls {
+    padding-inline: 12px;
+  }
+  .studio-prompt-model {
+    max-width: 160px;
+  }
+  .studio-prompt-model select {
+    max-width: 110px;
+  }
+  .studio-prompt-skill > span {
+    max-width: 94px;
+  }
+}

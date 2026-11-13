@@ -57,6 +57,7 @@ import type {
   CanvasNodeMetadata,
 } from "@/types/canvas";
 import { useStudioCopy, type StudioCopyKey } from "./copy";
+import { StudioPromptComposer } from "./StudioPromptComposer";
 import "./studio-node-composer.css";
 
 export type StudioInspectorSection =
@@ -452,6 +453,41 @@ export function StudioInspector(props: StudioInspectorProps) {
     </button>
   );
 
+  if (props.compact && section === "compose" && node.type !== "group")
+    return (
+      <div
+        className="studio-inspector studio-inspector-wide"
+        data-studio-inspector-node={node.id}
+        data-inspector-section={section}
+      >
+        <StudioPromptComposer
+          node={node}
+          mode={mode}
+          prompt={prompt}
+          models={models}
+          selectedModel={selectedModel}
+          references={incoming.map((edge) => ({
+            edgeId: edge.id,
+            node: props.nodes.find((entry) => entry.id === edge.fromNodeId),
+          }))}
+          skillName={skill?.name}
+          busy={props.busy}
+          preparing={preparing}
+          generationDisabled={
+            !prompt.trim() ||
+            (Boolean(skillId) && skillLoading) ||
+            !models.some((entry) => entry.available)
+          }
+          error={skillError || metadata.errorDetails}
+          onPrompt={updatePrompt}
+          onMetadata={patchMetadata}
+          onAction={nodeAction}
+          onGenerate={() => void generate()}
+          onStop={() => props.onStop(node.id)}
+        />
+      </div>
+    );
+
   return (
     <div
       className={cn(
@@ -700,15 +736,18 @@ export function StudioInspector(props: StudioInspectorProps) {
                           <Field title={c.duration}>
                             <input
                               type="number"
-                              min={1}
-                              max={60}
+                              min={2}
+                              max={20}
                               value={metadata.seconds || "8"}
                               onChange={(event) => {
                                 const value = event.target.valueAsNumber;
                                 if (Number.isFinite(value))
                                   patchMetadata({
                                     seconds: String(
-                                      Math.min(60, Math.max(1, value)),
+                                      Math.min(
+                                        20,
+                                        Math.max(2, Math.round(value)),
+                                      ),
                                     ),
                                   });
                               }}

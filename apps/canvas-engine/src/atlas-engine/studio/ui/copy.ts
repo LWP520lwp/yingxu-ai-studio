@@ -62,6 +62,8 @@ const zh = {
   content: "文字内容",
   contentPlaceholder: "写下故事、角色设定或你想讲清的一个知识点…",
   prompt: "创作要求",
+  referenceContent: "参考内容",
+  generationParameters: "生成参数",
   promptPlaceholder: "描述主体、场景、动作与镜头；已连接的素材会作为参考。",
   output: "生成内容",
   model: "使用模型",
@@ -199,6 +201,8 @@ const en: Record<keyof typeof zh, string> = {
   content: "Text content",
   contentPlaceholder: "Write a story, define a character, or explore an idea…",
   prompt: "Creative direction",
+  referenceContent: "References",
+  generationParameters: "Generation settings",
   promptPlaceholder:
     "Describe the subject, setting, action, and camera. Connected media supplies the references.",
   output: "Output",

@@ -16,25 +16,58 @@ export function studioNodePlacement(
   if (right < 0 || left > size.width || bottom < 0 || top > size.height)
     return null;
   const width = Math.min(354, Math.max(0, size.width - margin * 2));
-  const x = Math.max(
-    margin,
-    Math.min(size.width - width - margin, (left + right - width) / 2),
-  );
+  const centered = (w: number) =>
+    Math.max(margin, Math.min(size.width - w - margin, (left + right - w) / 2));
+  const x = centered(width);
   const above = top - gap - barHeight;
   const y =
     above >= margin
       ? above
       : Math.min(size.height - barHeight - margin, bottom + gap);
-  // The bottom dock remains clickable while the node composer is open.
   const dockClearance = 76;
-  const belowRoom = size.height - dockClearance - y - barHeight - gap - margin;
-  const aboveRoom = y - gap - margin;
-  const panelBelow = belowRoom >= Math.min(300, aboveRoom);
+  const limit = Math.max(margin, size.height - dockClearance - margin);
+  const barAbove = above >= margin;
+  // The composer is anchored to the node edge, independently of the toolbar.
+  const belowStart = barAbove ? bottom + gap : y + barHeight + gap;
+  const aboveEnd = barAbove ? y - gap : top - gap;
+  const belowRoom = Math.max(0, limit - belowStart);
+  const aboveRoom = Math.max(0, aboveEnd - margin);
+  const panelBelow = belowRoom >= 300 || belowRoom >= aboveRoom;
+  const panelHeight = Math.min(344, panelBelow ? belowRoom : aboveRoom);
+  const panelWidth = Math.min(680, Math.max(0, size.width - margin * 2));
   return {
     x,
     y: Math.max(margin, y),
     width,
+    panelX: centered(panelWidth),
+    panelY: panelBelow ? belowStart : aboveEnd - panelHeight,
+    panelWidth,
     panelBelow,
-    panelHeight: Math.max(0, Math.min(430, panelBelow ? belowRoom : aboveRoom)),
+    panelHeight,
+  };
+}
+
+/** Make room once when opening the editor; subsequent panning remains user controlled. */
+export function studioNodeEditingView(
+  node: CanvasNodeData,
+  view: ViewportTransform,
+  size: { width: number; height: number },
+): ViewportTransform {
+  const place = studioNodePlacement(node, view, size);
+  if (place && place.panelHeight >= 300) return view;
+  const top = 68;
+  const room = Math.max(32, size.height - 76 - 12 - 300 - 12 - top);
+  const k = Math.max(
+    0.12,
+    Math.min(
+      view.k,
+      room / node.height,
+      Math.max(1, size.width - 48) / node.width,
+    ),
+  );
+  return {
+    k,
+    x: size.width / 2 - (node.position.x + node.width / 2) * k,
+    y: top - node.position.y * k,
   };
 }

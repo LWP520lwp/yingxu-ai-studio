@@ -49,6 +49,8 @@ import { createStudioMedia } from "./studio-media";
 import { StudioScene } from "./StudioScene";
 import { StudioContextMenu } from "./StudioContextMenu";
 import { StudioNodeDock, type StudioNodeSection } from "./StudioNodeDock";
+import { studioNodeEditingView } from "./studio-node-placement";
+import { StudioNodeDrafts } from "./StudioNodeDrafts";
 import { StudioChrome } from "./ui/StudioChrome";
 import { StudioInspector } from "./ui/StudioInspector";
 import { useStudioGestures } from "./useStudioGestures";
@@ -116,6 +118,7 @@ export default function StudioWorkspace({
   const [tool, setTool] = useState<"select" | "pan">("pan");
   const [notice, setNotice] = useState("");
   const [library, setLibrary] = useState(() => window.innerWidth >= 1000);
+  const [drafts, setDrafts] = useState(false);
   const [referenceTarget, setReferenceTarget] = useState<string | undefined>();
   const [plugins, setPlugins] = useState(false);
   const [codex, setCodex] = useState(false);
@@ -245,6 +248,40 @@ export default function StudioWorkspace({
       }),
       false,
     );
+  const revealComposer = useCallback(
+    (id: string) => {
+      session.change((current) => {
+        const node = current.nodes.find((entry) => entry.id === id);
+        if (!node) return current;
+        const viewport = studioNodeEditingView(
+          node,
+          current.viewport,
+          sizeRef.current,
+        );
+        return viewport === current.viewport
+          ? current
+          : { ...current, viewport };
+      }, false);
+    },
+    [session],
+  );
+  const focusDraft = (id: string) => {
+    const node = session.read().nodes.find((entry) => entry.id === id);
+    if (!node) return;
+    session.select([id]);
+    session.change(
+      (current) => ({
+        ...current,
+        viewport: studioNodeEditingView(
+          node,
+          fitStudioView([node], size.width, size.height),
+          size,
+        ),
+      }),
+      false,
+    );
+    if (window.innerWidth < 1000) setDrafts(false);
+  };
   const zoom = (scale: number) =>
     session.change((current) => {
       const k = Math.min(3, Math.max(0.12, scale));
@@ -331,6 +368,7 @@ export default function StudioWorkspace({
   const action = (name: string, node: CanvasNodeData) => {
     if (name === "assets-reference") {
       setReferenceTarget(node.id);
+      setDrafts(false);
       setLibrary(true);
       return;
     }
@@ -538,7 +576,12 @@ export default function StudioWorkspace({
       file.current?.click();
     } else if (name === "assets") {
       setReferenceTarget(undefined);
+      setDrafts(false);
       setLibrary((value) => !value);
+    } else if (name === "drafts") {
+      setLibrary(false);
+      setReferenceTarget(undefined);
+      setDrafts((value) => !value);
     } else if (name === "skills" || name === "workflow")
       void openPlatformAction(name).catch(report);
     else if (name === "plugins") setPlugins(true);
@@ -895,6 +938,18 @@ export default function StudioWorkspace({
       codexOpen={codex}
       onCodex={() => setCodex((value) => !value)}
       libraryOpen={library}
+      draftsOpen={drafts}
+      drafts={
+        drafts && (
+          <StudioNodeDrafts
+            nodes={doc.nodes}
+            selection={state.selection}
+            onFocus={focusDraft}
+            onClose={() => setDrafts(false)}
+            onCreate={create}
+          />
+        )
+      }
       library={
         library && (
           <Suspense
@@ -1057,8 +1112,10 @@ export default function StudioWorkspace({
           onAction={action}
           onAssets={() => {
             setReferenceTarget(undefined);
+            setDrafts(false);
             setLibrary(true);
           }}
+          onReveal={revealComposer}
         />
       )}
       {!doc.nodes.length && (
