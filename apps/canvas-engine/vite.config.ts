@@ -10,17 +10,11 @@ export default defineConfig({
     {
       name: "canvas-distribution-notices",
       generateBundle() {
-        const licenses = [
-          ["UPSTREAM-MIT-LICENSE.txt", "legal/UPSTREAM-MIT-LICENSE.txt"],
-          ["PROJECT-LICENSE.txt", "../../LICENSE"],
-        ];
-        for (const [name, source] of licenses) {
-          this.emitFile({
-            type: "asset",
-            fileName: `legal/${name}`,
-            source: readFileSync(resolve(import.meta.dirname, source), "utf8"),
-          });
-        }
+        this.emitFile({
+          type: "asset",
+          fileName: "legal/PROJECT-LICENSE.txt",
+          source: readFileSync(resolve(import.meta.dirname, "../../LICENSE"), "utf8"),
+        });
       },
     },
   ],
