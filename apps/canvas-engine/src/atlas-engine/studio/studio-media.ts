@@ -52,6 +52,7 @@ export type StudioMediaDependencies = {
   edit: typeof requestEdit;
   configuration: typeof buildAtlasGenerationConfig;
   id(): string;
+  center?: () => Position;
 };
 
 const production: StudioMediaDependencies = {
@@ -84,6 +85,7 @@ export function createStudioMedia(
   let disposed = false;
 
   function center(): Position {
+    if (io.center) return io.center();
     const { viewport } = port.read();
     return {
       x: (520 - viewport.x) / viewport.k,
@@ -191,6 +193,7 @@ export function createStudioMedia(
         );
       }
     }
+    return committed;
   }
 
   async function importFiles(input: FileList | File[], replaceId?: string) {
@@ -286,7 +289,7 @@ export function createStudioMedia(
   }
 
   async function insertAsset(payload: InsertAssetPayload) {
-    await transaction(async (signal, save, check) => {
+    return transaction(async (signal, save, check) => {
       const point = center();
       if (payload.kind === "text") {
         port.insert([
@@ -302,18 +305,22 @@ export function createStudioMedia(
         ]);
         return;
       }
-      if (payload.kind === "video") {
+      if (payload.kind === "video" || payload.kind === "audio") {
         port.insert([
           nodeFor(
-            CanvasNodeType.Video,
+            payload.kind === "audio"
+              ? CanvasNodeType.Audio
+              : CanvasNodeType.Video,
             payload.title,
             {
               url: payload.url,
               storageKey: payload.storageKey || "",
-              mimeType: "video/mp4",
+              mimeType:
+                payload.mimeType ||
+                (payload.kind === "audio" ? "audio/mpeg" : "video/mp4"),
               bytes: 0,
-              width: payload.width,
-              height: payload.height,
+              width: payload.kind === "video" ? payload.width : undefined,
+              height: payload.kind === "video" ? payload.height : undefined,
             },
             point,
           ),

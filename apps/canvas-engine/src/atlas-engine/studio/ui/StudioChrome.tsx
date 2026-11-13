@@ -18,7 +18,6 @@ import {
   Map,
   Minus,
   MoreHorizontal,
-  MousePointer2,
   PanelRightClose,
   PanelRightOpen,
   Plus,
@@ -121,9 +120,7 @@ const documentCommands: {
 export function StudioChrome(props: StudioChromeProps) {
   const c = useStudioCopy();
   const [name, setName] = useState(props.title);
-  const [inspectorVisible, setInspectorVisible] = useState(
-    () => typeof window === "undefined" || window.innerWidth >= 850,
-  );
+  const [inspectorVisible, setInspectorVisible] = useState(false);
   const cancelRename = useRef(false);
   useEffect(() => setName(props.title), [props.title]);
   const commitName = () => {
@@ -350,52 +347,47 @@ export function StudioChrome(props: StudioChromeProps) {
               </div>
             )}
             <nav className="studio-tool-rail" aria-label={c.tools}>
-              <div className="studio-tool-cluster">
-                <ToolButton
-                  label={`${c.select} · V`}
-                  icon={MousePointer2}
-                  active={props.tool === "select"}
-                  onClick={() => props.onTool("select")}
-                />
-                <ToolButton
-                  label={`${c.pan} · H`}
-                  icon={Hand}
-                  active={props.tool === "pan"}
-                  onClick={() => props.onTool("pan")}
-                />
-              </div>
-              <div className="studio-rail-divider" />
-              <div className="studio-tool-cluster" aria-label={c.create}>
-                {creationTools.map(({ type, label, icon }) => (
+              <ToolButton
+                label={`${c.pan} · V / H\n${c.panHint}`}
+                icon={Hand}
+                active={props.tool === "pan"}
+                onClick={() => props.onTool("pan")}
+              />
+              <div className="studio-tool-scroll">
+                <div className="studio-rail-divider" />
+                <div className="studio-tool-cluster" aria-label={c.create}>
+                  {creationTools.map(({ type, label, icon }) => (
+                    <ToolButton
+                      key={type}
+                      label={c[label]}
+                      icon={icon}
+                      onClick={() => props.onCreate(type)}
+                    />
+                  ))}
+                </div>
+                <div className="studio-rail-divider" />
+                <div className="studio-tool-cluster">
                   <ToolButton
-                    key={type}
-                    label={c[label]}
-                    icon={icon}
-                    onClick={() => props.onCreate(type)}
+                    label={c.upload}
+                    icon={Upload}
+                    onClick={() => props.onCommand("upload")}
                   />
-                ))}
+                  <ToolButton
+                    label={c.plugins}
+                    icon={Wrench}
+                    onClick={() => props.onCommand("plugins")}
+                  />
+                </div>
               </div>
-              <div className="studio-rail-divider" />
-              <div className="studio-tool-cluster">
-                <ToolButton
-                  label={c.upload}
-                  icon={Upload}
-                  onClick={() => props.onCommand("upload")}
-                />
-                <ToolButton
-                  label={c.assets}
-                  icon={FolderOpen}
-                  onClick={() => props.onCommand("assets")}
-                />
-                <ToolButton
-                  label={c.plugins}
-                  icon={Wrench}
-                  onClick={() => props.onCommand("plugins")}
-                />
-              </div>
-              <span className="studio-rail-signature" aria-hidden="true">
-                YX
-              </span>
+              <button
+                type="button"
+                className="studio-assets-button"
+                onClick={() => props.onCommand("assets")}
+                title={c.assets}
+              >
+                <FolderOpen size={18} strokeWidth={1.7} aria-hidden="true" />
+                <span>{c.assets}</span>
+              </button>
             </nav>
           </div>
         </section>

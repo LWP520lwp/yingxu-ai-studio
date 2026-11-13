@@ -145,6 +145,7 @@ export function StudioInspector(props: StudioInspectorProps) {
   latest.current = props;
   const node = props.node;
   const mode = node ? currentMode(node) : "image";
+  useEffect(() => setTab("compose"), [node?.id, mode]);
 
   useEffect(() => onPlatformInit((init) => setCatalog(init.models)), []);
   useEffect(() => {
@@ -421,7 +422,7 @@ export function StudioInspector(props: StudioInspectorProps) {
         {tab === "compose" ? (
           <>
             {node.type === "text" && (
-              <Field title={c.content}>
+              <Field title={c.content} className="studio-source-text-field">
                 <textarea
                   rows={5}
                   value={metadata.content || ""}

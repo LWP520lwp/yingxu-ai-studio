@@ -273,7 +273,7 @@ export const CanvasEngine = forwardRef<CanvasEngineHandle, Props>(function Canva
           return saved;
         }
         case "assets.upload": return upload(params);
-        case "assets.list": return api(`/assets?projectId=${projectId}`);
+        case "assets.list": return api(params.scope === "account" ? "/assets" : `/assets?projectId=${projectId}`);
         case "jobs.create": {
           if (params.projectId !== projectId) throw new Error("生成目标项目已切换");
           const { idempotencyKey, ...body } = params;

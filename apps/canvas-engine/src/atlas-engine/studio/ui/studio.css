@@ -233,7 +233,8 @@ html:not(.dark) .studio-command-menu {
   position: relative;
 }
 .studio-tool-rail {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   max-width: 100%;
   align-items: center;
   gap: 10px;
@@ -242,11 +243,17 @@ html:not(.dark) .studio-command-menu {
   border-radius: 14px;
   background: var(--studio-surface);
   box-shadow: 0 8px 28px #0003;
+  pointer-events: auto;
+}
+.studio-tool-scroll {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--studio-border) transparent;
-  pointer-events: auto;
 }
 .studio-tool-cluster {
   display: flex;
@@ -265,11 +272,25 @@ html:not(.dark) .studio-command-menu {
   height: 24px;
   background: var(--studio-border);
 }
-.studio-rail-signature {
+.studio-assets-button {
+  display: inline-flex;
+  height: 39px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid var(--studio-border);
+  border-radius: 9px;
+  color: var(--studio-text);
+  background: var(--studio-raised);
+  white-space: nowrap;
+}
+.studio-assets-button:hover {
+  border-color: var(--studio-accent);
+  color: var(--studio-accent);
+}
+.studio-assets-button svg {
   flex-shrink: 0;
-  padding: 0 3px;
-  font-size: 10px;
-  color: var(--studio-muted);
 }
 .studio-canvas-region {
   --studio-dock-clearance: 88px;
@@ -1072,8 +1093,14 @@ html:not(.dark) .studio-inspector select {
   .studio-tool-cluster {
     gap: 3px;
   }
-  .studio-rail-signature {
-    display: none;
+  .studio-tool-scroll {
+    gap: 6px;
+  }
+  .studio-assets-button {
+    height: 35px;
+    gap: 5px;
+    padding: 0 9px;
+    font-size: 11px;
   }
   .studio-selection-strip {
     padding: 3px;

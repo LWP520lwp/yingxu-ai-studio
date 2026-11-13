@@ -1,6 +1,13 @@
 import type { Asset, AssetKind } from "@/stores/use-asset-store";
 
 export type InsertAssetPayload =
+  | {
+      kind: "audio";
+      url: string;
+      title: string;
+      storageKey?: string;
+      mimeType?: string;
+    }
   | { kind: "text"; content: string; title: string }
   | { kind: "image"; dataUrl: string; title: string; storageKey?: string }
   | {
@@ -8,6 +15,7 @@ export type InsertAssetPayload =
       url: string;
       title: string;
       storageKey?: string;
+      mimeType?: string;
       width?: number;
       height?: number;
     };

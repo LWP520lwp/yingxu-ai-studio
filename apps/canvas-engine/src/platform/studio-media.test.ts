@@ -17,7 +17,7 @@ function deferred<T>() {
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
-function fixture(type: CanvasNodeType = CanvasNodeType.Image) {
+function fixture(type: CanvasNodeType = CanvasNodeType.Image, overrides: Partial<StudioMediaDependencies> = {}) {
   const source: CanvasNodeData = { id: "source", type, title: "素材", position: { x: 10, y: 20 }, width: 320, height: 240, metadata: { content: "blob:source", storageKey: "existing", mimeType: type === CanvasNodeType.Image ? "image/png" : "video/mp4" } };
   let document: StudioDocument = { nodes: [source], connections: [], viewport: { x: 0, y: 0, k: 1 }, backgroundMode: "dots", showImageInfo: false };
   let sequence = 0;
@@ -37,6 +37,7 @@ function fixture(type: CanvasNodeType = CanvasNodeType.Image) {
     upscale: async () => "data:image/png;base64,dXBzY2FsZQ==",
     configuration: (config) => config,
     id: () => String(++sequence),
+    ...overrides,
   };
   const media = createStudioMedia(port, () => ({ model: "platform::image" }) as AiConfig, io);
   return { media, io, port, source, image, edit, capture, notice, removeImages, read: () => document,
@@ -93,6 +94,67 @@ describe("independent studio media transactions", () => {
     await f.media.insertAsset({ kind: "image", dataUrl: "blob:asset", title: "已有素材", storageKey: "asset-key" });
     expect(f.image).not.toHaveBeenCalled();
     expect(f.read().nodes[1].metadata).toMatchObject({ storageKey: "asset-key", content: "blob:asset" });
+  });
+
+  it("inserts an audio asset without image conversion and preserves its playable URL and MIME", async () => {
+    const f = fixture();
+    const url = "/api/assets/audio-clip/content";
+    const committed = await f.media.insertAsset({ kind: "audio", url, title: "环境音", storageKey: "audio-key", mimeType: "audio/ogg; codecs=opus" });
+    expect(committed).toBe(true);
+    expect(f.image).not.toHaveBeenCalled();
+    expect(f.read().nodes[1]).toMatchObject({
+      type: CanvasNodeType.Audio,
+      title: "环境音",
+      width: 360,
+      height: 100,
+      metadata: { content: url, storageKey: "audio-key", mimeType: "audio/ogg; codecs=opus", status: "success" },
+    });
+    expect(f.read().connections).toEqual([]);
+    expect(f.removeImages).not.toHaveBeenCalled();
+  });
+
+  it("uses the audio fallback MIME instead of a video MIME when none was supplied", async () => {
+    const f = fixture();
+    expect(await f.media.insertAsset({ kind: "audio", url: "blob:audio", title: "旁白" })).toBe(true);
+    expect(f.read().nodes[1].metadata).toMatchObject({ content: "blob:audio", mimeType: "audio/mpeg" });
+  });
+
+  it("reads the actual canvas center afresh for both text and playable asset insertion", async () => {
+    const center = vi.fn<NonNullable<StudioMediaDependencies["center"]>>()
+      .mockReturnValueOnce({ x: 812.5, y: -160.25 })
+      .mockReturnValueOnce({ x: -224.5, y: 640.75 });
+    const f = fixture(CanvasNodeType.Image, { center });
+    f.mutate(document => ({ ...document, viewport: { x: 500, y: -700, k: 0.5 } }));
+    expect(await f.media.insertAsset({ kind: "text", content: "新的想法", title: "笔记" })).toBe(true);
+    expect(f.read().nodes[1].position).toEqual({ x: 812.5, y: -160.25 });
+    expect(await f.media.insertAsset({ kind: "audio", url: "blob:audio", title: "旁白" })).toBe(true);
+    expect(f.read().nodes[2].position).toEqual({ x: -224.5, y: 640.75 });
+    expect(center).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports failed insertion as false and leaves the document untouched", async () => {
+    const f = fixture();
+    f.image.mockRejectedValueOnce(new Error("asset upload rejected"));
+    expect(await f.media.insertAsset({ kind: "image", dataUrl: "data:image/png;base64,YQ==", title: "失败素材" })).toBe(false);
+    expect(f.read().nodes).toEqual([f.source]);
+    expect(f.notice).toHaveBeenCalledExactlyOnceWith("asset upload rejected");
+  });
+
+  it("returns false after cancellation and rolls back an upload that completes late", async () => {
+    const f = fixture();
+    const gate = deferred<UploadedImage>();
+    f.image.mockReturnValueOnce(gate.promise);
+    const work = f.media.insertAsset({ kind: "image", dataUrl: "data:image/png;base64,YQ==", title: "取消素材" });
+    await vi.waitFor(() => expect(f.image).toHaveBeenCalledOnce());
+    f.media.dispose();
+    expect(f.image.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    gate.resolve(stored("cancelled-asset"));
+    expect(await work).toBe(false);
+    expect(f.read().nodes).toEqual([f.source]);
+    expect(f.removeImages).toHaveBeenCalledExactlyOnceWith(["cancelled-asset"]);
+    expect(f.notice).not.toHaveBeenCalled();
+    expect(await f.media.insertAsset({ kind: "audio", url: "blob:late-audio", title: "已关闭" })).toBe(false);
+    expect(f.read().nodes).toEqual([f.source]);
   });
 
   it("extracts the actual last video frame and connects it to the video", async () => {

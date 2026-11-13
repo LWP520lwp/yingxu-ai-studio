@@ -44,6 +44,22 @@ type Gesture = Start &
     | { kind: "wire"; wire: StudioWire }
   );
 
+/** The hand uses the hit surface; Space and the middle button always navigate. */
+export function studioGestureIntent(input: {
+  tool: "select" | "pan";
+  surface: "canvas" | "node" | "port" | "resize";
+  button: number;
+  shiftKey: boolean;
+  space: boolean;
+}): "pan" | "marquee" | "move" | "wire" | "resize" | "ignore" {
+  if (input.button !== 0 && input.button !== 1) return "ignore";
+  if (input.button === 1 || input.space) return "pan";
+  if (input.surface === "node") return "move";
+  if (input.surface === "port") return "wire";
+  if (input.surface === "resize") return "resize";
+  return input.shiftKey || input.tool === "select" ? "marquee" : "pan";
+}
+
 /** Group membership is a graph: expanding until stable also handles nested imported groups. */
 export function studioMoveSet(
   nodes: readonly CanvasNodeData[],
@@ -406,10 +422,35 @@ export function useStudioGestures(options: Options) {
     };
   }, [clear, containerRef, session, update, world]);
 
-  const pan = (event: ReactMouseEvent | ReactPointerEvent) =>
-    settings.current.tool === "pan" || space.current || event.button === 1;
+  const intent = (
+    event: ReactMouseEvent | ReactPointerEvent,
+    surface: "canvas" | "node" | "port" | "resize",
+  ) => studioGestureIntent({
+    tool: settings.current.tool,
+    surface,
+    button: event.button,
+    shiftKey: event.shiftKey,
+    space: space.current,
+  });
+  const beginPan = (event: ReactMouseEvent | ReactPointerEvent) => {
+    event.stopPropagation();
+    event.preventDefault();
+    start({
+      kind: "pan",
+      client: { x: event.clientX, y: event.clientY },
+      moved: false,
+      pointerId: "pointerId" in event ? event.pointerId : undefined,
+      viewport: { ...session.read().viewport },
+    });
+  };
   const onCanvasDown = (event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0 && event.button !== 1) return;
+    const action = intent(event, "canvas");
+    if (action === "ignore") return;
+    // Pointer events reach the canvas even when a node's mouse handler edits text or media.
+    if (intent(event, "node") === "pan") {
+      beginPan(event);
+      return;
+    }
     const hit = event.target as Element;
     if (
       hit.closest(
@@ -423,7 +464,7 @@ export function useStudioGestures(options: Options) {
       moved: false,
       pointerId: event.pointerId,
     };
-    if (pan(event))
+    if (action === "pan")
       start({ ...base, kind: "pan", viewport: { ...session.read().viewport } });
     else {
       const baseline = event.shiftKey
@@ -434,8 +475,13 @@ export function useStudioGestures(options: Options) {
     }
   };
   const onNodeDown = (event: ReactMouseEvent, node: CanvasNodeData) => {
-    if ((event.button !== 0 && event.button !== 1) || editable(event.target))
+    const action = intent(event, "node");
+    if (action === "ignore") return;
+    if (action === "pan") {
+      beginPan(event);
       return;
+    }
+    if (editable(event.target)) return;
     const hit = event.target as Element;
     if (
       hit.closest("video,audio,a,select,[data-studio-interactive]") ||
@@ -448,10 +494,6 @@ export function useStudioGestures(options: Options) {
       client: { x: event.clientX, y: event.clientY },
       moved: false,
     };
-    if (pan(event)) {
-      start({ ...base, kind: "pan", viewport: { ...session.read().viewport } });
-      return;
-    }
     const selection = new Set(session.snapshot().selection);
     if (event.shiftKey && selection.has(node.id)) {
       selection.delete(node.id);
@@ -483,7 +525,12 @@ export function useStudioGestures(options: Options) {
     nodeId: string,
     side: "source" | "target",
   ) => {
-    if (event.button !== 0) return;
+    const action = intent(event, "port");
+    if (action === "ignore") return;
+    if (action === "pan") {
+      beginPan(event);
+      return;
+    }
     event.stopPropagation();
     event.preventDefault();
     const client = { x: event.clientX, y: event.clientY };
@@ -496,7 +543,12 @@ export function useStudioGestures(options: Options) {
     node: CanvasNodeData,
     corner: StudioCorner,
   ) => {
-    if (event.button !== 0) return;
+    const action = intent(event, "resize");
+    if (action === "ignore") return;
+    if (action === "pan") {
+      beginPan(event);
+      return;
+    }
     event.stopPropagation();
     event.preventDefault();
     session.select([node.id]);

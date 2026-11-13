@@ -31,7 +31,11 @@ import {
   useAtlasNodeRegistryVersion,
 } from "@/atlas-engine/model/node-registry";
 import { ensurePluginsLoaded } from "@/atlas-engine/plugins/loader";
-import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
+import type {
+  CanvasGenerationMode,
+  CanvasNodeData,
+  CanvasNodeMetadata,
+} from "@/types/canvas";
 import {
   StudioSession,
   fitStudioView,
@@ -44,6 +48,7 @@ import { createStudioTasks } from "./studio-tasks";
 import { createStudioMedia } from "./studio-media";
 import { StudioScene } from "./StudioScene";
 import { StudioContextMenu } from "./StudioContextMenu";
+import { StudioNodeDock } from "./StudioNodeDock";
 import { StudioChrome } from "./ui/StudioChrome";
 import { StudioInspector } from "./ui/StudioInspector";
 import { useStudioGestures } from "./useStudioGestures";
@@ -108,7 +113,7 @@ export default function StudioWorkspace({
   configRef.current = config;
   const theme = useThemeStore((store) => store.theme);
   useAtlasNodeRegistryVersion((store) => store.version);
-  const [tool, setTool] = useState<"select" | "pan">("select");
+  const [tool, setTool] = useState<"select" | "pan">("pan");
   const [notice, setNotice] = useState("");
   const [library, setLibrary] = useState(false);
   const [plugins, setPlugins] = useState(false);
@@ -126,6 +131,8 @@ export default function StudioWorkspace({
   const file = useRef<HTMLInputElement>(null);
   const replace = useRef<string | undefined>(undefined);
   const [size, setSize] = useState({ width: 1000, height: 700 });
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
   const life = useRef(true);
   const scope = useRef(getPlatformInit()?.scopeId);
   const alive = useCallback(
@@ -152,7 +159,16 @@ export default function StudioWorkspace({
     [port],
   );
   const media = useMemo(
-    () => createStudioMedia(port, () => configRef.current),
+    () =>
+      createStudioMedia(port, () => configRef.current, {
+        center: () => {
+          const view = session.read().viewport;
+          return {
+            x: (sizeRef.current.width / 2 - view.x) / view.k,
+            y: (sizeRef.current.height / 2 - view.y) / view.k,
+          };
+        },
+      }),
     [port],
   );
   const gestures = useStudioGestures({
@@ -264,7 +280,7 @@ export default function StudioWorkspace({
       node.metadata = { ...definition.defaultMetadata };
     }
     session.insert([node]);
-    setTool("select");
+    setTool("pan");
   };
   const report = (reason: unknown) => {
     if (
@@ -629,7 +645,7 @@ export default function StudioWorkspace({
         setEdit(null);
         return;
       } else if (value === "v") {
-        setTool("select");
+        setTool("pan");
         return;
       } else if (value === "h") {
         setTool("pan");
@@ -796,6 +812,33 @@ export default function StudioWorkspace({
         void tasks.generate(id, mode, prompt).catch(report);
       },
     });
+  const generate = (id: string, mode: CanvasGenerationMode, prompt: string) => {
+    const node = session.read().nodes.find((item) => item.id === id);
+    const catalog = getPlatformInit()?.models;
+    if (node && catalog && (mode === "image" || mode === "video")) {
+      const selectedModel =
+        mode === "image"
+          ? selectImageModel(catalog.image, node.metadata?.model)
+          : selectVideoModel(catalog.video, node.metadata?.model);
+      if (selectedModel)
+        session.metadata(id, { model: `platform::${selectedModel.id}` });
+    }
+    void tasks.generate(id, mode, prompt).catch(report);
+  };
+  const inspector = (
+    <StudioInspector
+      node={selected}
+      nodes={doc.nodes}
+      connections={doc.connections}
+      selectedCount={state.selection.size}
+      busy={selected ? tasks.isRunning(selected.id) : false}
+      onPatch={(id, patch) => session.patch(id, patch)}
+      onMetadata={(id, patch) => session.metadata(id, patch)}
+      onAction={action}
+      onGenerate={generate}
+      onStop={(id) => tasks.stop(id)}
+    />
+  );
   return (
     <StudioChrome
       title={title}
@@ -825,32 +868,7 @@ export default function StudioWorkspace({
       onCodex={() => setCodex((value) => !value)}
       inspector={
         <>
-          <StudioInspector
-            node={selected}
-            nodes={doc.nodes}
-            connections={doc.connections}
-            selectedCount={state.selection.size}
-            busy={selected ? tasks.isRunning(selected.id) : false}
-            onPatch={(id, patch) => session.patch(id, patch)}
-            onMetadata={(id, patch) => session.metadata(id, patch)}
-            onAction={action}
-            onGenerate={(id, mode, prompt) => {
-              const node = session.read().nodes.find((item) => item.id === id);
-              const catalog = getPlatformInit()?.models;
-              if (node && catalog && (mode === "image" || mode === "video")) {
-                const selectedModel =
-                  mode === "image"
-                    ? selectImageModel(catalog.image, node.metadata?.model)
-                    : selectVideoModel(catalog.video, node.metadata?.model);
-                if (selectedModel)
-                  session.metadata(id, {
-                    model: `platform::${selectedModel.id}`,
-                  });
-              }
-              void tasks.generate(id, mode, prompt).catch(report);
-            }}
-            onStop={(id) => tasks.stop(id)}
-          />
+          {inspector}
           {Panel && extension && (
             <section className="studio-extension-panel">
               <button type="button" onClick={() => setPluginPanel(null)}>
@@ -927,6 +945,25 @@ export default function StudioWorkspace({
           />
         </AtlasCanvasViewport>
       </StudioContextMenu>
+      {selected && state.selection.size === 1 && (
+        <StudioNodeDock
+          key={selected.id}
+          node={selected}
+          viewport={doc.viewport}
+          size={size}
+          composer={inspector}
+          onMode={(generationMode) =>
+            session.metadata(selected.id, {
+              generationMode,
+              ...(selected.metadata?.generationMode !== generationMode
+                ? { model: undefined }
+                : {}),
+            })
+          }
+          onAction={action}
+          onAssets={() => setLibrary(true)}
+        />
+      )}
       {!doc.nodes.length && (
         <section className="studio-welcome">
           <span className="studio-welcome-index">01 / CREATIVE SPACE</span>
@@ -1018,9 +1055,22 @@ export default function StudioWorkspace({
       <Suspense fallback={null}>
         {library && (
           <Library
+            nodes={doc.nodes}
+            onUpload={() => {
+              setLibrary(false);
+              replace.current = undefined;
+              file.current?.click();
+            }}
             onClose={() => setLibrary(false)}
-            onInsert={(payload) => {
-              void media.insertAsset(payload).catch(report);
+            onInsert={async (payload) => {
+              const inserted = await media.insertAsset(payload);
+              if (!inserted)
+                throw new Error(
+                  word(
+                    "素材未能加入画布，请检查文件后重试。",
+                    "Could not add this asset. Check the file and retry.",
+                  ),
+                );
               setLibrary(false);
             }}
           />

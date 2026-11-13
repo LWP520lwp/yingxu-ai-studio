@@ -1,9 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { finishStudioWire, studioMarqueeSelection, studioMoveSet, studioResizeGeometry } from "../atlas-engine/studio/useStudioGestures";
+import { finishStudioWire, studioGestureIntent, studioMarqueeSelection, studioMoveSet, studioResizeGeometry } from "../atlas-engine/studio/useStudioGestures";
 import { makeStudioNode, StudioSession, type StudioDocument } from "../atlas-engine/studio/studio-document";
 
 const node = (id: string, x = 0, y = 0, width = 100, height = 100) => ({ ...makeStudioNode("text", x, y, id), id, width, height });
 const documentWith = (...nodes: ReturnType<typeof node>[]): StudioDocument => ({ nodes, connections: [], viewport: { x: 0, y: 0, k: 1 }, backgroundMode: "dots", showImageInfo: true });
+
+describe("smart hand navigation", () => {
+  const hand = { tool: "pan" as const, button: 0, shiftKey: false, space: false };
+
+  it("moves a node with the same hand that pans an empty area", () => {
+    expect(studioGestureIntent({ ...hand, surface: "canvas" })).toBe("pan");
+    expect(studioGestureIntent({ ...hand, surface: "node" })).toBe("move");
+    expect(studioGestureIntent({ ...hand, surface: "node", shiftKey: true })).toBe("move");
+  });
+
+  it("uses Shift and a blank area to select without switching tools", () => {
+    expect(studioGestureIntent({ ...hand, surface: "canvas", shiftKey: true })).toBe("marquee");
+    const prior = new Set(["kept"]);
+    const selected = studioMarqueeSelection([node("picked", 20, 20), node("outside", 500, 500)], { from: { x: 10, y: 10 }, to: { x: 80, y: 80 } }, prior);
+    expect([...selected]).toEqual(["kept", "picked"]);
+    expect([...prior]).toEqual(["kept"]);
+  });
+
+  it.each(["canvas", "node", "port", "resize"] as const)("temporarily navigates over %s with Space or the middle button", surface => {
+    expect(studioGestureIntent({ ...hand, surface, button: 1, shiftKey: true })).toBe("pan");
+    expect(studioGestureIntent({ ...hand, surface, space: true, shiftKey: true })).toBe("pan");
+    expect(studioGestureIntent({ ...hand, surface, button: 2 })).toBe("ignore");
+  });
+
+  it("keeps normal wire, resize and legacy selection gestures available", () => {
+    expect(studioGestureIntent({ ...hand, surface: "port" })).toBe("wire");
+    expect(studioGestureIntent({ ...hand, surface: "resize" })).toBe("resize");
+    expect(studioGestureIntent({ ...hand, surface: "canvas", tool: "select" })).toBe("marquee");
+  });
+});
 
 describe("independent studio gesture geometry", () => {
   it("expands nested groups once and tolerates malformed membership cycles", () => {
