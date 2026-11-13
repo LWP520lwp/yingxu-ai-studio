@@ -5,7 +5,7 @@ import {
   reduceSplitEditorState,
   splitEditorCounts,
   SPLIT_EDITOR_HISTORY_LIMIT,
-} from "@/lib/canvas/canvas-split-editor";
+} from "@/atlas-engine/workflows/image-splitting-editor";
 
 describe("canvas split editor state", () => {
   it("updates grid counts and restores exact parameters through undo and redo", () => {

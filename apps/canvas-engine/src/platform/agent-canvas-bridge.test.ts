@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { executeAgentCanvasTransaction } from "@/lib/agent-canvas-bridge";
-import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import type { CanvasAgentSnapshot } from "@/atlas-engine/agent/canvas-operations";
 import { CanvasNodeType } from "@/types/canvas";
 
 const snapshot = (): CanvasAgentSnapshot => ({

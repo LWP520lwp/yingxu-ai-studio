@@ -1,5 +1,5 @@
 import { CanvasNodeType } from "@/types/canvas";
-import { getNodeDefinition } from "@/lib/canvas/node-registry";
+import { getAtlasNodeDefinition as getNodeDefinition } from "@/atlas-engine/model/node-registry";
 
 import type {
   BuiltinNodeRendererMap,

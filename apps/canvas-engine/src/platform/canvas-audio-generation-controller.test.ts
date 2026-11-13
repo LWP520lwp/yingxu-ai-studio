@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { generateCanvasAudio } from "@/lib/canvas/canvas-audio-generation-controller";
+import { generateAtlasAudio } from "@/atlas-engine/workflows/audio-generation";
 import type { AiConfig } from "@/stores/use-config-store";
 
 const config = { audioFormat: "mp3" } as AiConfig;
 
-describe("generateCanvasAudio", () => {
+describe("generateAtlasAudio", () => {
   it("passes cancellation through generation and stores before publishing", async () => {
     const signal = new AbortController().signal;
     const result = new Blob(["audio"]);
@@ -19,7 +19,7 @@ describe("generateCanvasAudio", () => {
     const store = vi.fn(async () => audio);
     const onAudio = vi.fn();
 
-    await generateCanvasAudio({
+    await generateAtlasAudio({
       config,
       prompt: "Narrate this line",
       signal,
@@ -45,7 +45,7 @@ describe("generateCanvasAudio", () => {
     const onAudio = vi.fn();
 
     await expect(
-      generateCanvasAudio({
+      generateAtlasAudio({
         config,
         prompt: "Narrate this line",
         signal: new AbortController().signal,
@@ -67,7 +67,7 @@ describe("generateCanvasAudio", () => {
     const store = vi.fn();
     const onAudio = vi.fn();
     await expect(
-      generateCanvasAudio({
+      generateAtlasAudio({
         config,
         prompt: "cancelled narration",
         signal: controller.signal,

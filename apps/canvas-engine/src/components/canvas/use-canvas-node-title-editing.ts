@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  createCanvasNodeTitleEdit,
-  reduceCanvasNodeTitleEdit,
-  settleCanvasNodeTitleEdit,
-} from "@/lib/canvas/canvas-node-interaction";
+  beginAtlasTitleEdit,
+  updateAtlasTitleEdit,
+  commitAtlasTitleEdit,
+} from "@/atlas-engine/interaction/node-editing";
 
 type UseCanvasNodeTitleEditingOptions = {
   nodeId: string;
@@ -19,14 +19,12 @@ export function useCanvasNodeTitleEditing({
   onTitleChange,
 }: UseCanvasNodeTitleEditingOptions) {
   const { t } = useTranslation();
-  const [state, setState] = useState(() =>
-    createCanvasNodeTitleEdit(nodeId, title),
-  );
+  const [state, setState] = useState(() => beginAtlasTitleEdit(nodeId, title));
   const stateRef = useRef(state);
   const inputRef = useRef<HTMLInputElement>(null);
   const transition = useCallback(
-    (action: Parameters<typeof reduceCanvasNodeTitleEdit>[1]) => {
-      const next = reduceCanvasNodeTitleEdit(stateRef.current, action);
+    (action: Parameters<typeof updateAtlasTitleEdit>[1]) => {
+      const next = updateAtlasTitleEdit(stateRef.current, action);
       stateRef.current = next;
       setState(next);
     },
@@ -45,7 +43,7 @@ export function useCanvasNodeTitleEditing({
   }, [state.editing]);
 
   const finish = useCallback(() => {
-    const settled = settleCanvasNodeTitleEdit(
+    const settled = commitAtlasTitleEdit(
       stateRef.current,
       t("canvas.node.untitled"),
     );

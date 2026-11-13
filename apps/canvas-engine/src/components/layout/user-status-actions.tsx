@@ -90,7 +90,7 @@ export function UserStatusActions({
     <div className="inline-flex shrink-0 items-center gap-1">
       {onOpenPlugins && (
         <IconAction
-          label="画布节点插件"
+          label={t("canvas.plugins.title")}
           onClick={onOpenPlugins}
           className={compactOnly}
           style={canvasStyle}
@@ -99,7 +99,7 @@ export function UserStatusActions({
         </IconAction>
       )}
       <IconAction
-        label="使用帮助"
+        label={t("topNav.help")}
         onClick={() => setHelpVisible(true)}
         className={compactOnly}
         style={canvasStyle}
@@ -108,7 +108,7 @@ export function UserStatusActions({
       </IconAction>
       {showConfig && (
         <IconAction
-          label="创作设置"
+          label={t("topNav.creationSettings")}
           onClick={() => openConfig(false, "channels")}
           style={canvasStyle}
         >

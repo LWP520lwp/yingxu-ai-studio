@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   canvasToolbarSections,
   toggleCanvasTool,
-} from "@/lib/canvas/canvas-toolbar-model";
+} from "@/atlas-engine/ui/canvas-toolbar-model";
 
 describe("canvas toolbar command plan", () => {
   it("groups editing, creation, and project actions in a stable order", () => {

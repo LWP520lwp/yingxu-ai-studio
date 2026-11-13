@@ -11,17 +11,31 @@ import {
   type WheelEvent,
 } from "react";
 
-type AtlasViewportValue = { x: number; y: number; k: number };
+import {
+  canvasGridStyle,
+  crossedPanThreshold,
+  panCanvasBy,
+  wheelZoomFactor,
+  zoomCanvasAt,
+  type AtlasCanvasBackground,
+  type AtlasCanvasPoint,
+  type AtlasCanvasViewportValue,
+} from "./viewport";
+
 type AtlasTool = "select" | "pan";
-type AtlasBackground = "dots" | "lines" | "blank";
-type ScreenPoint = { x: number; y: number };
+type PanSession = Readonly<{
+  pointerId: number;
+  origin: AtlasCanvasPoint;
+  viewport: AtlasCanvasViewportValue;
+  moved: boolean;
+}>;
 
 type ViewportProps = {
   containerRef: RefObject<HTMLDivElement | null>;
-  viewport: AtlasViewportValue;
+  viewport: AtlasCanvasViewportValue;
   tool: AtlasTool;
-  backgroundMode?: AtlasBackground;
-  onViewportChange: (viewport: AtlasViewportValue) => void;
+  backgroundMode?: AtlasCanvasBackground;
+  onViewportChange: (viewport: AtlasCanvasViewportValue) => void;
   onCanvasMouseDown?: (event: PointerEvent<HTMLDivElement>) => void;
   onCanvasDeselect?: () => void;
   onCanvasDoubleClick?: (event: MouseEvent<HTMLDivElement>) => void;
@@ -30,56 +44,32 @@ type ViewportProps = {
   children: ReactNode;
 };
 
-type PanSession = {
-  pointerId: number;
-  origin: ScreenPoint;
-  viewport: AtlasViewportValue;
-  moved: boolean;
-};
-
-const ZOOM_LIMITS = { min: 0.05, max: 5 } as const;
-
-function finite(value: number) {
-  return Number.isFinite(value);
+function elementFor(target: EventTarget | null): Element | null {
+  return typeof Element !== "undefined" && target instanceof Element
+    ? target
+    : null;
 }
 
-function isOverlayTarget(target: EventTarget | null) {
-  return target instanceof Element && Boolean(
-    target.closest(
-      "[data-canvas-no-zoom],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown",
+function isCanvasControl(target: EventTarget | null) {
+  return Boolean(
+    elementFor(target)?.closest(
+      "[data-canvas-no-zoom],[data-atlas-stop-wheel],input,textarea,select,[contenteditable='true'],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown",
     ),
   );
 }
 
 function isCanvasBackground(target: EventTarget | null) {
-  return !(target instanceof Element && target.closest(
+  return !elementFor(target)?.closest(
     "[data-node-id],[data-connection-id],[data-connection-create-menu],[data-node-create-menu]",
-  ));
-}
-
-function zoomAround(
-  viewport: AtlasViewportValue,
-  anchor: ScreenPoint,
-  factor: number,
-): AtlasViewportValue {
-  if (![viewport.x, viewport.y, viewport.k, anchor.x, anchor.y, factor].every(finite) || factor <= 0)
-    return viewport;
-  const nextScale = Math.max(
-    ZOOM_LIMITS.min,
-    Math.min(ZOOM_LIMITS.max, viewport.k * factor),
   );
-  const ratio = nextScale / viewport.k;
-  return {
-    k: nextScale,
-    x: anchor.x - (anchor.x - viewport.x) * ratio,
-    y: anchor.y - (anchor.y - viewport.y) * ratio,
-  };
 }
 
-function translate(viewport: AtlasViewportValue, delta: ScreenPoint): AtlasViewportValue {
-  return finite(delta.x) && finite(delta.y)
-    ? { ...viewport, x: viewport.x + delta.x, y: viewport.y + delta.y }
-    : viewport;
+function isSpaceEditableTarget(target: EventTarget | null) {
+  if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement))
+    return false;
+  return (
+    target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)
+  );
 }
 
 export function AtlasCanvasViewport({
@@ -96,12 +86,16 @@ export function AtlasCanvasViewport({
   children,
 }: ViewportProps) {
   const current = useRef(viewport);
-  const pending = useRef<AtlasViewportValue | undefined>(undefined);
+  const queued = useRef<AtlasCanvasViewportValue | undefined>(undefined);
   const frame = useRef<number | undefined>(undefined);
   const pan = useRef<PanSession | undefined>(undefined);
   const publish = useRef(onViewportChange);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const grid = useMemo(
+    () => canvasGridStyle(viewport, backgroundMode),
+    [backgroundMode, viewport],
+  );
 
   useEffect(() => {
     current.current = viewport;
@@ -111,62 +105,63 @@ export function AtlasCanvasViewport({
     publish.current = onViewportChange;
   }, [onViewportChange]);
 
-  const schedule = (next: AtlasViewportValue) => {
-    current.current = next;
-    pending.current = next;
-    if (frame.current !== undefined) return;
-    frame.current = requestAnimationFrame(() => {
-      frame.current = undefined;
-      const value = pending.current;
-      pending.current = undefined;
-      if (value) publish.current(value);
-    });
-  };
-
-  useEffect(() => () => {
-    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
-  }, []);
-
   useEffect(() => {
+    const flush = () => {
+      frame.current = undefined;
+      const next = queued.current;
+      queued.current = undefined;
+      if (next) publish.current(next);
+    };
+    const resetPan = () => {
+      pan.current = undefined;
+      setDragging(false);
+      setSpaceHeld(false);
+      document.body.style.cursor = "";
+    };
     const keyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || event.repeat) return;
-      const target = event.target;
-      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (
+        event.code !== "Space" ||
+        event.repeat ||
+        isSpaceEditableTarget(event.target)
+      )
+        return;
       event.preventDefault();
       setSpaceHeld(true);
     };
     const keyUp = (event: KeyboardEvent) => {
       if (event.code === "Space") setSpaceHeld(false);
     };
-    const reset = () => {
-      pan.current = undefined;
-      setDragging(false);
-      document.body.style.cursor = "";
-    };
+
     window.addEventListener("keydown", keyDown);
     window.addEventListener("keyup", keyUp);
-    window.addEventListener("blur", reset);
+    window.addEventListener("blur", resetPan);
     return () => {
       window.removeEventListener("keydown", keyDown);
       window.removeEventListener("keyup", keyUp);
-      window.removeEventListener("blur", reset);
+      window.removeEventListener("blur", resetPan);
+      if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+      frame.current = undefined;
+      queued.current = undefined;
+      document.body.style.cursor = "";
     };
   }, []);
 
-  const grid = useMemo(() => {
-    if (backgroundMode === "blank") return undefined;
-    const step = 48 * viewport.k * (viewport.k < 0.25 ? 4 : 1);
-    const radius = viewport.k < 0.12 ? 0.8 : 1.15;
-    return {
-      size: step,
-      position: `${viewport.x % step}px ${viewport.y % step}px`,
-      image: backgroundMode === "dots"
-        ? `radial-gradient(circle, var(--atlas-grid-dot, #6f86ad) ${radius}px, transparent ${radius + 0.2}px)`
-        : "linear-gradient(var(--atlas-grid-line, #263452) 1px, transparent 1px), linear-gradient(90deg, var(--atlas-grid-line, #263452) 1px, transparent 1px)",
-    };
-  }, [backgroundMode, viewport.k, viewport.x, viewport.y]);
+  const schedule = (next: AtlasCanvasViewportValue) => {
+    current.current = next;
+    queued.current = next;
+    if (frame.current !== undefined) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = undefined;
+      const pending = queued.current;
+      queued.current = undefined;
+      if (pending) publish.current(pending);
+    });
+  };
 
-  const pointInCanvas = (event: { clientX: number; clientY: number }) => {
+  const canvasPoint = (event: {
+    clientX: number;
+    clientY: number;
+  }): AtlasCanvasPoint => {
     const rect = containerRef.current?.getBoundingClientRect();
     return {
       x: event.clientX - (rect?.left ?? 0),
@@ -175,19 +170,42 @@ export function AtlasCanvasViewport({
   };
 
   const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (isOverlayTarget(event.target)) return;
+    if (isCanvasControl(event.target)) return;
     event.preventDefault();
-    schedule(zoomAround(current.current, pointInCanvas(event), Math.exp(-event.deltaY * 0.0015)));
+    schedule(
+      zoomCanvasAt(
+        current.current,
+        canvasPoint(event),
+        wheelZoomFactor(
+          event.deltaY,
+          event.deltaMode,
+          event.currentTarget.clientHeight,
+        ),
+      ),
+    );
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (isOverlayTarget(event.target)) return;
+    if (
+      isCanvasControl(event.target) ||
+      elementFor(event.target)?.closest("[data-connection-create-menu]")
+    )
+      return;
     const background = isCanvasBackground(event.target);
-    const shouldPan = event.button === 1 || (event.button === 0 && background && (spaceHeld || (tool === "pan" && !event.ctrlKey && !event.shiftKey)));
+    const shouldPan =
+      event.button === 1 ||
+      (event.button === 0 &&
+        background &&
+        (spaceHeld || (tool === "pan" && !event.ctrlKey && !event.shiftKey)));
     if (shouldPan) {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
-      pan.current = { pointerId: event.pointerId, origin: { x: event.clientX, y: event.clientY }, viewport: current.current, moved: false };
+      pan.current = {
+        pointerId: event.pointerId,
+        origin: { x: event.clientX, y: event.clientY },
+        viewport: current.current,
+        moved: false,
+      };
       setDragging(true);
       document.body.style.cursor = "grabbing";
       return;
@@ -202,15 +220,32 @@ export function AtlasCanvasViewport({
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
     const active = pan.current;
     if (!active || active.pointerId !== event.pointerId) return;
-    const delta = { x: event.clientX - active.origin.x, y: event.clientY - active.origin.y };
-    if (Math.abs(delta.x) + Math.abs(delta.y) > 3) active.moved = true;
-    schedule(translate(active.viewport, delta));
+    const delta = {
+      x: event.clientX - active.origin.x,
+      y: event.clientY - active.origin.y,
+    };
+    if (
+      !active.moved &&
+      !crossedPanThreshold(active.origin, {
+        x: event.clientX,
+        y: event.clientY,
+      })
+    )
+      return;
+    if (!active.moved) pan.current = { ...active, moved: true };
+    schedule(panCanvasBy(active.viewport, delta));
   };
 
   const finishPointer = (event: PointerEvent<HTMLDivElement>) => {
-    const active = pan.current;
-    if (!active || active.pointerId !== event.pointerId) return;
-    if (!active.moved) onCanvasDeselect?.();
+    if (pan.current?.pointerId !== event.pointerId) return;
+    if (!pan.current.moved) onCanvasDeselect?.();
+    pan.current = undefined;
+    setDragging(false);
+    document.body.style.cursor = "";
+  };
+
+  const cancelPointer = (event: PointerEvent<HTMLDivElement>) => {
+    if (pan.current?.pointerId !== event.pointerId) return;
     pan.current = undefined;
     setDragging(false);
     document.body.style.cursor = "";
@@ -221,21 +256,44 @@ export function AtlasCanvasViewport({
       ref={containerRef}
       data-canvas-viewport
       className="atlas-canvas-viewport relative h-full w-full select-none overflow-hidden"
-      style={{ background: "var(--atlas-canvas-bg, #0b1020)", cursor: dragging ? "grabbing" : (tool === "pan" || spaceHeld ? "grab" : undefined), touchAction: "none" }}
+      style={{
+        background: "var(--atlas-canvas-bg, #0b1020)",
+        cursor: dragging
+          ? "grabbing"
+          : tool === "pan" || spaceHeld
+            ? "grab"
+            : undefined,
+        touchAction: "none",
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishPointer}
-      onPointerCancel={finishPointer}
+      onPointerCancel={cancelPointer}
+      onLostPointerCapture={cancelPointer}
       onDoubleClick={(event) => {
-        if (!isOverlayTarget(event.target) && isCanvasBackground(event.target)) onCanvasDoubleClick?.(event);
+        if (!isCanvasControl(event.target) && isCanvasBackground(event.target))
+          onCanvasDoubleClick?.(event);
       }}
       onWheel={handleWheel}
       onContextMenu={onContextMenu}
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
+      tabIndex={0}
     >
-      {grid ? <div className="pointer-events-none absolute inset-0 opacity-40" style={{ backgroundImage: grid.image, backgroundSize: `${grid.size}px ${grid.size}px`, backgroundPosition: grid.position }} /> : null}
-      <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate3d(${viewport.x}px, ${viewport.y}px, 0) scale(${viewport.k})`, willChange: dragging ? "transform" : undefined }}>
+      {grid ? (
+        <div
+          className="pointer-events-none absolute inset-0 opacity-40"
+          style={grid}
+        />
+      ) : null}
+      <div
+        data-atlas-world
+        className="absolute inset-0 origin-top-left"
+        style={{
+          transform: `translate3d(${viewport.x}px, ${viewport.y}px, 0) scale(${viewport.k})`,
+          willChange: dragging ? "transform" : undefined,
+        }}
+      >
         {children}
       </div>
     </div>

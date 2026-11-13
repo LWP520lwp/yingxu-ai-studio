@@ -30,8 +30,8 @@ vi.mock("@/i18n", () => ({
             : key,
   },
 }));
-vi.mock("@/lib/canvas/node-registry", () => ({
-  getNodeDefinition: (type: string) => harness.definitions.get(type),
+vi.mock("@/atlas-engine/model/node-registry", () => ({
+  getAtlasNodeDefinition: (type: string) => harness.definitions.get(type),
 }));
 vi.mock("@/services/image-storage", () => ({
   imageToDataUrl: vi.fn(
@@ -46,8 +46,8 @@ import {
   buildNodeResponseMessages,
   frameReferenceIssue,
   hydrateNodeGenerationContext,
-} from "@/components/canvas/canvas-node-generation";
-import { createCanvasResourceIndex } from "@/lib/canvas/canvas-resource-references";
+} from "@/atlas-engine/workflows/node-generation-context";
+import { createCanvasResourceIndex } from "@/atlas-engine/model/resource-references";
 import { imageToDataUrl } from "@/services/image-storage";
 
 const node = (

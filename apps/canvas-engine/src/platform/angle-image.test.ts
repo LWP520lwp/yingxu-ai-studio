@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  applyAngleImageResult,
-  createAngleImageDraft,
-} from "@/product-engine/angle-image";
+  applyAtlasAngleImageResult as applyAngleImageResult,
+  createAtlasAngleImageDraft as createAngleImageDraft,
+} from "@/atlas-engine/workflows/media-operations";
 import { CanvasNodeType } from "@/types/canvas";
 
 describe("angle image lifecycle", () => {

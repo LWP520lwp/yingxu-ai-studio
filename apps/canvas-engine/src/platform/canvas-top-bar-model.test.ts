@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  canvasTopBarMenuActionIds,
-  canvasTopBarMenuGroups,
-  canvasTopBarPanelTabs,
-} from "@/product-engine/canvas-top-bar-model";
+  atlasTopBarActionIds as canvasTopBarMenuActionIds,
+  atlasTopBarMenuGroups as canvasTopBarMenuGroups,
+  atlasPanelTabs as canvasTopBarPanelTabs,
+} from "@/atlas-engine/ui/top-bar-model";
 
 describe("canvas top bar model", () => {
   it("keeps panel choices in their presentation order", () => {
@@ -31,7 +31,7 @@ describe("canvas top bar model", () => {
     expect(new Set(canvasTopBarMenuActionIds()).size).toBe(9);
 
     const commands = canvasTopBarMenuGroups.flatMap((group) =>
-      group.map(({ command }) => command),
+      group.map(({ action }) => action),
     );
     expect(commands).toEqual([
       "home",

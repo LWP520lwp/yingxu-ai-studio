@@ -1,4 +1,4 @@
-import type { CanvasComposition } from "@/lib/canvas/canvas-composition";
+import type { AtlasComposition } from "@/atlas-engine/workflows/video-composition";
 
 import type { Position } from "./geometry";
 
@@ -121,7 +121,7 @@ export type CanvasNodeMediaMetadata = {
 export type CanvasNodeGroupingMetadata = {
   groupId?: string;
   interactive?: boolean;
-  composition?: CanvasComposition;
+  composition?: AtlasComposition;
 };
 
 export type CanvasNodeMetadata =

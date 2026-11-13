@@ -13,7 +13,7 @@ import { useTranslation } from "react-i18next";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { ContextMenuState } from "@/types/canvas";
-import type { VideoFramePosition } from "@/lib/canvas/canvas-video-frame";
+import type { AtlasVideoFramePosition as VideoFramePosition } from "@/atlas-engine/workflows/video-frame";
 
 type Props = {
   menu: ContextMenuState;

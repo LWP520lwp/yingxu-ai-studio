@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  MAX_IMAGE_SPLIT_LINES,
-  boundedAngle,
-  normalizeCropRect,
-  normalizeSplitLines,
-  resolveUpscaleDimensions,
-} from "@/lib/canvas/canvas-image-geometry";
+  ATLAS_MAX_SPLIT_MARKS as MAX_IMAGE_SPLIT_LINES,
+  atlasBoundedAngle as boundedAngle,
+  normalizeAtlasCropPixels as normalizeCropRect,
+  normalizeAtlasSplitMarks as normalizeSplitLines,
+  atlasUpscaleDimensions as resolveUpscaleDimensions,
+} from "@/atlas-engine/surface/image-editing-geometry";
 
 describe("canvas image geometry", () => {
   it("clamps crop pixels to a non-empty rectangle inside the source", () => {

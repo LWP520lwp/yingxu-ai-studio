@@ -8,17 +8,18 @@ import {
   type AgentReasoningEffort,
 } from "@/lib/agent-preferences";
 import {
-  appendRecent,
-  constrainAgentStorePatch,
+  createIdleAtlasAgentConversation,
   decideAgentConnection,
+  reduceAtlasAgentStore,
   restoreAgentPanelWidth,
   transitionAgentPanel,
-} from "@/product-engine/agent-panel-state";
+  type AtlasAgentConversation,
+} from "@/atlas-engine/agent/store-state";
 import type {
   CanvasAgentOp,
   CanvasAgentSnapshot,
-} from "@/lib/canvas/canvas-agent-ops";
-import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+} from "@/atlas-engine/agent/canvas-operations";
+import type { CanvasResourceReference } from "@/atlas-engine/model/resource-references";
 
 export type AgentChatRole = "user" | "assistant" | "system" | "tool" | "error";
 
@@ -147,24 +148,9 @@ export interface AgentBootstrapStatus {
   status: "running" | "ready" | "error";
 }
 
-export interface AgentConversationState {
-  revision: number;
-  conversationId: string;
-  threadId: string;
-  status: "idle" | "preparing" | "ready" | "warning" | "running" | "failed";
-  mcpStatuses: Record<
-    string,
-    {
-      status: "starting" | "ready" | "failed" | "cancelled";
-      error?: string | null;
-      failureReason?: string | null;
-    }
-  >;
-  sourceClientId?: string;
-  error?: string;
-}
+export type AgentConversationState = AtlasAgentConversation;
 
-export type AgentPanelTab = "chat" | "setup" | "history" | "skills" | "log";
+export type AgentPanelTab = "chat" | "setup" | "history" | "log";
 
 interface AgentPanelState {
   width: number;
@@ -266,16 +252,6 @@ function readPanelWidth() {
   return PANEL_WIDTH.default;
 }
 
-function idleConversation(): AgentConversationState {
-  return {
-    revision: 0,
-    conversationId: "",
-    threadId: "",
-    status: "idle",
-    mcpStatuses: {},
-  };
-}
-
 function initialAgentState(): AgentState {
   return {
     width: readPanelWidth(),
@@ -308,7 +284,7 @@ function initialAgentState(): AgentState {
     models: [],
     model: browserPreferences.model,
     reasoningEffort: browserPreferences.reasoningEffort,
-    conversation: idleConversation(),
+    conversation: createIdleAtlasAgentConversation(),
     bootstrapStatus: null,
     mcpStartupStatuses: {},
     pendingTool: null,
@@ -331,7 +307,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   setAgentState: (patch) =>
     set((current) =>
-      constrainAgentStorePatch(current, patch, {
+      reduceAtlasAgentStore(current, { type: "patch", patch }, {
         ...HISTORY_LIMITS,
         panelWidth: PANEL_WIDTH,
       }),
@@ -340,7 +316,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   openPanel: () => {
     clearPendingClose();
     closeRevision += 1;
-    set((state) => transitionAgentPanel(state, "open"));
+    set((state) => reduceAtlasAgentStore(state, {
+      type: "panel",
+      transition: "open",
+    }, { ...HISTORY_LIMITS, panelWidth: PANEL_WIDTH }));
   },
 
   closePanel: () => {
@@ -355,7 +334,10 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     closeTimer = setTimeout(() => {
       if (revision !== closeRevision) return;
       closeTimer = null;
-      set((state) => transitionAgentPanel(state, "finish-close"));
+      set((state) => reduceAtlasAgentStore(state, {
+        type: "panel",
+        transition: "finish-close",
+      }, { ...HISTORY_LIMITS, panelWidth: PANEL_WIDTH }));
     }, CANVAS_AGENT_PANEL_MOTION_MS);
   },
 
@@ -389,28 +371,27 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   },
 
   disconnectAgent: (patch = {}) => {
-    set({
-      enabled: false,
-      connected: false,
-      silentConnect: false,
-      fragmentBootstrap: false,
+    set((state) => reduceAtlasAgentStore(state, {
+      type: "disconnect",
       activity: i18n.t("agent.state.offline"),
-      conversation: idleConversation(),
-      bootstrapStatus: null,
-      mcpStartupStatuses: {},
-      ...patch,
-    });
+      conversation: createIdleAtlasAgentConversation(),
+      patch,
+    }, { ...HISTORY_LIMITS, panelWidth: PANEL_WIDTH }));
   },
 
   addMessage: (item) =>
-    set((state) => ({
-      messages: appendRecent(state.messages, item, HISTORY_LIMITS.messages),
-    })),
+    set((state) => reduceAtlasAgentStore(state, {
+      type: "message",
+      item,
+    }, { ...HISTORY_LIMITS, panelWidth: PANEL_WIDTH })),
 
   addEventLog: (item) =>
-    set((state) => ({
-      eventLogs: appendRecent(state.eventLogs, item, HISTORY_LIMITS.eventLogs),
-    })),
+    set((state) => reduceAtlasAgentStore(state, {
+      type: "event",
+      item,
+    }, { ...HISTORY_LIMITS, panelWidth: PANEL_WIDTH })),
 
-  clearEventLogs: () => set({ eventLogs: [] }),
+  clearEventLogs: () => set((state) => reduceAtlasAgentStore(state, {
+    type: "clear-events",
+  }, { ...HISTORY_LIMITS, panelWidth: PANEL_WIDTH })),
 }));

@@ -5,7 +5,7 @@ import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import {
   normalizeReasoningEffort,
   REASONING_EFFORTS,
-} from "@/lib/canvas/text-generation-settings";
+} from "@/atlas-engine/ui/text-generation-settings";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig, ReasoningEffort } from "@/stores/use-config-store";
 

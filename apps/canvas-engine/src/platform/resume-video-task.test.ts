@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  resumeCanvasVideoTask,
-  videoTaskFailureMetadata,
-  type ResumeVideoTaskPorts,
-} from "@/product-engine/resume-video-task";
+  resumeAtlasVideoTask as resumeCanvasVideoTask,
+  atlasVideoTaskFailureMetadata as videoTaskFailureMetadata,
+  type AtlasVideoTaskPorts as ResumeVideoTaskPorts,
+} from "@/atlas-engine/workflows/video-task";
 import { defaultConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -31,12 +31,12 @@ function ports(overrides: Partial<ResumeVideoTaskPorts> = {}) {
       width: 1280,
       height: 720,
     })),
-    canWrite: vi.fn(() => true),
-    writeNode: vi.fn((nodeId, _controller, update) => {
+    ownsNode: vi.fn(() => true),
+    updateNode: vi.fn((nodeId, _controller, update) => {
       expect(nodeId).toBe("video-1");
       update([node()]);
     }),
-    applyVideo: vi.fn((current, video, metadata) => ({
+    createCompletedNode: vi.fn((current, video, metadata) => ({
       ...current,
       metadata: { ...current.metadata, ...metadata, content: video.url },
     })),
@@ -77,8 +77,8 @@ describe("resumable canvas video task", () => {
 
     expect(operations.waitForTask).toHaveBeenCalledOnce();
     expect(operations.storeVideo).toHaveBeenCalledOnce();
-    expect(operations.writeNode).toHaveBeenCalledOnce();
-    expect(operations.applyVideo).toHaveBeenCalledWith(
+    expect(operations.updateNode).toHaveBeenCalledOnce();
+    expect(operations.createCompletedNode).toHaveBeenCalledWith(
       expect.objectContaining({ id: "video-1" }),
       expect.objectContaining({ url: "/stored.mp4" }),
       {
@@ -95,7 +95,7 @@ describe("resumable canvas video task", () => {
   });
 
   it("does not store or write a result after the request loses node ownership", async () => {
-    const operations = ports({ canWrite: vi.fn(() => false) });
+    const operations = ports({ ownsNode: vi.fn(() => false) });
     const controller = new AbortController();
 
     await expect(
@@ -109,7 +109,7 @@ describe("resumable canvas video task", () => {
     ).resolves.toBe(false);
 
     expect(operations.storeVideo).not.toHaveBeenCalled();
-    expect(operations.writeNode).not.toHaveBeenCalled();
+    expect(operations.updateNode).not.toHaveBeenCalled();
   });
 
   it("stops before storage when cancellation arrives with the poll response", async () => {
@@ -132,7 +132,7 @@ describe("resumable canvas video task", () => {
     ).rejects.toMatchObject({ name: "AbortError" });
 
     expect(operations.storeVideo).not.toHaveBeenCalled();
-    expect(operations.writeNode).not.toHaveBeenCalled();
+    expect(operations.updateNode).not.toHaveBeenCalled();
   });
 
   it("leaves task persistence to the caller and rejects storage failures", async () => {
@@ -155,7 +155,7 @@ describe("resumable canvas video task", () => {
     ).rejects.toThrow("asset storage unavailable");
 
     expect(current.metadata?.videoTaskId).toBe("task-1");
-    expect(operations.writeNode).not.toHaveBeenCalled();
+    expect(operations.updateNode).not.toHaveBeenCalled();
   });
 });
 

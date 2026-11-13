@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  retryCanvasNode,
-  type CanvasRetryDependencies,
-} from "@/lib/canvas/canvas-retry-controller";
-import { createCanvasGenerationSession } from "@/lib/canvas/canvas-generation-session";
+  retryAtlasCanvasNode as retryCanvasNode,
+  type AtlasRetryDependencies as CanvasRetryDependencies,
+} from "@/atlas-engine/workflows/generation-retry";
+import { createAtlasGenerationSession as createCanvasGenerationSession } from "@/atlas-engine/workflows/generation-session";
 import { defaultConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -68,6 +68,51 @@ describe("retryCanvasNode", () => {
       "canvas.projectPage.retryPromptMissing",
     );
     expect(deps.startGenerationRequest).not.toHaveBeenCalled();
+  });
+
+  it("reports missing saved edit references without starting a request", async () => {
+    let currentNodes = [
+      {
+        ...emptyNode(CanvasNodeType.Image),
+        metadata: {
+          generationType: "edit",
+          model: "saved-image-model",
+          prompt: "Edit the saved image",
+          references: [],
+          images: [
+            {
+              id: "retry-me",
+              status: "error",
+              content: "",
+              naturalWidth: 0,
+              naturalHeight: 0,
+              bytes: 0,
+              mimeType: "image/png",
+            },
+          ],
+        },
+      },
+    ] as CanvasNodeData[];
+    const setNodes = vi.fn(
+      (update: (nodes: CanvasNodeData[]) => CanvasNodeData[]) => {
+        currentNodes = update(currentNodes);
+      },
+    );
+    const deps = dependencies({
+      nodesRef: { current: currentNodes },
+      setNodes: setNodes as never,
+    });
+
+    await retryCanvasNode(currentNodes[0], "retry-me", deps);
+
+    expect(deps.notifyError).toHaveBeenCalledWith(
+      "canvas.projectPage.referenceMissing",
+    );
+    expect(deps.startGenerationRequest).not.toHaveBeenCalled();
+    expect(currentNodes[0].metadata?.images?.[0]).toMatchObject({
+      status: "error",
+      errorDetails: "canvas.projectPage.referenceMissing",
+    });
   });
 
   it("retries one output using its saved model and preserves sibling variants", async () => {
@@ -170,5 +215,46 @@ describe("retryCanvasNode", () => {
 
     expect(deps.notifyError).not.toHaveBeenCalled();
     expect(currentNodes[0].metadata?.images?.[0]?.status).toBe("loading");
+  });
+
+  it("marks the retry target and reports ordinary provider failures", async () => {
+    const session = createCanvasGenerationSession();
+    let currentNodes = [
+      {
+        ...emptyNode(CanvasNodeType.Image),
+        metadata: {
+          generationType: "generation",
+          model: "saved-image-model",
+          prompt: "retry prompt",
+          images: [{ id: "retry-me", status: "error", content: "" }],
+        },
+      },
+    ] as CanvasNodeData[];
+    const deps = dependencies({
+      nodesRef: { current: currentNodes },
+      generationRequests: session,
+      startGenerationRequest: (target, origin, running, controller) =>
+        session.begin(target, origin, running, controller),
+      finishGenerationRequest: (target, controller) =>
+        session.finish(target, controller),
+      setNodesForGeneration: (target, controller, update) => {
+        if (session.canWrite(target, controller))
+          currentNodes = update(currentNodes);
+      },
+      providers: {
+        requestGeneration: vi.fn(async () => {
+          throw new Error("provider unavailable");
+        }),
+      } as never,
+    });
+
+    await retryCanvasNode(currentNodes[0], "retry-me", deps);
+
+    expect(deps.notifyError).toHaveBeenCalledWith("provider unavailable");
+    expect(currentNodes[0].metadata?.status).toBe("error");
+    expect(currentNodes[0].metadata?.images?.[0]).toMatchObject({
+      status: "error",
+      errorDetails: "provider unavailable",
+    });
   });
 });

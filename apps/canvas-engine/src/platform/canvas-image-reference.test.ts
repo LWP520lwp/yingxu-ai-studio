@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readCanvasImageReference } from "@/lib/canvas/canvas-image-reference";
+import { atlasImageReference as readCanvasImageReference } from "@/atlas-engine/model/image-reference";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeImage } from "@/types/canvas";
 
 const result = (id: string, status: CanvasNodeImage["status"] = "success"): CanvasNodeImage => ({

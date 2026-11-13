@@ -1,13 +1,20 @@
 import { useMemo, useRef, type CSSProperties, type ReactNode } from "react";
-import { Button, Checkbox, Modal, Switch, Tooltip, theme as antdTheme } from "antd";
+import {
+  Button,
+  Checkbox,
+  Modal,
+  Switch,
+  Tooltip,
+  theme as antdTheme,
+} from "antd";
 import { Ellipsis, Image as ImageIcon, Settings2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
   getImageQuickToolSelectionChanges,
   type ImageQuickToolId,
-} from "@/lib/canvas/image-quick-tools";
-import { previewScrollbarThumbWidth } from "@/lib/canvas/image-toolbar-settings";
+} from "@/atlas-engine/ui/image-quick-tools";
+import { previewScrollbarThumbWidth } from "@/atlas-engine/ui/image-toolbar-settings";
 import { useElementScrollMetrics } from "@/hooks/use-element-scroll-metrics";
 
 export type ImageToolbarSettingsTool = {
@@ -19,14 +26,10 @@ export type ImageToolbarSettingsTool = {
   danger?: boolean;
 };
 
-type PreviewItem = ImageToolbarSettingsTool | {
-  id: "more";
-  title: string;
-  label: string;
-  icon: ReactNode;
-  active?: boolean;
-  danger?: boolean;
-};
+type PreviewItem = Pick<
+  ImageToolbarSettingsTool,
+  "title" | "label" | "icon" | "active" | "danger"
+> & { id: ImageQuickToolId | "more" };
 
 type ImageToolSettingsModalProps = {
   open: boolean;
@@ -71,12 +74,7 @@ export function ImageToolSettingsModal({
     [t, visibleTools],
   );
 
-  const {
-    elementRef,
-    metrics,
-    measure,
-    scrollTo,
-  } = useElementScrollMetrics(
+  const { elementRef, metrics, measure, scrollTo } = useElementScrollMetrics(
     open,
     `${selectedIds.join("\u0000")}:${showLabels}:${previewItems.length}`,
   );
@@ -107,85 +105,109 @@ export function ImageToolSettingsModal({
       destroyOnHidden
       onCancel={onCancel}
       footer={
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex items-center gap-2 text-sm">
-            <span>{t("canvas.imageTools.showLabels")}</span>
+        <div className="flex justify-end gap-2">
+          <Button onClick={onCancel}>{t("common.cancel")}</Button>
+          <Button type="primary" onClick={onSave}>
+            {t("common.save")}
+          </Button>
+        </div>
+      }
+    >
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <section
+          className="min-w-0"
+          aria-labelledby="image-toolbar-preview-title"
+        >
+          <header className="mb-3 flex items-center gap-2">
+            <ImageIcon className="size-4 text-secondary" aria-hidden="true" />
+            <h3
+              id="image-toolbar-preview-title"
+              className="m-0 text-sm font-semibold"
+            >
+              {t("canvas.imageTools.preview")}
+            </h3>
+          </header>
+          <ToolbarPreview
+            items={previewItems}
+            showLabels={showLabels}
+            scrollRef={elementRef}
+            rangeRef={rangeRef}
+            left={metrics.left}
+            max={sliderMax}
+            maxScroll={metrics.max}
+            thumbWidth={thumb}
+            onScroll={measure}
+            onScrollChange={(value) => scrollTo(Number(value))}
+            label={t("canvas.imageTools.preview")}
+            imageLabel={t("canvas.imageTools.imageNode")}
+            background={token.colorFillAlter}
+            elevatedBackground={token.colorBgElevated}
+            border={token.colorBorderSecondary}
+            muted={token.colorTextSecondary}
+            text={token.colorText}
+            shadow={token.boxShadowSecondary}
+          />
+          <p className="mb-0 mt-3 text-sm text-secondary">
+            {t("canvas.imageTools.description")}
+          </p>
+        </section>
+
+        <section className="min-w-0" aria-labelledby="image-quick-tools-title">
+          <header className="mb-2 flex items-center justify-between gap-3">
+            <h3
+              id="image-quick-tools-title"
+              className="m-0 flex min-w-0 items-center gap-2 text-sm font-semibold"
+            >
+              <Settings2 className="size-4 shrink-0" aria-hidden="true" />
+              <span className="truncate">
+                {t("canvas.imageTools.quickTools")}
+              </span>
+            </h3>
+            <output
+              className="shrink-0 text-xs text-secondary"
+              aria-live="polite"
+            >
+              {visibleTools.length}/{tools.length}
+            </output>
+          </header>
+          <Checkbox.Group
+            value={selectedIds}
+            onChange={onSelectionChange}
+            aria-label={t("canvas.imageTools.quickTools")}
+            className="grid max-h-[320px] w-full gap-1.5 overflow-y-auto pr-1"
+          >
+            {tools.map((tool) => (
+              <label
+                key={tool.id}
+                className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border px-2.5 py-2 text-sm transition-colors hover:bg-black/[.025] dark:hover:bg-white/[.04]"
+                style={{ borderColor: token.colorBorderSecondary }}
+              >
+                <Checkbox value={tool.id} className="m-0">
+                  <span className="sr-only">{tool.title}</span>
+                </Checkbox>
+                <span className="shrink-0" aria-hidden="true">
+                  {tool.icon}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{tool.label}</span>
+              </label>
+            ))}
+          </Checkbox.Group>
+          <div
+            className="mt-3 flex items-center justify-between gap-3 rounded-md border px-3 py-2"
+            style={{ borderColor: token.colorBorderSecondary }}
+          >
+            <span className="min-w-0 text-xs text-secondary">
+              {t("canvas.imageTools.showLabels")}
+            </span>
             <Switch
+              size="small"
               checked={showLabels}
               onChange={onShowLabelsChange}
               aria-label={t("canvas.imageTools.showLabels")}
             />
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Button onClick={onCancel}>{t("common.cancel")}</Button>
-            <Button type="primary" onClick={onSave}>{t("common.save")}</Button>
-          </div>
-        </div>
-      }
-    >
-      <div className="mb-5 flex flex-wrap items-start gap-x-6 gap-y-2">
-        <div className="flex shrink-0 items-center gap-2 text-sm font-semibold">
-          <Settings2 className="size-4" aria-hidden="true" />
-          <span>{t("canvas.imageTools.preview")}</span>
-        </div>
-        <p className="m-0 min-w-0 flex-1 text-sm text-secondary">
-          {t("canvas.imageTools.description")}
-        </p>
+        </section>
       </div>
-
-      <ToolbarPreview
-        items={previewItems}
-        showLabels={showLabels}
-        scrollRef={elementRef}
-        rangeRef={rangeRef}
-        left={metrics.left}
-        max={sliderMax}
-        maxScroll={metrics.max}
-        thumbWidth={thumb}
-        onScroll={measure}
-        onScrollChange={(value) => scrollTo(Number(value))}
-        label={t("canvas.imageTools.preview")}
-        imageLabel={t("canvas.imageTools.imageNode")}
-        background={token.colorFillAlter}
-        elevatedBackground={token.colorBgElevated}
-        border={token.colorBorderSecondary}
-        muted={token.colorTextSecondary}
-        text={token.colorText}
-        shadow={token.boxShadowSecondary}
-      />
-
-      <section className="mt-6" aria-labelledby="image-quick-tools-title">
-        <header className="mb-3 flex items-baseline justify-between gap-3">
-          <h3 id="image-quick-tools-title" className="m-0 text-sm font-semibold">
-            {t("canvas.imageTools.quickTools")}
-          </h3>
-          <output className="text-xs text-secondary" aria-live="polite">
-            {visibleTools.length}/{tools.length}
-          </output>
-        </header>
-
-        <Checkbox.Group
-          value={selectedIds}
-          onChange={onSelectionChange}
-          aria-label={t("canvas.imageTools.quickTools")}
-          className="grid w-full gap-2 md:grid-cols-3"
-        >
-          {tools.map((tool) => (
-            <div
-              key={tool.id}
-              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm"
-              style={{ borderColor: token.colorBorderSecondary }}
-            >
-              <Checkbox value={tool.id} className="m-0">
-                <span className="inline-flex min-w-0 items-center gap-2">
-                  <span className="shrink-0" aria-hidden="true">{tool.icon}</span>
-                  <span className="truncate">{tool.label}</span>
-                </span>
-              </Checkbox>
-            </div>
-          ))}
-        </Checkbox.Group>
-      </section>
     </Modal>
   );
 }
@@ -235,7 +257,10 @@ function ToolbarPreview({
       aria-label={label}
       style={{ background, borderColor: border }}
     >
-      <div className="absolute inset-x-3 top-3 flex items-center gap-2 text-xs font-medium" style={{ color: muted }}>
+      <div
+        className="absolute inset-x-3 top-3 flex items-center gap-2 text-xs font-medium"
+        style={{ color: muted }}
+      >
         <span>{label}</span>
         <span className="h-px flex-1" style={{ background: border }} />
       </div>
@@ -254,13 +279,19 @@ function ToolbarPreview({
         }}
       >
         {items.map((item) => (
-          <ToolbarPreviewItem key={item.id} item={item} showLabels={showLabels} />
+          <ToolbarPreviewItem
+            key={item.id}
+            item={item}
+            showLabels={showLabels}
+          />
         ))}
       </div>
 
       <div className="flex h-44 w-full max-w-[360px] flex-col items-center justify-center text-center">
         <ImageIcon className="mb-2 size-8 opacity-60" aria-hidden="true" />
-        <span className="text-sm" style={{ color: muted }}>{imageLabel}</span>
+        <span className="text-sm" style={{ color: muted }}>
+          {imageLabel}
+        </span>
       </div>
 
       <input
@@ -281,7 +312,13 @@ function ToolbarPreview({
   );
 }
 
-function ToolbarPreviewItem({ item, showLabels }: { item: PreviewItem; showLabels: boolean }) {
+function ToolbarPreviewItem({
+  item,
+  showLabels,
+}: {
+  item: PreviewItem;
+  showLabels: boolean;
+}) {
   const { token } = antdTheme.useToken();
   return (
     <Tooltip title={item.title}>
@@ -295,7 +332,9 @@ function ToolbarPreviewItem({ item, showLabels }: { item: PreviewItem; showLabel
         }}
       >
         <span aria-hidden="true">{item.icon}</span>
-        {showLabels ? <span className="whitespace-nowrap">{item.label}</span> : null}
+        {showLabels ? (
+          <span className="whitespace-nowrap">{item.label}</span>
+        ) : null}
       </span>
     </Tooltip>
   );

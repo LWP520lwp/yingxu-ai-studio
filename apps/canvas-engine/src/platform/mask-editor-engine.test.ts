@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  MASK_BRUSH_MAX_SIZE,
-  MASK_BRUSH_MIN_SIZE,
-  clampMaskBrushSize,
-  mapMaskCanvasPoint,
-} from "@/lib/canvas/mask-editor-engine";
+  ATLAS_MASK_BRUSH_MAX,
+  ATLAS_MASK_BRUSH_MIN,
+  clampAtlasMaskBrushSize,
+  mapAtlasMaskPoint,
+} from "@/atlas-engine/workflows/mask-raster";
 import {
-  appendMaskPointerSessionPoint,
-  beginMaskPointerSession,
-  finishMaskPointerSession,
-} from "@/lib/canvas/mask-pointer-session";
+  appendAtlasMaskPointerPoint,
+  beginAtlasMaskPointer,
+  finishAtlasMaskPointer,
+} from "@/atlas-engine/workflows/mask-pointer";
 
 describe("mask editor geometry", () => {
   it("maps pointer coordinates into source-image pixels", () => {
     expect(
-      mapMaskCanvasPoint(
+      mapAtlasMaskPoint(
         150,
         250,
         { left: 100, top: 200, width: 100, height: 200 },
@@ -25,25 +25,25 @@ describe("mask editor geometry", () => {
   });
 
   it("clamps and snaps brush sizes to the supported even-pixel range", () => {
-    expect(clampMaskBrushSize(-10)).toBe(MASK_BRUSH_MIN_SIZE);
-    expect(clampMaskBrushSize(11)).toBe(12);
-    expect(clampMaskBrushSize(999)).toBe(MASK_BRUSH_MAX_SIZE);
+    expect(clampAtlasMaskBrushSize(-10)).toBe(ATLAS_MASK_BRUSH_MIN);
+    expect(clampAtlasMaskBrushSize(11)).toBe(12);
+    expect(clampAtlasMaskBrushSize(999)).toBe(ATLAS_MASK_BRUSH_MAX);
   });
 });
 
 describe("mask pointer session", () => {
   it("ignores unrelated pointers and commits the final pointer-up point", () => {
-    const session = beginMaskPointerSession(7, "paint", 20, { x: 1, y: 2 });
+    const session = beginAtlasMaskPointer(7, "paint", 20, { x: 1, y: 2 });
 
-    expect(appendMaskPointerSessionPoint(session, 8, { x: 10, y: 20 })).toBe(
+    expect(appendAtlasMaskPointerPoint(session, 8, { x: 10, y: 20 })).toBe(
       false,
     );
     expect(session.stroke.points).toEqual([{ x: 1, y: 2 }]);
-    expect(appendMaskPointerSessionPoint(session, 7, { x: 4, y: 5 })).toBe(
+    expect(appendAtlasMaskPointerPoint(session, 7, { x: 4, y: 5 })).toBe(
       true,
     );
 
-    const result = finishMaskPointerSession(session, 7, "up", { x: 8, y: 9 });
+    const result = finishAtlasMaskPointer(session, 7, "up", { x: 8, y: 9 });
     expect(result.session).toBeNull();
     expect(result.stroke?.points).toEqual([
       { x: 1, y: 2 },
@@ -53,8 +53,8 @@ describe("mask pointer session", () => {
   });
 
   it("ends on pointer cancellation without adding a synthetic endpoint", () => {
-    const session = beginMaskPointerSession(3, "erase", 12, { x: 2, y: 6 });
-    const result = finishMaskPointerSession(session, 3, "cancel", {
+    const session = beginAtlasMaskPointer(3, "erase", 12, { x: 2, y: 6 });
+    const result = finishAtlasMaskPointer(session, 3, "cancel", {
       x: 100,
       y: 200,
     });
@@ -64,8 +64,8 @@ describe("mask pointer session", () => {
   });
 
   it("keeps a session intact when a different pointer ends", () => {
-    const session = beginMaskPointerSession(9, "paint", 16, { x: 1, y: 1 });
-    expect(finishMaskPointerSession(session, 10, "up")).toEqual({
+    const session = beginAtlasMaskPointer(9, "paint", 16, { x: 1, y: 1 });
+    expect(finishAtlasMaskPointer(session, 10, "up")).toEqual({
       session,
       stroke: null,
     });

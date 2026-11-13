@@ -32,10 +32,10 @@ import { CanvasWorkflowAuditAction } from "@/components/canvas/canvas-workflow-a
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { getNodeSpec } from "@/constant/canvas";
 import {
-  getNodePluginId,
-  listNodeDefinitions,
-  useNodeRegistryVersion,
-} from "@/lib/canvas/node-registry";
+  getAtlasNodeOwner as getNodePluginId,
+  listAtlasNodeDefinitions as listNodeDefinitions,
+  useAtlasNodeRegistryVersion as useNodeRegistryVersion,
+} from "@/atlas-engine/model/node-registry";
 import {
   canvasThemes,
   type CanvasBackgroundMode,
@@ -46,7 +46,7 @@ import {
   canvasToolbarSections,
   toggleCanvasTool,
   type CanvasToolbarCommand,
-} from "@/lib/canvas/canvas-toolbar-model";
+} from "@/atlas-engine/ui/canvas-toolbar-model";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 
@@ -82,7 +82,10 @@ type CanvasToolbarProps = {
 
 type MenuName = "extensions" | "appearance";
 
-const actionIcons: Record<Exclude<CanvasToolbarCommand, "audit">, LucideIcon> = {
+const actionIcons: Record<
+  Exclude<CanvasToolbarCommand, "audit">,
+  LucideIcon
+> = {
   pan: Hand,
   undo: Undo2,
   redo: Redo2,
@@ -164,7 +167,10 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
     clear: t("canvas.toolbar.clear"),
   };
 
-  const openMenuFrom = (name: MenuName, event: MouseEvent<HTMLButtonElement>) => {
+  const openMenuFrom = (
+    name: MenuName,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
     if (openMenu === name) {
       setOpenMenu(null);
       return;
@@ -172,7 +178,10 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
     const bar = barRef.current?.getBoundingClientRect();
     if (bar) {
       const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
-      const width = Math.min(name === "extensions" ? 264 : 280, viewportWidth - 24);
+      const width = Math.min(
+        name === "extensions" ? 264 : 280,
+        viewportWidth - 24,
+      );
       const anchor = event.currentTarget.getBoundingClientRect();
       const half = width / 2;
       const viewportCenter = Math.max(
@@ -184,51 +193,29 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
     setOpenMenu(name);
   };
 
-  const invoke = (command: Exclude<CanvasToolbarCommand, "audit" | MenuName>) => {
-    switch (command) {
-      case "pan":
-        props.onCanvasToolChange(toggleCanvasTool(props.canvasTool));
-        break;
-      case "undo":
-        props.onUndo();
-        break;
-      case "redo":
-        props.onRedo();
-        break;
-      case "focus":
-        props.onFocusSelected();
-        break;
-      case "tidy":
-        props.onTidyLayout();
-        break;
-      case "text":
-        props.onAddText();
-        break;
-      case "image":
-        props.onAddImage();
-        break;
-      case "video":
-        props.onAddVideo();
-        break;
-      case "audio":
-        props.onAddAudio();
-        break;
-      case "config":
-        props.onAddConfig();
-        break;
-      case "group":
-        props.onAddGroup();
-        break;
-      case "upload":
-        props.onUpload();
-        break;
-      case "delete":
-        props.onDelete();
-        break;
-      case "clear":
-        props.onClear();
-        break;
-    }
+  const commandEffects: Partial<
+    Record<Exclude<CanvasToolbarCommand, "audit" | MenuName>, () => void>
+  > = {
+    pan: () => props.onCanvasToolChange(toggleCanvasTool(props.canvasTool)),
+    undo: props.onUndo,
+    redo: props.onRedo,
+    focus: props.onFocusSelected,
+    tidy: props.onTidyLayout,
+    text: props.onAddText,
+    image: props.onAddImage,
+    video: props.onAddVideo,
+    audio: props.onAddAudio,
+    config: props.onAddConfig,
+    group: props.onAddGroup,
+    upload: props.onUpload,
+    delete: props.onDelete,
+    clear: props.onClear,
+  };
+
+  const invoke = (
+    command: Exclude<CanvasToolbarCommand, "audit" | MenuName>,
+  ) => {
+    commandEffects[command]?.();
   };
 
   const groupNames = {
@@ -418,7 +405,9 @@ function ExtensionMenu({
       role="dialog"
       aria-label={title}
     >
-      <h2 className="px-2 pb-2 pt-1 text-xs font-semibold opacity-60">{title}</h2>
+      <h2 className="px-2 pb-2 pt-1 text-xs font-semibold opacity-60">
+        {title}
+      </h2>
       <ul className="m-0 grid list-none gap-1 p-0">
         {items.map((item) => (
           <li key={item.type}>
@@ -491,7 +480,9 @@ function AppearanceMenu({
       aria-label={t("canvas.toolbar.appearance")}
     >
       <header className="flex items-center justify-between gap-3 px-1 pb-2">
-        <h2 className="text-sm font-semibold">{t("canvas.toolbar.appearance")}</h2>
+        <h2 className="text-sm font-semibold">
+          {t("canvas.toolbar.appearance")}
+        </h2>
         <button
           type="button"
           className="text-xs opacity-55 hover:opacity-100"
@@ -531,8 +522,12 @@ function AppearanceMenu({
               type="button"
               className="flex min-h-16 flex-col items-center justify-center gap-2 rounded-md border px-2 py-2 text-[11px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               style={{
-                color: selected ? colors.toolbar.activeText : colors.toolbar.item,
-                background: selected ? colors.toolbar.activeBg : colors.node.fill,
+                color: selected
+                  ? colors.toolbar.activeText
+                  : colors.toolbar.item,
+                background: selected
+                  ? colors.toolbar.activeBg
+                  : colors.node.fill,
                 borderColor: selected
                   ? colors.toolbar.activeText
                   : colors.toolbar.border,
@@ -582,7 +577,10 @@ function ThemeOption({
   const selectedStyle =
     themeKey === "light"
       ? { background: "#111111", color: "#ffffff" }
-      : { background: colors.toolbar.activeBg, color: colors.toolbar.activeText };
+      : {
+          background: colors.toolbar.activeBg,
+          color: colors.toolbar.activeText,
+        };
 
   return (
     <AnimatedThemeToggler

@@ -5,8 +5,8 @@ import {
   getPromptChipKeyAction,
   indexPromptReferences,
   movePromptChoice,
-} from "@/lib/canvas/prompt-chip-session";
-import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+} from "@/atlas-engine/agent/prompt-input";
+import type { CanvasResourceReference } from "@/atlas-engine/model/resource-references";
 
 function reference(
   id: string,
@@ -43,10 +43,9 @@ describe("prompt chip session", () => {
       reference("video", "@clip", { kind: "video", title: "City" }),
     ];
 
-    expect(findPromptReferences(references, " FOREST ").map(({ id }) => id)).toEqual([
-      "image",
-      "text",
-    ]);
+    expect(
+      findPromptReferences(references, " FOREST ").map(({ id }) => id),
+    ).toEqual(["image", "text"]);
     expect(findPromptReferences(references, "")).toEqual(references);
   });
 

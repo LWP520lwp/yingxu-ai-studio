@@ -13,7 +13,7 @@ import {
   placeTextSettingsPopover,
   type TextSettingsPopoverPosition,
   type TextSettingsPlacement,
-} from "@/lib/canvas/text-generation-settings";
+} from "@/atlas-engine/ui/text-generation-settings";
 import { useCanvasPopover } from "@/hooks/use-canvas-popover";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";

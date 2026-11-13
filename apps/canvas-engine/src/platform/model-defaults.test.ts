@@ -11,10 +11,10 @@ vi.mock("@/i18n", () => ({ default: { t: (key: string) => key } }));
 vi.mock("@/lib/localforage-storage", () => ({ localForageStorage: { getItem: async () => null, setItem: async () => undefined, removeItem: async () => undefined } }));
 vi.mock("@/services/image-storage", () => ({ ensureImagePreview: vi.fn(), resolveImageUrl: vi.fn(), uploadImage: vi.fn() }));
 vi.mock("@/services/file-storage", () => ({ resolveMediaUrl: vi.fn() }));
-vi.mock("@/lib/canvas/canvas-node-factory", () => ({ imageMetadata: vi.fn(), referenceUrl: vi.fn() }));
+vi.mock("@/atlas-engine/model/node-factory", () => ({ atlasImageMetadata: vi.fn(), atlasReferenceUrl: vi.fn() }));
 
 import { defaultConfig, initializePlatformConfig, platformConfig, resolveModelForCapability, useConfigStore } from "@/stores/use-config-store";
-import { buildGenerationConfig } from "@/lib/canvas/canvas-generation-helpers";
+import { buildAtlasGenerationConfig as buildGenerationConfig } from "@/atlas-engine/workflows/generation-runtime";
 
 const uploadedImage = (): CanvasNodeData => ({ id: "uploaded", type: CanvasNodeType.Image, title: "参考图片.png", position: { x: 0, y: 0 }, width: 400, height: 400, metadata: { content: "/api/assets/uploaded/content", status: "success" } });
 

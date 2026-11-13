@@ -5,7 +5,7 @@ import {
   parsePromptInputTokens,
   promptMenuPosition,
   serializePromptContents,
-} from "@/lib/canvas/canvas-prompt-input";
+} from "@/atlas-engine/agent/prompt-input";
 
 function text(value: string) {
   return { nodeType: 3, textContent: value } as unknown as Node;

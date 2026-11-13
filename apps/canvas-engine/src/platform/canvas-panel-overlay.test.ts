@@ -4,7 +4,7 @@ import {
   canvasPanelOverlayStyle,
   measureCanvasPanelOverlay,
   sameCanvasPanelPlacement,
-} from "@/lib/canvas/canvas-panel-overlay";
+} from "@/atlas-engine/ui/panel-overlay";
 
 const viewport = { left: 200, top: 80, right: 1100, bottom: 800 };
 

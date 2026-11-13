@@ -4,7 +4,7 @@ import {
   auditCanvasWorkflow,
   repairCanvasConnections,
   summarizeCanvasWorkflow,
-} from "@/lib/canvas/canvas-workflow-audit";
+} from "@/atlas-engine/workflows/workflow-audit";
 import {
   CanvasNodeType,
   type CanvasConnection,

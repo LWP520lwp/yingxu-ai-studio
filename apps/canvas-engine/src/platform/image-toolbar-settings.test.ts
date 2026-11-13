@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   measurePreviewScroll,
   previewScrollbarThumbWidth,
-} from "@/lib/canvas/image-toolbar-settings";
+} from "@/atlas-engine/ui/image-toolbar-settings";
 
 describe("image toolbar preview scroll", () => {
   it("bounds scroll position to the available horizontal range", () => {

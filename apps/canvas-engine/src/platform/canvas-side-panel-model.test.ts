@@ -4,7 +4,7 @@ import {
   deriveCanvasNodePanelModel,
   toggleCanvasNodeSelection,
   toggleVisibleCanvasNodeSelection,
-} from "@/lib/canvas/canvas-side-panel-model";
+} from "@/atlas-engine/ui/canvas-side-panel-model";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 function node(

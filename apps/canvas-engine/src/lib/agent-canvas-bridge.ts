@@ -2,7 +2,7 @@ import {
   applyCanvasAgentOps,
   type CanvasAgentOp,
   type CanvasAgentSnapshot,
-} from "@/lib/canvas/canvas-agent-ops";
+} from "@/atlas-engine/agent/canvas-operations";
 
 export type AgentGenerationRequest = {
   nodeId: string;

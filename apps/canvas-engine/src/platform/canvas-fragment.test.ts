@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  captureCanvasFragment,
-  placeCanvasFragment,
-} from "@/lib/canvas/canvas-fragment";
+  captureAtlasFragment as captureCanvasFragment,
+  placeAtlasFragment as placeCanvasFragment,
+} from "@/atlas-engine/interaction/node-layout";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 const node = (

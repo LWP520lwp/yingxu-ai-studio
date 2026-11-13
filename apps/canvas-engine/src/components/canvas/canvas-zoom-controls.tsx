@@ -3,9 +3,12 @@ import { Modal, Tooltip } from "antd";
 import { Compass, Focus, HelpCircle, Minus, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { canvasShortcutCatalog } from "@/lib/canvas/canvas-shortcut-catalog";
+import { canvasShortcutCatalog } from "@/atlas-engine/ui/shortcut-catalog";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { clampScale, VIEWPORT_LIMITS } from "@/lib/canvas/canvas-geometry";
+import {
+  ATLAS_ZOOM_LIMITS,
+  clampCanvasZoom,
+} from "@/atlas-engine/surface/viewport";
 import { useThemeStore } from "@/stores/use-theme-store";
 
 type CanvasZoomControlsProps = {
@@ -27,7 +30,7 @@ export function CanvasZoomControls({
   const { t } = useTranslation();
   const colorTheme = useThemeStore((state) => state.theme);
   const theme = canvasThemes[colorTheme];
-  const zoom = clampScale(scale);
+  const zoom = clampCanvasZoom(scale);
   const zoomPercent = Math.round(zoom * 100);
   const shortcuts = canvasShortcutCatalog(t);
   const actions = [
@@ -50,14 +53,14 @@ export function CanvasZoomControls({
       label: t("settingsPanels.common.zoomOut"),
       icon: <Minus className="size-3.5" aria-hidden="true" />,
       active: false,
-      run: () => onScaleChange(clampScale(zoom / 1.2)),
+      run: () => onScaleChange(clampCanvasZoom(zoom / 1.2)),
     },
     {
       id: "zoom-in",
       label: t("settingsPanels.common.zoomIn"),
       icon: <Plus className="size-3.5" aria-hidden="true" />,
       active: false,
-      run: () => onScaleChange(clampScale(zoom * 1.2)),
+      run: () => onScaleChange(clampCanvasZoom(zoom * 1.2)),
     },
   ];
 
@@ -92,14 +95,14 @@ export function CanvasZoomControls({
         ))}
         <input
           type="range"
-          min={VIEWPORT_LIMITS.minScale * 100}
-          max={VIEWPORT_LIMITS.maxScale * 100}
+          min={ATLAS_ZOOM_LIMITS.minScale * 100}
+          max={ATLAS_ZOOM_LIMITS.maxScale * 100}
           step={1}
           value={zoomPercent}
           className="mx-1 w-16 accent-current sm:w-24"
           style={{ color: theme.node.activeStroke }}
           onChange={(event) =>
-            onScaleChange(clampScale(Number(event.target.value) / 100))
+            onScaleChange(clampCanvasZoom(Number(event.target.value) / 100))
           }
           aria-label={t("canvas.zoom")}
           aria-valuetext={`${zoomPercent}%`}

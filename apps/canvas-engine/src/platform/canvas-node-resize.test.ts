@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  resizeCanvasNode,
-  type CanvasNodeResizeInput,
-} from "@/lib/canvas/canvas-node-resize";
+  resizeAtlasNode,
+  type AtlasResizeInput,
+} from "@/atlas-engine/interaction/node-editing";
 
-const base: CanvasNodeResizeInput = {
+const base: AtlasResizeInput = {
   corner: "bottom-right",
   pointerStart: { x: 100, y: 100 },
   pointerNow: { x: 100, y: 100 },
@@ -15,10 +15,10 @@ const base: CanvasNodeResizeInput = {
   keepRatio: false,
 };
 
-describe("resizeCanvasNode", () => {
+describe("resizeAtlasNode", () => {
   it("resizes from the pointer delta in world coordinates", () => {
     expect(
-      resizeCanvasNode({ ...base, scale: 2, pointerNow: { x: 160, y: 140 } }),
+      resizeAtlasNode({ ...base, scale: 2, pointerNow: { x: 160, y: 140 } }),
     ).toEqual({
       position: { x: 20, y: 30 },
       width: 330,
@@ -33,7 +33,7 @@ describe("resizeCanvasNode", () => {
   ] as const)(
     "keeps the opposite anchor fixed when dragging %s",
     (corner, expectedPosition) => {
-      const result = resizeCanvasNode({
+      const result = resizeAtlasNode({
         ...base,
         corner,
         pointerNow: expectedPosition.pointer,
@@ -45,7 +45,7 @@ describe("resizeCanvasNode", () => {
   );
 
   it("preserves aspect ratio and enforces both minimum dimensions", () => {
-    const result = resizeCanvasNode({
+    const result = resizeAtlasNode({
       ...base,
       keepRatio: true,
       ratio: 1.5,
@@ -57,7 +57,7 @@ describe("resizeCanvasNode", () => {
   });
 
   it("uses the height delta when it is the stronger ratio-locked movement", () => {
-    const result = resizeCanvasNode({
+    const result = resizeAtlasNode({
       ...base,
       keepRatio: true,
       ratio: 2,
@@ -68,12 +68,12 @@ describe("resizeCanvasNode", () => {
 
   it("normalizes invalid scale, ratio, size, and pointer inputs to finite bounded results", () => {
     for (const result of [
-      resizeCanvasNode({
+      resizeAtlasNode({
         ...base,
         scale: Number.NaN,
         pointerNow: { x: Infinity, y: Number.NaN },
       }),
-      resizeCanvasNode({
+      resizeAtlasNode({
         ...base,
         keepRatio: true,
         ratio: Number.POSITIVE_INFINITY,

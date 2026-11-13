@@ -1,5 +1,5 @@
 import i18n from "@/i18n";
-import { getNodeSpec as getRegisteredNodeSpec } from "@/lib/canvas/node-registry";
+import { getAtlasNodeSpec as getRegisteredNodeSpec } from "@/atlas-engine/model/node-registry";
 import { CanvasNodeType, type CanvasNodeMetadata } from "@/types/canvas";
 
 export type CanvasNodeSpec = {

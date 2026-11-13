@@ -3,7 +3,7 @@ import { configureStorageScope } from "@/lib/localforage-storage";
 import { useCanvasStore, type CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { Asset } from "@/stores/use-asset-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
-import { validateWorkbenchDocument } from "@/lib/canvas/workbench-document";
+import { validateWorkbenchDocument } from "@/atlas-engine/document/workbench-document";
 import { getPlatformInit, platformRequest, type PlatformInit, type PlatformAsset } from "./rpc";
 
 export type DocumentSnapshot = {
@@ -274,8 +274,8 @@ export async function initializePlatformDocument(init: PlatformInit): Promise<Do
     } catch { staleDraft = true; }
     let project = draft?.document || original;
     if (draft) {
-        const { hydrateCanvasImages, hydrateAssistantImages } = await import("@/lib/canvas/canvas-generation-helpers");
-        project = { ...project, nodes: await hydrateCanvasImages(project.nodes), chatSessions: await hydrateAssistantImages(project.chatSessions) };
+        const { hydrateAtlasCanvasImages, hydrateAtlasAssistantImages } = await import("@/atlas-engine/workflows/generation-runtime");
+        project = { ...project, nodes: await hydrateAtlasCanvasImages(project.nodes), chatSessions: await hydrateAtlasAssistantImages(project.chatSessions) };
     }
     await initializePlatformAssets(init);
     // Set hydrated only after the full authoritative project has been installed. No bootstrap blank writes.

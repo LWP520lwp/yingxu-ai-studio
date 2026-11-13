@@ -26,9 +26,9 @@ vi.mock("@/stores/use-asset-store", () => ({ useAssetStore: {
     persist: { rehydrate: async () => undefined }, getState: () => ({ assets: [], replaceAssets: harness.replaceAssets }),
 } }));
 vi.mock("./rpc", () => ({ getPlatformInit: () => null, platformRequest: harness.request }));
-vi.mock("@/lib/canvas/canvas-generation-helpers", () => ({
-    hydrateCanvasImages: async (nodes: unknown) => nodes,
-    hydrateAssistantImages: async (sessions: unknown) => sessions,
+vi.mock("@/atlas-engine/workflows/generation-runtime", () => ({
+    hydrateAtlasCanvasImages: async (nodes: unknown) => nodes,
+    hydrateAtlasAssistantImages: async (sessions: unknown) => sessions,
 }));
 
 import { initializePlatformDocument, migrateLegacyDocument, portableProject, readNativeProject, useDocumentSyncState, type DocumentSession } from "./document";

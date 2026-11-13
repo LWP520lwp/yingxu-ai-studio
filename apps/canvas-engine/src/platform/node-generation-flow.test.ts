@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runNodeGenerationFlow } from "@/product-engine/node-generation-flow";
+import { runAtlasGeneration as runNodeGenerationFlow } from "@/atlas-engine/workflows/async-flow";
 
 function flowOptions(overrides: Record<string, unknown> = {}) {
   const controller = new AbortController();

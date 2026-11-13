@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createCropImageResult,
-  createSplitImageResults,
-  createUpscaleImageResult,
-} from "@/product-engine/image-operations";
+  createAtlasCropImageResult as createCropImageResult,
+  createAtlasSplitImageResults as createSplitImageResults,
+  createAtlasUpscaleImageResult as createUpscaleImageResult,
+} from "@/atlas-engine/workflows/media-operations";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import type { UploadedImage } from "@/services/image-storage";
 

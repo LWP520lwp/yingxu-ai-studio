@@ -22,7 +22,7 @@ vi.mock("@/services/image-storage", () => ({
   imageToDataUrl: ports.imageToDataUrl,
 }));
 
-import { createCanvasPluginAiAdapter } from "@/lib/canvas/plugin-ai-adapter";
+import { createAtlasPluginGeneration } from "@/atlas-engine/plugins/generation-adapter";
 import { defaultConfig } from "@/stores/use-config-store";
 
 afterEach(() => {
@@ -32,7 +32,7 @@ afterEach(() => {
 function createAdapter() {
   const ensureReady = vi.fn();
   return {
-    ai: createCanvasPluginAiAdapter(defaultConfig, ensureReady),
+    ai: createAtlasPluginGeneration(defaultConfig, ensureReady),
     ensureReady,
   };
 }
@@ -228,7 +228,7 @@ describe("canvas plugin AI adapter", () => {
       models: ["studio::image-v2", "studio::text-v2"],
       textModel: "studio::text-v2",
     };
-    const ai = createCanvasPluginAiAdapter(config, () => {});
+    const ai = createAtlasPluginGeneration(config, () => {});
 
     expect(ai.listModels("image")).toEqual([
       { value: "studio::image-v2", label: "image-v2" },

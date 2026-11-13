@@ -1,5 +1,5 @@
 import { executeAgentCanvasTransaction, type AgentGenerationRequest } from "./agent-canvas-bridge";
-import type { CanvasAgentOp, CanvasAgentSnapshot } from "./canvas/canvas-agent-ops";
+import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/atlas-engine/agent/canvas-operations";
 
 type SessionPort = {
   read: () => CanvasAgentSnapshot;

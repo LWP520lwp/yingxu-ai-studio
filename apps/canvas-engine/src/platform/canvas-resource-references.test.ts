@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { buildCanvasResourceReferences, buildNodeMentionReferences, getGenerationResourceNodes, getGroupResourceNodes, getMentionResourceNodes, isCanvasReferenceNode } from "@/lib/canvas/canvas-resource-references";
-import { registerNodeDefinitions, unregisterPluginNodes } from "@/lib/canvas/node-registry";
+import { buildCanvasResourceReferences, buildNodeMentionReferences, getGenerationResourceNodes, getGroupResourceNodes, getMentionResourceNodes, isCanvasReferenceNode } from "@/atlas-engine/model/resource-references";
+import { registerAtlasNodeDefinitions, unregisterAtlasPluginNodes } from "@/atlas-engine/model/node-registry";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 
 const node = (id: string, type: CanvasNodeData["type"], metadata: CanvasNodeData["metadata"] = {}): CanvasNodeData => ({
@@ -16,7 +16,7 @@ const node = (id: string, type: CanvasNodeData["type"], metadata: CanvasNodeData
 
 const edge = (fromNodeId: string, toNodeId: string, id = `${fromNodeId}-${toNodeId}`): CanvasConnection => ({ id, fromNodeId, toNodeId });
 
-afterEach(() => unregisterPluginNodes("resource-reference-test"));
+afterEach(() => unregisterAtlasPluginNodes("resource-reference-test"));
 
 describe("canvas resource references", () => {
     it("indexes built-in image, video, audio, and text resources in canvas order", () => {
@@ -36,7 +36,7 @@ describe("canvas resource references", () => {
     });
 
     it("includes plugin resources nested in groups while stopping cyclic and duplicate membership", () => {
-        registerNodeDefinitions([{
+        registerAtlasNodeDefinitions([{
             type: "demo:resource-source",
             title: "Plugin source",
             icon: null,

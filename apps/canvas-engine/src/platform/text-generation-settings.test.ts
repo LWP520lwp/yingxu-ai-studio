@@ -4,7 +4,7 @@ import {
   clampTextGenerationCount,
   normalizeReasoningEffort,
   placeTextSettingsPopover,
-} from "@/lib/canvas/text-generation-settings";
+} from "@/atlas-engine/ui/text-generation-settings";
 
 describe("text generation settings", () => {
   it("normalizes unsupported reasoning effort without losing known values", () => {

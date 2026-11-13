@@ -1,26 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createRetryableLoader } from "@/lib/canvas/retryable-loader";
+import { createRetryableStartup } from "@/atlas-engine/plugins/retryable-startup";
 import {
-  addPluginCacheBuster,
-  normalizePluginHttpUrl,
-} from "@/lib/canvas/plugin-url";
+  addPluginRefreshToken,
+  resolvePluginSourceUrl,
+} from "@/atlas-engine/plugins/url";
 
 describe("plugin loader support", () => {
   it("accepts only HTTP(S) plugin sources and resolves relative paths", () => {
     expect(
-      normalizePluginHttpUrl("/plugins/example.js", "https://studio.test"),
+      resolvePluginSourceUrl("/plugins/example.js", "https://studio.test"),
     ).toBeInstanceOf(URL);
     expect(
-      normalizePluginHttpUrl("javascript:alert(1)", "https://studio.test"),
+      resolvePluginSourceUrl("javascript:alert(1)", "https://studio.test"),
     ).toBeNull();
     expect(
-      normalizePluginHttpUrl("data:text/javascript,1", "https://studio.test"),
+      resolvePluginSourceUrl("data:text/javascript,1", "https://studio.test"),
     ).toBeNull();
   });
 
   it("updates only the cache-busting query and keeps the fragment", () => {
-    const result = addPluginCacheBuster(
+    const result = addPluginRefreshToken(
       "/plugins/example.js?theme=dark#entry",
       "https://studio.test",
       42,
@@ -38,7 +38,7 @@ describe("plugin loader support", () => {
       .fn<() => Promise<boolean>>()
       .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(true);
-    const ensureLoaded = createRetryableLoader(load);
+    const ensureLoaded = createRetryableStartup(load);
 
     await Promise.all([ensureLoaded(), ensureLoaded()]);
     expect(load).toHaveBeenCalledOnce();

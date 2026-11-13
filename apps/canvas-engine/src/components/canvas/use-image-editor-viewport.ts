@@ -9,15 +9,16 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  fitImageToEditorViewport,
-  IMAGE_EDITOR_MAX_ZOOM,
-  IMAGE_EDITOR_MIN_ZOOM,
-  imageEditorPanScroll,
-  imageEditorLayout,
-  normalizeImageEditorSize,
-  scrollForZoomAnchor,
-  zoomAnchorAtPoint,
-} from "@/lib/canvas/image-editor-viewport-geometry";
+  ATLAS_EDITOR_MAX_ZOOM as IMAGE_EDITOR_MAX_ZOOM,
+  ATLAS_EDITOR_MIN_ZOOM as IMAGE_EDITOR_MIN_ZOOM,
+  atlasEditorLayout as imageEditorLayout,
+  atlasImageEditorPanScroll as imageEditorPanScroll,
+  clampAtlasEditorZoom,
+  fitAtlasImageToViewport as fitImageToEditorViewport,
+  normalizeAtlasEditorSize as normalizeImageEditorSize,
+  atlasScrollForZoomAnchor as scrollForZoomAnchor,
+  atlasZoomAnchorAtPoint as zoomAnchorAtPoint,
+} from "@/atlas-engine/surface/image-editing-geometry";
 
 type ImageSize = { width: number; height: number };
 type PanGesture = { pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number };
@@ -28,11 +29,11 @@ export function useImageEditorViewport(image: ImageSize | null, open: boolean) {
   const stageElement = useRef<HTMLDivElement | null>(null);
   const gesture = useRef<PanGesture | null>(null);
   const anchor = useRef<{ zoom: number; ratioX: number; ratioY: number; viewportX: number; viewportY: number } | null>(null);
-  const currentZoom = useRef(IMAGE_EDITOR_MIN_ZOOM);
+  const currentZoom = useRef<number>(IMAGE_EDITOR_MIN_ZOOM);
   const spaceHeld = useRef(false);
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
   const [availableSize, setAvailableSize] = useState<ImageSize>({ width: 0, height: 0 });
-  const [zoom, setZoom] = useState(IMAGE_EDITOR_MIN_ZOOM);
+  const [zoom, setZoom] = useState<number>(IMAGE_EDITOR_MIN_ZOOM);
   const [dragging, setDragging] = useState(false);
   const [spacePressed, setSpacePressed] = useState(false);
 
@@ -61,7 +62,7 @@ export function useImageEditorViewport(image: ImageSize | null, open: boolean) {
       return;
     }
     anchor.current = null;
-    currentZoom.current = IMAGE_EDITOR_MIN_ZOOM;
+    currentZoom.current = clampAtlasEditorZoom(IMAGE_EDITOR_MIN_ZOOM);
     setZoom(IMAGE_EDITOR_MIN_ZOOM);
     endGesture();
     if (viewportElement.current) {

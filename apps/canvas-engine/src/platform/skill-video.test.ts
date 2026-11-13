@@ -18,7 +18,7 @@ vi.mock("./rpc", () => ({
     },
 }));
 vi.mock("@/i18n", () => ({ default: { t: (key: string) => key } }));
-vi.mock("@/lib/canvas/node-registry", () => ({ getNodeDefinition: () => undefined }));
+vi.mock("@/atlas-engine/model/node-registry", () => ({ getAtlasNodeDefinition: () => undefined }));
 vi.mock("@/services/image-storage", () => ({ imageToDataUrl: vi.fn() }));
 
 import { buildNodeGenerationContext } from "@/components/canvas/canvas-node-generation";

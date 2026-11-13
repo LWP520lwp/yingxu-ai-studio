@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  DEFAULT_CROP_RECT,
-  fitCropToAspectRatio,
-  moveCrop,
-  nudgeCrop,
-  cropRatio,
-  resizeCrop,
-  resolveCropAspectRatio,
-} from "@/lib/canvas/crop-selection";
+  ATLAS_DEFAULT_CROP as DEFAULT_CROP_RECT,
+  fitAtlasCropRatio as fitCropToAspectRatio,
+  moveAtlasCrop as moveCrop,
+  nudgeAtlasCrop as nudgeCrop,
+  atlasCropRatio as cropRatio,
+  resizeAtlasCrop as resizeCrop,
+  resolveAtlasCropRatio as resolveCropAspectRatio,
+} from "@/atlas-engine/surface/image-editing-geometry";
 
 describe("crop selection geometry", () => {
   it("moves a crop rectangle without crossing the image bounds", () => {

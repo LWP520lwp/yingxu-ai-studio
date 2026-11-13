@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createCanvasPluginHostAdapter } from "@/lib/canvas/canvas-plugin-host";
-import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
+import { createAtlasPluginHost } from "@/atlas-engine/plugins/host-adapter";
+import type { CanvasAgentOp } from "@/atlas-engine/agent/canvas-operations";
 import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 import type { CanvasPluginAi } from "@/types/canvas-plugin";
 
@@ -19,7 +19,7 @@ describe("canvas plugin host adapter", () => {
     let connections = [edge("a", "c"), edge("a", "c", "duplicate"), edge("b", "c"), edge("c", "d"), edge("gone", "c")];
     const readNodes = vi.fn(() => nodes);
     const readConnections = vi.fn(() => connections);
-    const host = createCanvasPluginHostAdapter({
+    const host = createAtlasPluginHost({
       readNodes, readConnections, setNodes: vi.fn(), setDialogNodeId: vi.fn(), applyOps: vi.fn(), ai,
     });
 
@@ -38,7 +38,7 @@ describe("canvas plugin host adapter", () => {
     const original = node("target");
     let current = [original, node("other")];
     const setNodes = vi.fn((update: (nodes: CanvasNodeData[]) => CanvasNodeData[]) => { current = update(current); });
-    const host = createCanvasPluginHostAdapter({
+    const host = createAtlasPluginHost({
       readNodes: () => current, readConnections: () => [], setNodes, setDialogNodeId: vi.fn(), applyOps: vi.fn(), ai,
     });
 
@@ -61,7 +61,7 @@ describe("canvas plugin host adapter", () => {
     const setDialogNodeId = vi.fn((next: string | null | ((current: string | null) => string | null)) => {
       activeDialogNodeId = typeof next === "function" ? next(activeDialogNodeId) : next;
     });
-    const host = createCanvasPluginHostAdapter({
+    const host = createAtlasPluginHost({
       readNodes: () => nodes, readConnections: () => [], setNodes: vi.fn(), setDialogNodeId, applyOps, ai,
     });
     expect(host.getNode("one")).toBe(nodes[0]);

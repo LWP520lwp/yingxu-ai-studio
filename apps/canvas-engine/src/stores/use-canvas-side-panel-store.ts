@@ -12,7 +12,7 @@ import {
   transitionCanvasSidePanel,
   writeCanvasSidePanelPreference,
   type CanvasNodeViewMode,
-} from "@/lib/canvas/canvas-side-panel-state";
+} from "@/atlas-engine/ui/side-panel-state";
 
 export {
   CANVAS_SIDE_PANEL_DEFAULT_WIDTH,

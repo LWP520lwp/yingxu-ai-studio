@@ -6,7 +6,7 @@ import {
   decideAgentConnection,
   restoreAgentPanelWidth,
   transitionAgentPanel,
-} from "@/product-engine/agent-panel-state";
+} from "@/atlas-engine/agent/store-state";
 
 const panel = {
   panelOpen: false,
@@ -71,6 +71,17 @@ describe("agent panel state transitions", () => {
       eventLogs: ["event-2"],
     });
     expect(appendRecent([1, 2], 3, 2)).toEqual([2, 3]);
+    expect(
+      constrainAgentStorePatch(
+        state,
+        { width: 900 },
+        {
+          messages: 2,
+          eventLogs: 1,
+          panelWidth: { min: 320, max: 720 },
+        },
+      ).width,
+    ).toBe(720);
     expect(restoreAgentPanelWidth(600, 440, { min: 320, max: 720 })).toBe(600);
     expect(restoreAgentPanelWidth(100, 440, { min: 320, max: 720 })).toBe(440);
   });

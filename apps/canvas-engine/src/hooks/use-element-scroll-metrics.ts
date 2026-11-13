@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   measurePreviewScroll,
   type PreviewScrollMetrics,
-} from "@/lib/canvas/image-toolbar-settings";
+} from "@/atlas-engine/ui/image-toolbar-settings";
 
 const initialMetrics = measurePreviewScroll(0, 1, 1);
 

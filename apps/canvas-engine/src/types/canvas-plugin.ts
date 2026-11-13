@@ -1,8 +1,8 @@
 import type { ComponentType, ReactNode } from "react";
 
-import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
+import type { CanvasAgentOp } from "@/atlas-engine/agent/canvas-operations";
 import type { CanvasTheme } from "@/lib/canvas-theme";
-import type { CanvasResourceKind } from "@/lib/canvas/canvas-resource-references";
+import type { CanvasResourceKind } from "@/atlas-engine/model/resource-references";
 import type { CanvasConnection, CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 
 export interface CanvasNodeResource {

@@ -4,7 +4,7 @@ import { Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { nodeBounds } from "@/lib/canvas/canvas-node-geometry";
+import { canvasNodeBounds as nodeBounds } from "@/atlas-engine/interaction/canvas-group-adapter";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasNodeData, ViewportTransform } from "@/types/canvas";
 

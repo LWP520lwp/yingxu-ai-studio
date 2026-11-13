@@ -3,9 +3,9 @@ import { createPortal } from "react-dom";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { promptMenuPosition } from "@/lib/canvas/canvas-prompt-input";
-import type { PromptMentionContext } from "@/lib/canvas/canvas-prompt-editor";
-import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { promptMenuPosition } from "@/atlas-engine/agent/prompt-input";
+import type { PromptMentionContext } from "@/atlas-engine/agent/prompt-editor";
+import type { CanvasResourceReference } from "@/atlas-engine/model/resource-references";
 
 type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
 

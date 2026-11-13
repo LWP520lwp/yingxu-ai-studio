@@ -17,18 +17,15 @@ import type {
   ContextMenuState,
 } from "@/types/canvas";
 import {
-  commitDocument,
-  createDocumentHistory,
-  redoDocument,
-  undoDocument,
-  type DocumentHistory,
-} from "@/product-engine/history";
-import { fromStoredCanvas, toStoredCanvas } from "@/product-engine/compat";
-import type { ProductDocument } from "@/product-engine/document";
+  createAtlasHistory,
+  recordAtlasSnapshot,
+  redoAtlasHistory,
+  undoAtlasHistory,
+  type AtlasHistory,
+} from "@/atlas-engine/history/document-history";
 
 export type CanvasHistoryEntry = {
   base: CanvasProject;
-  document: ProductDocument;
   nodes: CanvasNodeData[];
   connections: CanvasConnection[];
   chatSessions: CanvasAssistantSession[];
@@ -37,17 +34,15 @@ export type CanvasHistoryEntry = {
   showImageInfo: boolean;
 };
 
-type HistoryPayload = Omit<CanvasHistoryEntry, "base" | "document">;
+type HistoryPayload = Omit<CanvasHistoryEntry, "base">;
 
 export function createCanvasHistoryEntry(
   base: CanvasProject,
   payload: HistoryPayload,
 ): CanvasHistoryEntry {
-  const project = { ...base, ...payload };
   return {
     ...payload,
     base,
-    document: fromStoredCanvas(project),
   };
 }
 
@@ -120,10 +115,10 @@ export function useCanvasHistory(args: HistoryArgs) {
     [args.project?.createdAt, args.project?.id, args.project?.title],
   );
   const stacksRef = useRef<{
-    past: CanvasHistoryEntry[];
-    future: CanvasHistoryEntry[];
+    past: readonly CanvasHistoryEntry[];
+    future: readonly CanvasHistoryEntry[];
   }>({ past: [], future: [] });
-  const engineRef = useRef<DocumentHistory<CanvasHistoryEntry> | null>(null);
+  const engineRef = useRef<AtlasHistory<CanvasHistoryEntry> | null>(null);
   const currentRef = useRef<CanvasHistoryEntry | null>(null);
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const applyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -157,7 +152,7 @@ export function useCanvasHistory(args: HistoryArgs) {
     commitTimerRef.current = null;
     applyTimerRef.current = null;
     applyingRef.current = false;
-    engineRef.current = createDocumentHistory(entry);
+    engineRef.current = createAtlasHistory(entry);
     stacksRef.current = { past: [], future: [] };
     currentRef.current = entry;
     setState({ canUndo: false, canRedo: false });
@@ -169,13 +164,12 @@ export function useCanvasHistory(args: HistoryArgs) {
       if (applyTimerRef.current) clearTimeout(applyTimerRef.current);
       commitTimerRef.current = null;
       applyingRef.current = true;
-      const project = toStoredCanvas(entry.base, entry.document);
-      args.setNodes(project.nodes);
-      args.setConnections(project.connections);
-      args.setChatSessions(project.chatSessions);
-      args.setActiveChatId(project.activeChatId);
-      args.setBackgroundMode(project.backgroundMode);
-      args.setShowImageInfo(project.showImageInfo);
+      args.setNodes(entry.nodes);
+      args.setConnections(entry.connections);
+      args.setChatSessions(entry.chatSessions);
+      args.setActiveChatId(entry.activeChatId);
+      args.setBackgroundMode(entry.backgroundMode);
+      args.setShowImageInfo(entry.showImageInfo);
       args.setSelectedNodeIds(new Set());
       args.setSelectedConnectionId(null);
       args.setContextMenu(null);
@@ -205,7 +199,7 @@ export function useCanvasHistory(args: HistoryArgs) {
   const undo = useCallback(() => {
     const current = engineRef.current;
     if (!current) return;
-    const next = undoDocument(current);
+    const next = undoAtlasHistory(current);
     if (next === current) return;
     engineRef.current = next;
     stacksRef.current = { past: next.past, future: next.future };
@@ -215,7 +209,7 @@ export function useCanvasHistory(args: HistoryArgs) {
   const redo = useCallback(() => {
     const current = engineRef.current;
     if (!current) return;
-    const next = redoDocument(current);
+    const next = redoAtlasHistory(current);
     if (next === current) return;
     engineRef.current = next;
     stacksRef.current = { past: next.past, future: next.future };
@@ -236,7 +230,7 @@ export function useCanvasHistory(args: HistoryArgs) {
       if (!previous) return;
       const history = engineRef.current;
       if (!history) return;
-      const nextHistory = commitDocument(history, snapshot());
+      const nextHistory = recordAtlasSnapshot(history, snapshot());
       engineRef.current = nextHistory;
       stacksRef.current = {
         past: nextHistory.past,

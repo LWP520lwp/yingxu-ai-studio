@@ -4,7 +4,7 @@ import { getNodeSpec, NODE_SPECS } from "@/constant/canvas";
 import {
   buildBuiltinNodeDefinitions,
   resourceForNode,
-} from "@/lib/canvas/builtin-node-definitions";
+} from "@/atlas-engine/model/builtin-node-definitions";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 const icons = Object.fromEntries(

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCanvasGenerationSession } from "@/lib/canvas/canvas-generation-session";
+import { createAtlasGenerationSession as createCanvasGenerationSession } from "@/atlas-engine/workflows/generation-session";
 
 describe("canvas generation ownership", () => {
   it("cancels an entire shared batch before replacing its target and rejects late writes", () => {

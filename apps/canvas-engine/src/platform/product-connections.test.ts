@@ -4,7 +4,7 @@ import {
   connectionTargetAnchor,
   findConnectionDropTarget,
   normalizeProductConnection,
-} from "@/product-engine/connections";
+} from "@/atlas-engine/interaction/connections";
 
 const node = (
   id: string,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { CanvasAgentSession } from "@/lib/agent-canvas-session";
-import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import type { CanvasAgentSnapshot } from "@/atlas-engine/agent/canvas-operations";
 
 function harness() {
   let snapshot: CanvasAgentSnapshot = {

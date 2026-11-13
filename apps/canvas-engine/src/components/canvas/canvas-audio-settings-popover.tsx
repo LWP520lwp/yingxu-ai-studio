@@ -16,7 +16,7 @@ import {
 import {
   positionAudioSettingsPopover,
   type AudioPopoverPlacement,
-} from "@/lib/canvas/audio-settings-popover";
+} from "@/atlas-engine/ui/audio-settings-popover";
 import { useCanvasPopover } from "@/hooks/use-canvas-popover";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";

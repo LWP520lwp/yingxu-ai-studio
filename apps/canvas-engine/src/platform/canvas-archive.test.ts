@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readCanvasArchive } from "@/lib/canvas/canvas-archive";
+import { readCanvasArchive } from "@/atlas-engine/workflows/project-archive";
 import { LEGACY_CANVAS_FILE_ID } from "@/lib/legacy-data-compatibility";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type { CanvasExportAsset } from "@/types/canvas-export";

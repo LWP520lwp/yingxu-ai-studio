@@ -10,10 +10,10 @@ import {
 
 import type { CanvasBackgroundMode } from "@/lib/canvas-theme";
 import {
-  hydrateAssistantImages,
-  hydrateCanvasImages,
-  resetInterruptedGeneration,
-} from "@/lib/canvas/canvas-generation-helpers";
+  hydrateAtlasAssistantImages as hydrateAssistantImages,
+  hydrateAtlasCanvasImages as hydrateCanvasImages,
+  resetAtlasInterruptedGeneration as resetInterruptedGeneration,
+} from "@/atlas-engine/workflows/generation-runtime";
 import type { CanvasProject } from "@/stores/canvas/use-canvas-store";
 import type {
   CanvasAssistantSession,

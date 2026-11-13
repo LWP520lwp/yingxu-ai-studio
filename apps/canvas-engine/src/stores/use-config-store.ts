@@ -30,6 +30,10 @@ import {
   serializeConfigSnapshot,
 } from "@/lib/config/persistence";
 import {
+  transitionConfigStore,
+  type ConfigStoreData,
+} from "@/lib/config/store-transitions";
+import {
   applyPlatformCatalog,
   catalogModelLabel,
   isCatalogModelReady,
@@ -66,12 +70,7 @@ export {
   defaultBaseUrlForApiFormat,
 } from "@/lib/config/channel-models";
 
-type ConfigStore = {
-  config: AiConfig;
-  webdav: WebdavSyncConfig;
-  isConfigOpen: boolean;
-  configTab: ConfigTabKey;
-  shouldPromptContinue: boolean;
+type ConfigStore = ConfigStoreData & {
   updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
   importChannelCredentials: (input: {
     baseUrl?: string | null;
@@ -154,22 +153,45 @@ export const useConfigStore = create<ConfigStore>()(
       shouldPromptContinue: false,
       updateConfig: (key, value) =>
         set((state) => ({
-          config: platformConfig({ ...state.config, [key]: value }),
+          config: platformConfig(
+            transitionConfigStore(state, {
+              type: "update-config",
+              key,
+              value,
+            }).config,
+          ),
         })),
-      importChannelCredentials: (input) => {
-        void input;
-        return { status: "invalid-base-url" };
-      },
+      // Provider credentials are owned by the host account pool, never this store.
+      importChannelCredentials: () => ({ status: "invalid-base-url" }),
       updateWebdavConfig: (key, value) =>
-        set((state) => ({ webdav: { ...state.webdav, [key]: value } })),
+        set((state) => ({
+          webdav: transitionConfigStore(state, {
+            type: "update-webdav",
+            key,
+            value,
+          }).webdav,
+        })),
       isAiConfigReady: (config, model) =>
         isCatalogModelReady(config, model, getPlatformInit()?.models),
       openConfigDialog: (
         shouldPromptContinue = false,
         configTab = "channels",
-      ) => set({ isConfigOpen: true, shouldPromptContinue, configTab }),
-      setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
-      clearPromptContinue: () => set({ shouldPromptContinue: false }),
+      ) =>
+        set((state) =>
+          transitionConfigStore(state, {
+            type: "open-dialog",
+            shouldPromptContinue,
+            tab: configTab,
+          }),
+        ),
+      setConfigDialogOpen: (isOpen) =>
+        set((state) =>
+          transitionConfigStore(state, { type: "set-dialog-open", isOpen }),
+        ),
+      clearPromptContinue: () =>
+        set((state) =>
+          transitionConfigStore(state, { type: "clear-prompt-continue" }),
+        ),
     }),
     {
       name: CONFIG_STORE_KEY,

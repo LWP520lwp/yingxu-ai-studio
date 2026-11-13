@@ -8,8 +8,8 @@ import {
   minimapNodeRect,
   minimapViewportRect,
   viewportAtMinimapPoint,
-} from "@/lib/canvas/canvas-minimap";
-import { getNodeDefinition } from "@/lib/canvas/node-registry";
+} from "@/atlas-engine/ui/canvas-minimap";
+import { getAtlasNodeDefinition as getNodeDefinition } from "@/atlas-engine/model/node-registry";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type {
   CanvasConnection,

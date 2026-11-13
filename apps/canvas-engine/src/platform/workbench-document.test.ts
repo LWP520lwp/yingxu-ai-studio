@@ -7,7 +7,7 @@ import {
     reduceWorkbenchDocument,
     validateWorkbenchDocument,
     type WorkbenchDocument,
-} from "@/lib/canvas/workbench-document";
+} from "@/atlas-engine/document/workbench-document";
 import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 
 const node = (id: string, x = 0): CanvasNodeData => ({

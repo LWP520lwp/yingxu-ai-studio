@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type MutableRefObj
 import i18n from "@/i18n";
 import { CanvasAgentSession } from "@/lib/agent-canvas-session";
 import { useAgentStore } from "@/stores/use-agent-store";
-import type { CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import type { CanvasAgentSnapshot } from "@/atlas-engine/agent/canvas-operations";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
 import type { CanvasConnection, CanvasNodeData, ContextMenuState, ViewportTransform } from "@/types/canvas";
 

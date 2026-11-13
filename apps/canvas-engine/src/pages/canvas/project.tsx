@@ -55,34 +55,61 @@ import {
   useConfigStore,
   useEffectiveConfig,
 } from "@/stores/use-config-store";
-import { ensureImagePreview, uploadImage } from "@/services/image-storage";
-import { uploadMediaFile, type UploadedFile } from "@/services/file-storage";
+import { deleteStoredImages, ensureImagePreview, resolveImageUrl, uploadImage } from "@/services/image-storage";
+import { deleteStoredMedia, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
-import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
+import { readImageMeta } from "@/lib/image-utils";
+import { mapConcurrent } from "@/lib/async-pool";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import {
-  cropDataUrl,
-  splitDataUrl,
-  upscaleDataUrl,
-} from "@/lib/canvas/canvas-image-data";
-import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
-import { applyCanvasNodeCommand } from "@/lib/canvas/canvas-node-commands";
-import { createCanvasGenerationSession } from "@/lib/canvas/canvas-generation-session";
-import { generateCanvasImageBatch } from "@/lib/canvas/canvas-image-batch-controller";
-import { summarizeCanvasGenerationBatch } from "@/lib/canvas/canvas-generation-outcome";
-import { completeCanvasVideoGeneration } from "@/lib/canvas/canvas-video-generation";
-import { retryCanvasNode } from "@/lib/canvas/canvas-retry-controller";
-import { generateCanvasAudio } from "@/lib/canvas/canvas-audio-generation-controller";
-import { generateCanvasTextBatch } from "@/lib/canvas/canvas-text-batch-controller";
-import { tidyCanvasNodes } from "@/lib/canvas/canvas-tidy-layout";
+  cropAtlasImageDataUrl as cropDataUrl,
+  splitAtlasImageDataUrl as splitDataUrl,
+  upscaleAtlasImageDataUrl as upscaleDataUrl,
+} from "@/atlas-engine/workflows/image-processing";
 import {
-  captureCanvasFragment,
-  placeCanvasFragment,
-  type CanvasFragment,
-} from "@/lib/canvas/canvas-fragment";
+  fitAtlasNodeSize as fitNodeSize,
+  atlasNodeSizeFromRatio as nodeSizeFromRatio,
+} from "@/atlas-engine/model/node-size";
+import { applyAtlasNodeCommand as applyCanvasNodeCommand } from "@/atlas-engine/interaction/node-layout";
+import { createAtlasGenerationCoordinator, atlasGenerationScopeKey } from "@/atlas-engine/workflows/generation-coordinator";
+import { completeAtlasVideoGeneration as completeCanvasVideoGeneration } from "@/atlas-engine/workflows/video-generation";
+import { retryAtlasCanvasNode as retryCanvasNode } from "@/atlas-engine/workflows/generation-retry";
+import { executeAtlasProvider, executeAtlasImageWriteback } from "@/atlas-engine/workflows/generation-provider";
+import {
+  applyAtlasImageEditMedia,
+  createAtlasImageEditGuard,
+  executeAtlasImageEdit,
+  planAtlasAngleImageEdit,
+  planAtlasMaskImageEdit,
+  restoreAtlasImageEditCancellation,
+  type AtlasImageEditPlan,
+} from "@/atlas-engine/workflows/image-edit-plan";
+import {
+  planAtlasImageReversePrompt,
+  planAtlasTextToImage,
+  planAtlasTextToVideo,
+} from "@/atlas-engine/interaction/generation-commands";
+import { tidyAtlasNodes as tidyCanvasNodes } from "@/atlas-engine/interaction/node-layout";
+import {
+  captureAtlasFragment as captureCanvasFragment,
+  type AtlasCanvasFragment as CanvasFragment,
+} from "@/atlas-engine/interaction/node-layout";
+import {
+  atlasBatchRemovalCollapses,
+  atlasNodeCreationOpensPanel,
+  planAtlasBatchImageDuplicate,
+  planAtlasBatchImageRemoval,
+  planAtlasBatchPrimary,
+  planAtlasConnectedNode,
+  planAtlasConnectionRemoval,
+  planAtlasFragmentClone,
+  planAtlasFragmentInsertion,
+  planAtlasNodeInsertion,
+  planAtlasReferenceDisconnect,
+} from "@/atlas-engine/interaction/node-commands";
 import {
   canvasViewBounds,
   connectedSourcesByTarget,
@@ -92,17 +119,14 @@ import {
   relatedCanvasElements,
   selectVisibleConnections,
   selectVisibleNodes,
-} from "@/lib/canvas/canvas-view-model";
+} from "@/atlas-engine/surface/spatial-index";
 import {
-  captureVideoFrame,
-  type VideoFramePosition,
-} from "@/lib/canvas/canvas-video-frame";
+  captureAtlasVideoFrame as captureVideoFrame,
+  type AtlasVideoFramePosition as VideoFramePosition,
+} from "@/atlas-engine/workflows/video-frame";
 import { App, Button, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
-import {
-  AtlasActiveConnectionPath as ActiveConnectionPath,
-  AtlasConnectionPath as ConnectionPath,
-} from "@/atlas-engine/surface/AtlasConnectionLayer";
+import { AtlasBoardScene } from "@/atlas-engine/surface/AtlasBoardScene";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
 import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
@@ -114,8 +138,6 @@ import type { CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-u
 import {
   buildNodeGenerationContext,
   buildNodeGenerationInputs,
-  buildNodeResponseMessages,
-  frameReferenceIssue,
   hydrateNodeGenerationContext,
   type NodeGenerationInput,
 } from "@/components/canvas/canvas-node-generation";
@@ -126,38 +148,57 @@ import {
 import { CanvasSelectionToolbar } from "@/components/canvas/canvas-selection-toolbar";
 import { AtlasCanvasViewport as CanvasViewport } from "@/atlas-engine/surface/AtlasCanvasViewport";
 import { Minimap } from "@/components/canvas/canvas-mini-map";
-import { ProductNodeCard as CanvasNode } from "@/product-engine/NodeCard";
-import { runNodeGenerationFlow } from "@/product-engine/node-generation-flow";
+import { resolveAtlasShortcut as resolveCanvasShortcutIntent } from "@/atlas-engine/workflows/async-flow";
+import { resolveAtlasGenerationRequest } from "@/atlas-engine/workflows/generation-request";
 import {
-  beginBoardNodeDrag,
-  beginCanvasSelection,
-  cancelBoardNodeDrag,
-  finishBoardNodeDrag,
-  finishCanvasSelection,
+  applyAtlasGenerationFailure,
+  applyAtlasGenerationEvent,
+  beginAtlasGenerationSource,
+  cancelAtlasGenerationNodes,
+  finalizeAtlasImageBatch,
+  finalizeAtlasTextBatch,
+  patchAtlasGenerationMetadata,
+  restoreAtlasCancelledImageSource,
+} from "@/atlas-engine/workflows/generation-state";
+import {
   idleBoardInteraction,
-  selectBoardNode,
-  updateBoardNodeDrag,
-  updateCanvasSelection,
   type BoardInteractionState,
-} from "@/product-engine/board-interactions";
+} from "@/atlas-engine/interaction/canvas-board-adapter";
+import { useAtlasNodeSelection } from "@/atlas-engine/host/use-atlas-node-selection";
+import { useAtlasBoardGestures } from "@/pages/canvas/hooks/use-atlas-board-gestures";
+import { useAtlasNodeDialogs } from "@/pages/canvas/hooks/use-atlas-node-dialogs";
 import {
-  applyMediaReplacement,
-  planMediaImport,
-} from "@/product-engine/media-import";
+  canvasCenterInWorld,
+  centeredCanvasViewport,
+  clientPointToCanvas,
+  zoomCanvasToScale,
+} from "@/atlas-engine/host/viewport-controller";
 import {
-  applyAngleImageResult,
-  createAngleImageDraft,
-} from "@/product-engine/angle-image";
+  applyAtlasMediaReplacement as applyMediaReplacement,
+  createAtlasCropImageResult as createCropImageResult,
+  createAtlasSplitImageResults as createSplitImageResults,
+  createAtlasUpscaleImageResult as createUpscaleImageResult,
+  planAtlasMediaImport as planMediaImport,
+} from "@/atlas-engine/workflows/media-operations";
 import {
-  createCropImageResult,
-  createSplitImageResults,
-  createUpscaleImageResult,
-} from "@/product-engine/image-operations";
+  atlasMediaCommitCommands,
+  atlasMediaOutputPosition,
+  buildAtlasAssetDraft,
+  buildAtlasCapturedFrameNode,
+  createAtlasAssistantImageNode,
+  createAtlasAssistantTextNode,
+  createAtlasAssetNode,
+  createAtlasClipboardTextNode,
+  createAtlasMediaTransactions,
+  importAtlasMediaBatch,
+  readAtlasClipboard,
+  type AtlasTransferContext,
+} from "@/atlas-engine/workflows/media-transaction";
 import {
-  resumeCanvasVideoTask,
-  videoTaskFailureMetadata,
-} from "@/product-engine/resume-video-task";
-import { resolveCanvasShortcutIntent } from "@/product-engine/canvas-shortcut-intent";
+  resumeAtlasVideoTask as resumeCanvasVideoTask,
+  applyAtlasVideoResumeFailure,
+  planAtlasVideoResume,
+} from "@/atlas-engine/workflows/video-task";
 import {
   CanvasNodePromptPanel,
   type CanvasNodeGenerationMode,
@@ -167,13 +208,18 @@ import type { InsertAssetPayload } from "@/components/canvas/asset-picker-modal"
 import { CanvasSidePanel } from "@/components/canvas/canvas-library-panel";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
+import { AtlasAgentPanel } from "@/atlas-engine/agent/AtlasAgentPanel";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useAtlasDocumentState } from "@/atlas-engine/host/use-atlas-document-state";
+import { planAtlasNodeDeletion } from "@/atlas-engine/interaction/node-actions";
 import {
-  applyCanvasImageBatchFailure,
-  applyCanvasImageBatchSuccess,
-  applyCanvasImageOutputPlan,
-  planCanvasImageOutput,
-} from "@/product-engine/generation-output-plan";
+} from "@/atlas-engine/workflows/generation-output";
+import {
+  applyAtlasNodeOutputPlan,
+  atlasNodeOutputConnection,
+  atlasNodeOutputId,
+  planAtlasNodeOutput,
+} from "@/atlas-engine/workflows/node-output";
 import { useAgentBridge } from "@/pages/canvas/hooks/use-agent-bridge";
 import { usePluginHost } from "@/pages/canvas/hooks/use-plugin-host";
 import { useCanvasHistory } from "@/pages/canvas/hooks/use-canvas-history";
@@ -181,59 +227,56 @@ import { useCanvasDocument } from "@/pages/canvas/hooks/use-canvas-document";
 import {
   createCanvasResourceIndex,
   type CanvasResourceReference,
-} from "@/lib/canvas/canvas-resource-references";
+} from "@/atlas-engine/model/resource-references";
 import {
-  audioMetadata,
-  buildAudioGenerationMetadata,
-  buildImageGenerationMetadata,
-  createCanvasNode,
-  imageMetadata,
-  videoMetadata,
-} from "@/lib/canvas/canvas-node-factory";
+  atlasAudioMetadata as audioMetadata,
+  createAtlasNode as createCanvasNode,
+  atlasImageMetadata as imageMetadata,
+  atlasVideoMetadata as videoMetadata,
+} from "@/atlas-engine/model/node-factory";
 import {
-  applyGroupSelection,
-  applyUngroupSelection,
-  canGroupSelectedNodes,
-  canUngroupSelectedNodes,
-  collectGroupMemberNodes,
-  focusViewportForNode,
-  getGroupWrapRect,
-  nodeBounds,
-} from "@/lib/canvas/canvas-node-geometry";
+  applyAtlasGroupSelection as applyGroupSelection,
+  applyAtlasUngroupSelection as applyUngroupSelection,
+  canCanvasGroupSelection as canGroupSelectedNodes,
+  canCanvasUngroupSelection as canUngroupSelectedNodes,
+  canvasGroupMembers as collectGroupMemberNodes,
+  canvasGroupFrame as getGroupWrapRect,
+  canvasNodeBounds as nodeBounds,
+  focusCanvasViewportForNode as focusViewportForNode,
+} from "@/atlas-engine/interaction/canvas-group-adapter";
 import {
   CONNECTION_HANDLE_HIT_RADIUS,
   CONNECTION_NODE_HIT_PADDING,
   findConnectionDropTarget as resolveConnectionDropTarget,
   normalizeProductConnection,
   type ConnectionDropTarget,
-} from "@/product-engine/connections";
+} from "@/atlas-engine/interaction/connections";
 import {
-  audioExtension,
-  buildAngleLabel,
-  buildAnglePrompt,
-  buildGenerationConfig,
-  findRetrySourceNode,
-  generationReferenceUrls,
-  getGenerationCount,
-  getInputSummary,
-  hasResumableVideoTask,
-  imageExtension,
-  isAudioFile,
-  isGenerationCanceled,
-  resolveMetadataReferences,
-  sourceNodeReferenceImages,
-} from "@/lib/canvas/canvas-generation-helpers";
+  atlasAudioExtension as audioExtension,
+  buildAtlasAngleLabel as buildAngleLabel,
+  buildAtlasAnglePrompt as buildAnglePrompt,
+  buildAtlasGenerationConfig as buildGenerationConfig,
+  findAtlasRetrySourceNode as findRetrySourceNode,
+  atlasGenerationReferenceUrls as generationReferenceUrls,
+  atlasGenerationCount as getGenerationCount,
+  atlasInputSummary as getInputSummary,
+  hasAtlasResumableVideoTask as hasResumableVideoTask,
+  atlasImageExtension as imageExtension,
+  isAtlasAudioFile as isAudioFile,
+  isAtlasGenerationCanceled as isGenerationCanceled,
+  resolveAtlasMetadataReferences as resolveMetadataReferences,
+  atlasSourceNodeReferenceImages as sourceNodeReferenceImages,
+} from "@/atlas-engine/workflows/generation-runtime";
 import {
-  getNodeDefinition,
-  isBuiltinNodeType as isBuiltinType,
-  useNodeRegistryVersion,
-} from "@/lib/canvas/node-registry";
+  getAtlasNodeDefinition as getNodeDefinition,
+  useAtlasNodeRegistryVersion as useNodeRegistryVersion,
+} from "@/atlas-engine/model/node-registry";
 import { registerBuiltinNodes } from "@/components/canvas/nodes/builtin-nodes";
 import {
-  COMPOSITION_NODE_TYPE,
-  compositionVideos,
-  createComposition,
-} from "@/lib/canvas/canvas-composition";
+  ATLAS_COMPOSITION_NODE_TYPE as COMPOSITION_NODE_TYPE,
+  atlasCompositionVideos as compositionVideos,
+  createAtlasComposition as createComposition,
+} from "@/atlas-engine/workflows/video-composition";
 import { CanvasRefreshShell } from "@/components/canvas/canvas-refresh-shell";
 import { CanvasTopBar } from "@/components/canvas/canvas-top-bar";
 import {
@@ -248,7 +291,6 @@ import {
   type CanvasConnection,
   type CanvasNodeData,
   type CanvasNodeImage,
-  type CanvasNodeText,
   type CanvasNodeTypeId,
   type ConnectionHandle,
   type ContextMenuState,
@@ -301,7 +343,6 @@ const VIDEO_NODE_MAX_WIDTH = 420;
 const VIDEO_NODE_MAX_HEIGHT = 420;
 // Stable empty reference array prevents `... || []` from invalidating CanvasNode's React.memo on every render.
 const EMPTY_REFERENCES: CanvasResourceReference[] = [];
-const NODE_STATUS_IDLE = "idle" as const;
 const NODE_STATUS_LOADING = "loading" as const;
 const NODE_STATUS_SUCCESS = "success" as const;
 const NODE_STATUS_ERROR = "error" as const;
@@ -438,26 +479,26 @@ function InfiniteCanvasPage() {
     state.projects.find((project) => project.id === projectId),
   );
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
-  const [nodes, setNodes] = useState<CanvasNodeData[]>([]);
-  const [connections, setConnections] = useState<CanvasConnection[]>([]);
+  const {
+    nodes,
+    connections,
+    viewport,
+    selectedNodeIds,
+    selectedConnectionId,
+    dispatchAtlasCommands,
+    setNodes,
+    setConnections,
+    setViewport,
+    setSelectedNodeIds,
+    setSelectedConnectionId,
+  } = useAtlasDocumentState();
   const [chatSessions, setChatSessions] = useState<CanvasAssistantSession[]>(
     [],
   );
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [viewport, setViewport] = useState<ViewportTransform>({
-    x: 0,
-    y: 0,
-    k: 1,
-  });
   const [restoreRetrySequence, setRestoreRetrySequence] = useState(0);
   const [canvasTool, setCanvasTool] = useState<"select" | "pan">("pan");
   const [size, setSize] = useState({ width: 1200, height: 720 });
-  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(
-    new Set(),
-  );
-  const [selectedConnectionId, setSelectedConnectionId] = useState<
-    string | null
-  >(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [connectingParams, setConnectingParams] =
     useState<ConnectionHandle | null>(null);
@@ -484,14 +525,14 @@ function InfiniteCanvasPage() {
   const [dialogNodeId, setDialogNodeId] = useState<string | null>(null);
   const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
   const [pluginManagerOpen, setPluginManagerOpen] = useState(false);
-  const [cropNodeId, setCropNodeId] = useState<string | null>(null);
-  const [maskEditNodeId, setMaskEditNodeId] = useState<string | null>(null);
-  const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
-  const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
-  const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(
-    null,
-  );
-  const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
+  const {
+    cropNodeId, setCropNodeId,
+    maskEditNodeId, setMaskEditNodeId,
+    splitNodeId, setSplitNodeId,
+    upscaleNodeId, setUpscaleNodeId,
+    superResolveNodeId, setSuperResolveNodeId,
+    angleNodeId, setAngleNodeId,
+  } = useAtlasNodeDialogs(projectId);
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
   const [hoverPreviewNodeId, setHoverPreviewNodeId] = useState<string | null>(
     null,
@@ -553,9 +594,12 @@ function InfiniteCanvasPage() {
   const connectingParamsRef = useRef(connectingParams);
   const connectionTargetNodeIdRef = useRef(connectionTargetNodeId);
   const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
-  const [generationRequests] = useState(createCanvasGenerationSession);
-  const videoPollIdsRef = useRef(new Set<string>());
   const activeProjectIdRef = useRef(projectId);
+  const [generationRequests] = useState(() => createAtlasGenerationCoordinator(
+    () => ({ projectId: activeProjectIdRef.current, scopeId: getPlatformInit()?.scopeId }),
+    isGenerationCanceled,
+  ));
+  const videoPollIdsRef = useRef(new Set<string>());
 
   const handleDocumentRestoreError = useCallback(
     (error: unknown) => {
@@ -924,131 +968,65 @@ function InfiniteCanvasPage() {
   );
 
   const pollVideoNodeTask = useCallback(
-    async (node: CanvasNodeData, silent = false) => {
-      const taskId = node.metadata?.videoTaskId;
-      if (
-        !taskId ||
-        node.metadata?.content ||
-        generationRequests.has(node.id) ||
-        videoPollIdsRef.current.has(node.id)
-      )
+    async (candidate: CanvasNodeData, silent = false) => {
+      const node = nodesRef.current.find((item) => item.id === candidate.id);
+      const config = buildGenerationConfig(effectiveConfig, node, "video");
+      const pollKey = atlasGenerationScopeKey({ projectId: activeProjectIdRef.current, scopeId: getPlatformInit()?.scopeId }, candidate.id);
+      const plan = planAtlasVideoResume(node, config.model, isAiConfigReady(config, config.model),
+        generationRequests.has(candidate.id) || videoPollIdsRef.current.has(pollKey));
+      if (plan.kind === "skip") return;
+      if (plan.kind === "configure") {
+        if (silent)
+          setNodes((current) => patchAtlasGenerationMetadata(current, candidate.id, { status: "error", errorDetails: t("workbench.configFirst") }));
+        else openConfigDialog(true);
         return;
-      videoPollIdsRef.current.add(node.id);
-      let controller: AbortController | undefined;
+      }
+      videoPollIdsRef.current.add(pollKey);
       try {
-        const generationConfig = buildGenerationConfig(
-          effectiveConfig,
-          node,
-          "video",
-        );
-        if (
-          node.metadata?.videoTaskProvider !== "platform" &&
-          !isAiConfigReady(generationConfig, generationConfig.model)
-        ) {
-          if (silent) {
-            setNodes((prev) =>
-              prev.map((item) =>
-                item.id === node.id
-                  ? {
-                      ...item,
-                      metadata: {
-                        ...item.metadata,
-                        status: NODE_STATUS_ERROR,
-                        errorDetails: t("workbench.configFirst"),
-                      },
-                    }
-                  : item,
-              ),
+        await generationRequests.run({
+          nodeId: candidate.id,
+          start: ({ controller }) => {
+            setRunningNodeId(candidate.id);
+            setNodesForGeneration(candidate.id, controller, (current) =>
+              patchAtlasGenerationMetadata(current, candidate.id, { status: "loading", errorDetails: undefined }),
             );
-            return;
-          }
-          openConfigDialog(true);
-          return;
-        }
-        controller = startGenerationRequest(node.id, node.id, node.id);
-        setRunningNodeId(node.id);
-        setNodesForGeneration(node.id, controller, (prev) =>
-          prev.map((item) =>
-            item.id === node.id
-              ? {
-                  ...item,
-                  metadata: {
-                    ...item.metadata,
-                    status: NODE_STATUS_LOADING,
-                    errorDetails: undefined,
-                  },
-                }
-              : item,
-          ),
-        );
-        await resumeCanvasVideoTask({
-          node,
-          task: {
-            id: taskId,
-            provider: node.metadata?.videoTaskProvider || "platform",
-            projectId: node.metadata?.videoTaskProjectId,
-            model: generationConfig.model,
           },
-          config: generationConfig,
-          controller,
-          ports: {
-            waitForTask: waitForVideoGenerationTask,
-            storeVideo: storeGeneratedVideo,
-            canWrite: (targetId, activeController) =>
-              generationRequests.canWrite(targetId, activeController),
-            writeNode: setNodesForGeneration,
-            applyVideo: applyGeneratedVideo,
+          prepare: async () => plan,
+          execute: async (resume, lease) => {
+            const ownsTask = (nodeId: string, controller: AbortController) =>
+              generationRequests.canWrite(nodeId, controller) &&
+              nodesRef.current.find((item) => item.id === nodeId)?.metadata?.videoTaskId === resume.task.id;
+            await resumeCanvasVideoTask({
+              node: resume.node,
+              task: resume.task,
+              config,
+              controller: lease.controller,
+              ports: {
+                waitForTask: waitForVideoGenerationTask,
+                storeVideo: storeGeneratedVideo,
+                ownsNode: ownsTask,
+                updateNode: (nodeId, controller, update) => setNodesForGeneration(nodeId, controller,
+                  (current) => current.find((item) => item.id === nodeId)?.metadata?.videoTaskId === resume.task.id ? update(current) : current),
+                createCompletedNode: applyGeneratedVideo,
+              },
+            });
+          },
+          failed: (error, { controller }) => {
+            const details = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
+            message.error(details);
+            setNodesForGeneration(candidate.id, controller, (current) =>
+              applyAtlasVideoResumeFailure(current, candidate.id, plan.task.id, details, isVideoTaskFailed(error)),
+            );
+          },
+          settled: (_lease, latest) => {
+            if (latest) setRunningNodeId((current) => current === candidate.id ? null : current);
           },
         });
-      } catch (error) {
-        if (
-          isGenerationCanceled(error) ||
-          !controller ||
-          !generationRequests.canWrite(node.id, controller)
-        )
-          return;
-        const errorDetails =
-          error instanceof Error
-            ? error.message
-            : t("canvas.projectPage.generationFailed");
-        message.error(errorDetails);
-        if (controller && !controller.signal.aborted)
-          setNodesForGeneration(node.id, controller, (prev) =>
-            prev.map((item) =>
-              item.id === node.id
-                ? {
-                    ...item,
-                      metadata: videoTaskFailureMetadata(
-                        item.metadata,
-                        errorDetails,
-                        isVideoTaskFailed(error),
-                      ),
-                  }
-                : item,
-            ),
-          );
       } finally {
-        videoPollIdsRef.current.delete(node.id);
-        if (controller) {
-          finishGenerationRequest(node.id, controller);
-          if (generationRequests.canWrite(node.id, controller))
-            setRunningNodeId((current) =>
-              current === node.id ? null : current,
-            );
-        }
+        videoPollIdsRef.current.delete(pollKey);
       }
     },
-    [
-      effectiveConfig,
-      finishGenerationRequest,
-      generationRequests,
-      isAiConfigReady,
-      message,
-      openConfigDialog,
-      setNodesForGeneration,
-      startGenerationRequest,
-      t,
-    ],
+    [effectiveConfig, generationRequests, isAiConfigReady, message, openConfigDialog, setNodesForGeneration, t],
   );
 
   const stopGenerationByRunningId = useCallback(
@@ -1056,39 +1034,7 @@ function InfiniteCanvasPage() {
       const affectedNodeIds = generationRequests.cancelRunning(runningId);
       setRunningNodeId((current) => (current === runningId ? null : current));
       if (!affectedNodeIds.size) return;
-      setNodes((prev) =>
-        prev.map((node) =>
-          affectedNodeIds.has(node.id) &&
-          node.metadata?.status === NODE_STATUS_LOADING
-            ? {
-                ...node,
-                metadata: {
-                  ...node.metadata,
-                  status: NODE_STATUS_IDLE,
-                  errorDetails: undefined,
-                  images: node.metadata.images?.map((image) =>
-                    image.status === NODE_STATUS_LOADING
-                      ? {
-                          ...image,
-                          status: NODE_STATUS_ERROR,
-                          errorDetails: t("common.requestCanceled"),
-                        }
-                      : image,
-                  ),
-                  texts: node.metadata.texts?.map((text) =>
-                    text.status === NODE_STATUS_LOADING
-                      ? {
-                          ...text,
-                          status: NODE_STATUS_ERROR,
-                          errorDetails: t("common.requestCanceled"),
-                        }
-                      : text,
-                  ),
-                },
-              }
-            : node,
-        ),
-      );
+      setNodes((current) => cancelAtlasGenerationNodes(current, affectedNodeIds, t("common.requestCanceled")));
     },
     [generationRequests, t],
   );
@@ -1176,23 +1122,21 @@ function InfiniteCanvasPage() {
 
   const screenToCanvas = useCallback((clientX: number, clientY: number) => {
     const rect = containerRef.current?.getBoundingClientRect();
-    const currentViewport = viewportRef.current;
-    const localX = clientX - (rect?.left || 0);
-    const localY = clientY - (rect?.top || 0);
-
-    return {
-      x: (localX - currentViewport.x) / currentViewport.k,
-      y: (localY - currentViewport.y) / currentViewport.k,
-    };
+    return clientPointToCanvas(
+      { x: clientX, y: clientY },
+      { left: rect?.left ?? 0, top: rect?.top ?? 0 },
+      viewportRef.current,
+    );
   }, []);
 
   const getCanvasCenter = useCallback(() => {
     const rect = containerRef.current?.getBoundingClientRect();
-    return screenToCanvas(
-      (rect?.left || 0) + (rect?.width || size.width) / 2,
-      (rect?.top || 0) + (rect?.height || size.height) / 2,
+    return canvasCenterInWorld(
+      { left: rect?.left ?? 0, top: rect?.top ?? 0 },
+      { width: rect?.width || size.width, height: rect?.height || size.height },
+      viewportRef.current,
     );
-  }, [screenToCanvas, size.height, size.width]);
+  }, [size.height, size.width]);
 
   const setConnecting = useCallback((next: ConnectionHandle | null) => {
     connectingParamsRef.current = next;
@@ -1267,23 +1211,20 @@ function InfiniteCanvasPage() {
               ),
             }
           : undefined;
-      const newNode = createCanvasNode(type, pending.position, metadata);
-      const connection = normalizeProductConnection(
-        pending.connection.nodeId,
-        newNode.id,
-        [...nodesRef.current, newNode],
-        pending.connection.handleType,
+      const plan = planAtlasConnectedNode(
+        type,
+        pending.position,
+        pending.connection,
+        metadata,
+        nodesRef.current,
       );
-      if (!connection) {
+      if (!plan) {
         message.warning(t("canvas.projectPage.configConnection"));
         return;
       }
-      setNodes((prev) => [...prev, newNode]);
-      setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
-      setSelectedNodeIds(new Set([newNode.id]));
-      setSelectedConnectionId(null);
+      dispatchAtlasCommands(plan.commands);
       if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio)
-        setDialogNodeId(newNode.id);
+        setDialogNodeId(plan.nodes[0].id);
       setPendingConnectionCreate(null);
       setConnecting(null);
     },
@@ -1293,6 +1234,7 @@ function InfiniteCanvasPage() {
       effectiveConfig.imageModel,
       effectiveConfig.model,
       effectiveConfig.size,
+      dispatchAtlasCommands,
       message,
       setConnecting,
       t,
@@ -1497,24 +1439,9 @@ function InfiniteCanvasPage() {
           : undefined;
       const newNode = createCanvasNode(type, targetPosition, configMetadata);
 
-      setNodes((prev) => [...prev, newNode]);
-      setSelectedNodeIds(new Set([newNode.id]));
-      setSelectedConnectionId(null);
-      const definition = getNodeDefinition(type);
-      // Display-only plugin nodes with hidePanel do not open a panel; custom Panels require autoOpenPanel on creation.
-      // Plugin nodes declaring useBuiltinPanel open the built-in generation panel on creation, like image nodes.
-      // Built-in image, video, and config nodes retain their existing open-on-create behavior.
-      const wantsPanel = definition?.hidePanel
-        ? false
-        : definition?.Panel
-          ? Boolean(definition.autoOpenPanel)
-          : definition?.useBuiltinPanel
-            ? true
-            : isBuiltinType(type) &&
-              type !== CanvasNodeType.Text &&
-              type !== CanvasNodeType.Audio &&
-              type !== CanvasNodeType.Group;
-      if (wantsPanel) setDialogNodeId(newNode.id);
+      dispatchAtlasCommands(planAtlasNodeInsertion([newNode]));
+      if (atlasNodeCreationOpensPanel(type, getNodeDefinition(type)))
+        setDialogNodeId(newNode.id);
     },
     [
       effectiveConfig.canvasImageCount,
@@ -1523,6 +1450,7 @@ function InfiniteCanvasPage() {
       effectiveConfig.model,
       effectiveConfig.size,
       getCanvasCenter,
+      dispatchAtlasCommands,
     ],
   );
 
@@ -1534,25 +1462,7 @@ function InfiniteCanvasPage() {
       setRunningNodeId((current) =>
         current && cancelledIds.has(current) ? null : current,
       );
-      setNodes((prev) => {
-        const next = prev.filter((node) => !allIds.has(node.id));
-        return next.map((node) => {
-          const groupId = node.metadata?.groupId;
-          if (groupId && allIds.has(groupId))
-            return {
-              ...node,
-              metadata: { ...node.metadata, groupId: undefined },
-            };
-          return node;
-        });
-      });
-      setConnections((prev) =>
-        prev.filter(
-          (conn) => !allIds.has(conn.fromNodeId) && !allIds.has(conn.toNodeId),
-        ),
-      );
-      setSelectedNodeIds(new Set());
-      setSelectedConnectionId(null);
+      dispatchAtlasCommands(planAtlasNodeDeletion(allIds));
       setHoveredNodeId((current) =>
         current && allIds.has(current) ? null : current,
       );
@@ -1677,28 +1587,23 @@ function InfiniteCanvasPage() {
   }, []);
 
   const deleteConnection = useCallback((connectionId: string) => {
-    setConnections((prev) => prev.filter((conn) => conn.id !== connectionId));
-    setSelectedConnectionId((current) =>
-      current === connectionId ? null : current,
-    );
+    dispatchAtlasCommands(planAtlasConnectionRemoval(connectionId));
     setContextMenu((current) =>
       current?.type === "connection" && current.connectionId === connectionId
         ? null
         : current,
     );
-  }, []);
+  }, [dispatchAtlasCommands]);
 
   const disconnectNodeReference = useCallback(
     (fromNodeId: string, toNodeId: string) => {
-      setConnections((prev) =>
-        prev.filter(
-          (connection) =>
-            connection.fromNodeId !== fromNodeId ||
-            connection.toNodeId !== toNodeId,
-        ),
-      );
+      dispatchAtlasCommands(planAtlasReferenceDisconnect(
+        connectionsRef.current,
+        fromNodeId,
+        toNodeId,
+      ));
     },
-    [],
+    [dispatchAtlasCommands],
   );
 
   const startNodeReferenceSelection = useCallback((nodeId: string) => {
@@ -1768,28 +1673,19 @@ function InfiniteCanvasPage() {
   }, [cleanupCanvasFiles, deselectCanvas, generationRequests, projectId]);
 
   const duplicateNode = useCallback((nodeId: string) => {
-    const fragment = captureCanvasFragment(
+    const plan = planAtlasFragmentClone(
       nodesRef.current,
       connectionsRef.current,
       new Set([nodeId]),
+      { offset: { x: 36, y: 36 }, preserveExternalGroups: true },
     );
-    if (!fragment) return;
-    const copy = placeCanvasFragment(fragment, {
-      offset: { x: 36, y: 36 },
-      existingNodes: nodesRef.current,
-      preserveExternalGroups: true,
-    });
-    setNodes((prev) => [...prev, ...copy.nodes]);
-    setConnections((prev) => [...prev, ...copy.connections]);
-    setSelectedNodeIds(new Set(copy.nodes.map((node) => node.id)));
-    setSelectedConnectionId(null);
-    const primary = copy.nodes.find(
-      (node) => node.type !== CanvasNodeType.Group,
-    );
+    if (!plan) return;
+    dispatchAtlasCommands(plan.commands);
+    const primary = plan.nodes.find((node) => node.type !== CanvasNodeType.Group);
     setDialogNodeId(
-      copy.nodes[0]?.type === CanvasNodeType.Group ? null : primary?.id || null,
+      plan.nodes[0]?.type === CanvasNodeType.Group ? null : primary?.id || null,
     );
-  }, []);
+  }, [dispatchAtlasCommands]);
 
   const copySelectedNodes = useCallback(() => {
     const fragment = captureCanvasFragment(
@@ -1797,31 +1693,26 @@ function InfiniteCanvasPage() {
       connectionsRef.current,
       selectedNodeIdsRef.current,
     );
-    if (fragment) clipboardRef.current = fragment;
+    clipboardRef.current = fragment || clipboardRef.current;
   }, []);
 
   const pasteCopiedNodes = useCallback(() => {
     const fragment = clipboardRef.current;
-    if (!fragment?.nodes.length) return false;
-    const copy = placeCanvasFragment(fragment, {
-      center: getCanvasCenter(),
-      existingNodes: nodesRef.current,
-    });
-    setNodes((prev) => [...prev, ...copy.nodes]);
-    setConnections((prev) => [...prev, ...copy.connections]);
-    setSelectedNodeIds(new Set(copy.nodes.map((node) => node.id)));
-    setSelectedConnectionId(null);
+    if (!fragment) return false;
+    const plan = planAtlasFragmentInsertion(fragment, nodesRef.current, getCanvasCenter());
+    if (!plan) return false;
+    dispatchAtlasCommands(plan.commands);
     setContextMenu(null);
     setDialogNodeId(
-      copy.nodes[0]?.type === CanvasNodeType.Group
+      plan.nodes[0]?.type === CanvasNodeType.Group
         ? null
-        : copy.nodes[0]?.id || null,
+        : plan.nodes[0]?.id || null,
     );
     return true;
-  }, [getCanvasCenter]);
+  }, [dispatchAtlasCommands, getCanvasCenter]);
 
   const resetViewport = useCallback(() => {
-    setViewport({ x: size.width / 2, y: size.height / 2, k: 1 });
+    setViewport(centeredCanvasViewport(size));
     setContextMenu(null);
   }, [size.height, size.width]);
 
@@ -1893,12 +1784,7 @@ function InfiniteCanvasPage() {
 
   const setZoomScale = useCallback(
     (scale: number) => {
-      const nextScale = Math.min(Math.max(scale, 0.05), 5);
-      setViewport((prev) => ({
-        x: size.width / 2 - ((size.width / 2 - prev.x) / prev.k) * nextScale,
-        y: size.height / 2 - ((size.height / 2 - prev.y) / prev.k) * nextScale,
-        k: nextScale,
-      }));
+      setViewport((prev) => zoomCanvasToScale(prev, size, scale));
       setContextMenu(null);
     },
     [size.height, size.width],
@@ -1920,9 +1806,9 @@ function InfiniteCanvasPage() {
     if (!project) return message.error(t("canvas.projectPage.notFound"));
     const hide = message.loading(t("canvas.projectPage.exporting"), 0);
     try {
-      const { exportCanvasProjects } =
-        await import("@/lib/canvas/canvas-export");
-      await exportCanvasProjects([project], project.title || t("canvas.title"));
+      const { exportAtlasProjects } =
+        await import("@/atlas-engine/workflows/project-export");
+      await exportAtlasProjects([project], project.title || t("canvas.title"));
       message.success(t("canvas.projectPage.exported"));
     } catch (error) {
       console.error(error);
@@ -1931,6 +1817,28 @@ function InfiniteCanvasPage() {
       hide();
     }
   }, [message, projectId, t]);
+
+  const {
+    beginMarqueeSelection,
+    handleNodeMouseDown,
+    handleNodeSelectCapture,
+    selectNodeByEvent,
+    selectionGestureRef,
+  } = useAtlasNodeSelection({
+    nodesRef,
+    selectedNodeIdsRef,
+    boardInteractionRef,
+    gestureSequenceRef,
+    historyPausedRef,
+    nodeDraggingRef,
+    setSelectedNodeIds,
+    setToolbarNodeId,
+    setSelectedConnectionId,
+    setSelectionBox,
+    setContextMenu,
+    setHoveredNodeId,
+    setIsNodeDragging,
+  });
 
   const handleCanvasMouseDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -1941,462 +1849,129 @@ function InfiniteCanvasPage() {
       setDialogNodeId(null);
       if (pendingConnectionCreateRef.current) cancelPendingConnectionCreate();
       if (event.button !== 0) return;
-
-      const world = screenToCanvas(event.clientX, event.clientY);
-      const started = beginCanvasSelection(
-        world,
-        selectedNodeIdsRef.current,
+      beginMarqueeSelection(
+        screenToCanvas(event.clientX, event.clientY),
         event.shiftKey,
         event.pointerId,
       );
-      boardInteractionRef.current = started.state;
-      setSelectionBox(started.box);
-      selectedNodeIdsRef.current = started.selection;
-      setSelectedNodeIds(started.selection);
-
-      setSelectedConnectionId(null);
     },
-    [cancelPendingConnectionCreate, screenToCanvas],
+    [beginMarqueeSelection, cancelPendingConnectionCreate, screenToCanvas],
   );
 
-  // Selection-only logic shared by the bubbling drag entry point and outer capture handler.
-  // Returns the single target ID after the click, or null for multi-selection or deselection, to sync the toolbar.
-  const selectNodeByEvent = useCallback(
-    (
-      event: Pick<ReactMouseEvent, "shiftKey" | "metaKey" | "ctrlKey">,
-      nodeId: string,
-    ) => {
-      const nextSelected = selectBoardNode(
-        selectedNodeIdsRef.current,
-        nodeId,
-        event.shiftKey || event.metaKey || event.ctrlKey,
-      );
-      selectedNodeIdsRef.current = nextSelected;
-      setSelectedNodeIds(nextSelected);
-      const soloId =
-        nextSelected.size === 1 && nextSelected.has(nodeId) ? nodeId : null;
-      setToolbarNodeId(soloId);
-      return { nextSelected, soloId };
-    },
-    [],
-  );
+  useAtlasBoardGestures({
+    nodesRef,
+    selectedNodeIdsRef,
+    viewportRef,
+    boardRef: boardInteractionRef,
+    historyPausedRef,
+    nodeDraggingRef,
+    selectionGestureRef,
+    previewFrameRef,
+    connectingRef: connectingParamsRef,
+    connectionTargetRef: connectionTargetNodeIdRef,
+    pendingConnectionRef: pendingConnectionCreateRef,
+    screenToCanvas,
+    getConnectionDropTarget,
+    connectNodes,
+    focusNode: (nodeId) => focusNodeRef.current(nodeId),
+    autoFocusOnSelect: () => useConfigStore.getState().config.autoFocusOnSelect,
+    setNodes,
+    setSelectedNodeIds,
+    setSelectionBox,
+    setIsNodeDragging,
+    setDropTargetGroupId,
+    setDialogNodeId,
+    setConnecting,
+    setMouseWorld,
+    setConnectionTargetNodeId,
+    setPendingConnectionCreate,
+  });
 
-  // Capture-phase selection lets any inner element, including textarea or iframe, select the node and show its toolbar.
-  // It only selects; body onMouseDown still starts dragging, so text selection inside editors does not drag the node.
-  // Cache the capture result for the following bubbling drag handler to avoid applying shift-selection twice.
-  const pendingSelectionRef = useRef<Set<string> | null>(null);
-  const selectionGestureRef = useRef(0);
-  const handleNodeSelectCapture = useCallback(
-    (event: ReactMouseEvent, nodeId: string) => {
-      if (event.button !== 0) return;
-      selectionGestureRef.current += 1;
-      setContextMenu(null);
-      setHoveredNodeId(null);
-      setSelectedConnectionId(null);
-      const { nextSelected } = selectNodeByEvent(event, nodeId);
-      pendingSelectionRef.current = nextSelected;
-    },
-    [selectNodeByEvent],
-  );
-
-  const handleNodeMouseDown = useCallback(
-    (event: ReactMouseEvent, nodeId: string) => {
-      event.stopPropagation();
-      // Capture already selected the node; this only starts dragging, with a fallback selection if capture did not run.
-      const nextSelected =
-        pendingSelectionRef.current ??
-        selectNodeByEvent(event, nodeId).nextSelected;
-      pendingSelectionRef.current = null;
-      const interaction = beginBoardNodeDrag(
-        nodesRef.current,
-        nextSelected,
-        nodeId,
-        { x: event.clientX, y: event.clientY },
-        ++gestureSequenceRef.current,
-      );
-      boardInteractionRef.current = interaction;
-      historyPausedRef.current = true;
-      nodeDraggingRef.current = true;
-      setIsNodeDragging(true);
-    },
-    [],
-  );
-
-  const finishBoardGesture = useCallback(
-    (clientX: number, clientY: number) => {
-      if (previewFrameRef.current !== null) {
-        cancelAnimationFrame(previewFrameRef.current);
-        previewFrameRef.current = null;
-      }
-
-      const interaction = boardInteractionRef.current;
-      if (interaction.mode === "marquee") {
-        const completed = finishCanvasSelection(
-          interaction,
-          interaction.pointerId,
-          screenToCanvas(clientX, clientY),
-          nodesRef.current,
-        );
-        boardInteractionRef.current = completed.state;
-        setSelectionBox(null);
-        if (completed.selection) {
-          selectedNodeIdsRef.current = completed.selection;
-          setSelectedNodeIds(completed.selection);
-        }
-        return;
-      }
-      if (interaction.mode !== "node-drag") return;
-
-      const completed = finishBoardNodeDrag(
-        interaction,
-        nodesRef.current,
-        { x: clientX, y: clientY },
-        viewportRef.current.k,
-      );
-      boardInteractionRef.current = completed.state;
-      if (completed.moved) {
-        nodesRef.current = completed.nodes;
-        setNodes(completed.nodes);
-      }
-      historyPausedRef.current = false;
-      nodeDraggingRef.current = false;
-      setIsNodeDragging(false);
-      setDropTargetGroupId(null);
-
-      const clickedNodeId = completed.clickedNodeId;
-      if (clickedNodeId) {
-        const clickedNode = nodesRef.current.find(
-          (node) => node.id === clickedNodeId,
-        );
-        const clickedDefinition = clickedNode
-          ? getNodeDefinition(clickedNode.type)
-          : undefined;
-        if (clickedDefinition?.hidePanel) {
-          // Clicking a display-only plugin node selects it without opening a lower panel.
-          setDialogNodeId((current) =>
-            current === clickedNodeId ? current : null,
-          );
-        } else if (clickedNode?.type !== CanvasNodeType.Group) {
-          setDialogNodeId(clickedNodeId);
-          if (useConfigStore.getState().config.autoFocusOnSelect) {
-            // Wait for the generation panel to render so centering accounts for it.
-            const selectionGesture = selectionGestureRef.current;
-            requestAnimationFrame(() => {
-              const selected = selectedNodeIdsRef.current;
-              if (
-                selectionGestureRef.current !== selectionGesture ||
-                nodeDraggingRef.current ||
-                selected.size !== 1 ||
-                !selected.has(clickedNodeId)
-              )
-                return;
-              focusNodeRef.current(clickedNodeId);
-            });
-          }
-        }
-      }
-    },
-    [screenToCanvas],
-  );
-
-  const cancelBoardGesture = useCallback(() => {
-    if (previewFrameRef.current !== null) {
-      cancelAnimationFrame(previewFrameRef.current);
-      previewFrameRef.current = null;
-    }
-
-    const interaction = boardInteractionRef.current;
-    if (interaction.mode === "node-drag") {
-      const cancelled = cancelBoardNodeDrag(interaction, nodesRef.current);
-      boardInteractionRef.current = cancelled.state;
-      nodesRef.current = cancelled.nodes;
-      setNodes(cancelled.nodes);
-      historyPausedRef.current = false;
-      nodeDraggingRef.current = false;
-      setIsNodeDragging(false);
-      setDropTargetGroupId(null);
-    } else if (interaction.mode === "marquee") {
-      boardInteractionRef.current = idleBoardInteraction();
-      setSelectionBox(null);
-    }
+  const discardImportedMedia = useCallback(async (media: { storageKey?: string }) => {
+    if (!media.storageKey) return;
+    if (media.storageKey.startsWith("image:")) await deleteStoredImages([media.storageKey]);
+    else await deleteStoredMedia([media.storageKey]);
   }, []);
+  const [mediaTransfers] = useState(() => createAtlasMediaTransactions(discardImportedMedia));
+  useEffect(() => () => mediaTransfers.cancelAll(), [mediaTransfers, projectId]);
 
-  const handleGlobalMouseMove = useCallback(
-    (event: MouseEvent) => {
-      const currentViewport = viewportRef.current;
-      const interaction = boardInteractionRef.current;
+  const commitMediaNodes = useCallback(
+    (incoming: readonly CanvasNodeData[], edges: readonly CanvasConnection[] = []) => {
+      if (!incoming.length) return;
+      dispatchAtlasCommands(atlasMediaCommitCommands(incoming, edges));
+      const updates = new Map(incoming.map((node) => [node.id, node]));
+      const retained = nodesRef.current.map((node) => updates.get(node.id) || node);
+      const existing = new Set(retained.map((node) => node.id));
+      nodesRef.current = [...retained, ...incoming.filter((node) => !existing.has(node.id))];
+      if (edges.length) connectionsRef.current = [...connectionsRef.current, ...edges];
+      selectedNodeIdsRef.current = new Set(incoming.map((node) => node.id));
+    },
+    [dispatchAtlasCommands],
+  );
 
-      if (interaction.mode === "node-drag") {
-        const update = updateBoardNodeDrag(
-          interaction,
-          { x: event.clientX, y: event.clientY },
-          currentViewport.k,
-          nodesRef.current,
-        );
-        boardInteractionRef.current = update.state;
-        if (update.state.mode !== "node-drag" || !update.state.hasMoved) {
-          setDropTargetGroupId(null);
-          return;
+  const runMediaTransfer = useCallback(
+    async <T,>(prepare: (context: AtlasTransferContext) => Promise<T>, commit: (value: T) => void, channel?: string, fallback = "媒体处理失败，请重试") => {
+      const scopeId = getPlatformInit()?.scopeId;
+      const outcome = await mediaTransfers.run({
+        channel,
+        isCurrent: () => activeProjectIdRef.current === projectId && getPlatformInit()?.scopeId === scopeId,
+        prepare,
+        commit,
+      });
+      if (outcome.status === "failed") message.error(outcome.error.message || fallback);
+      return outcome;
+    },
+    [mediaTransfers, message, projectId],
+  );
+
+  const importFilesToCanvas = useCallback(
+    async (files: readonly File[], target: { nodeId?: string; position?: Position } | null) => {
+      const plan = planMediaImport(files, target, getCanvasCenter(), isAudioFile);
+      const entries = [...(plan.replacement ? [plan.replacement] : []), ...plan.additions];
+      if (!entries.length) return;
+      await runMediaTransfer(async (context) => {
+        const results = await importAtlasMediaBatch(entries, { uploadImage, uploadMediaFile }, { signal: context.signal, rollback: discardImportedMedia });
+        results.forEach(({ media }) => context.retain(media));
+        return results;
+      }, (results) => {
+        const additions = results.slice(plan.replacement ? 1 : 0).map((result) => result.node);
+        const incoming: CanvasNodeData[] = [];
+        if (plan.replacement) {
+          const nodeId = plan.replacement.nodeId;
+          const current = nodesRef.current.find((node) => node.id === nodeId);
+          if (!current) throw new DOMException("替换目标已删除", "AbortError");
+          incoming.push(applyMediaReplacement([current], nodeId, {
+            fileName: plan.replacement.file.name, kind: plan.replacement.kind, media: results[0]!.media,
+          }, { width: VIDEO_NODE_MAX_WIDTH, height: VIDEO_NODE_MAX_HEIGHT })[0]!);
         }
-
-        if (previewFrameRef.current !== null) {
-          cancelAnimationFrame(previewFrameRef.current);
-        }
-        const gestureId = update.state.gestureId;
-        previewFrameRef.current = requestAnimationFrame(() => {
-          const latest = boardInteractionRef.current;
-          if (latest.mode !== "node-drag" || latest.gestureId !== gestureId) {
-            previewFrameRef.current = null;
-            return;
-          }
-          const preview = updateBoardNodeDrag(
-            latest,
-            latest.current,
-            viewportRef.current.k,
-            nodesRef.current,
-          );
-          boardInteractionRef.current = preview.state;
-          nodesRef.current = preview.nodes;
-          setNodes(preview.nodes);
-          setDropTargetGroupId(preview.dropTargetId);
-          previewFrameRef.current = null;
-        });
-        return;
-      }
-
-      if (connectingParamsRef.current && !pendingConnectionCreateRef.current) {
-        const dropTarget = getConnectionDropTarget(
-          event.clientX,
-          event.clientY,
-          connectingParamsRef.current,
-        );
-        connectionTargetNodeIdRef.current = dropTarget.nodeId;
-        setConnectionTargetNodeId(dropTarget.nodeId);
-        setMouseWorld(screenToCanvas(event.clientX, event.clientY));
-      }
+        incoming.push(...additions);
+        commitMediaNodes(incoming);
+        const lastVisual = additions.findLast((node) => node.type !== CanvasNodeType.Audio);
+        if (lastVisual) setDialogNodeId(lastVisual.id);
+      }, plan.replacement ? `replace:${plan.replacement.nodeId}` : undefined);
     },
-    [getConnectionDropTarget, screenToCanvas],
-  );
-
-  const handleGlobalPointerMove = useCallback(
-    (event: PointerEvent) => {
-      const interaction = boardInteractionRef.current;
-      if (interaction.mode !== "marquee") return;
-
-      const update = updateCanvasSelection(
-        interaction,
-        event.pointerId,
-        event.buttons,
-        screenToCanvas(event.clientX, event.clientY),
-        nodesRef.current,
-      );
-      boardInteractionRef.current = update.state;
-      setSelectionBox(update.box);
-      if (update.selection) {
-        selectedNodeIdsRef.current = update.selection;
-        setSelectedNodeIds(update.selection);
-      }
-    },
-    [screenToCanvas],
-  );
-
-  const handleGlobalMouseUp = useCallback(
-    (event: MouseEvent) => {
-      finishBoardGesture(event.clientX, event.clientY);
-
-      if (pendingConnectionCreateRef.current) return;
-
-      const currentConnection = connectingParamsRef.current;
-      if (currentConnection) {
-        const dropTarget = getConnectionDropTarget(
-          event.clientX,
-          event.clientY,
-          currentConnection,
-        );
-        if (dropTarget.nodeId) {
-          connectNodes(currentConnection, dropTarget.nodeId);
-          setConnecting(null);
-        } else if (dropTarget.isNearNode) {
-          setConnecting(null);
-        } else {
-          setMouseWorld(screenToCanvas(event.clientX, event.clientY));
-          setPendingConnectionCreate({
-            connection: currentConnection,
-            position: screenToCanvas(event.clientX, event.clientY),
-          });
-        }
-      }
-    },
-    [
-      connectNodes,
-      finishBoardGesture,
-      getConnectionDropTarget,
-      screenToCanvas,
-      setConnecting,
-    ],
-  );
-
-  useEffect(() => {
-    const handlePointerUp = (event: PointerEvent) =>
-      finishBoardGesture(event.clientX, event.clientY);
-    window.addEventListener("mousemove", handleGlobalMouseMove);
-    window.addEventListener("mouseup", handleGlobalMouseUp);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", cancelBoardGesture);
-    window.addEventListener("blur", cancelBoardGesture);
-    window.addEventListener("pointermove", handleGlobalPointerMove);
-    return () => {
-      window.removeEventListener("mousemove", handleGlobalMouseMove);
-      window.removeEventListener("mouseup", handleGlobalMouseUp);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", cancelBoardGesture);
-      window.removeEventListener("blur", cancelBoardGesture);
-      window.removeEventListener("pointermove", handleGlobalPointerMove);
-    };
-  }, [
-    cancelBoardGesture,
-    finishBoardGesture,
-    handleGlobalMouseMove,
-    handleGlobalMouseUp,
-    handleGlobalPointerMove,
-  ]);
-
-  const createImageFileNode = useCallback(
-    async (file: File, position: Position) => {
-      const image = await uploadImage(file);
-      const size = fitNodeSize(image.width, image.height);
-      const id = `image-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const newNode: CanvasNodeData = {
-        id,
-        type: CanvasNodeType.Image,
-        title: file.name,
-        position: {
-          x: position.x - size.width / 2,
-          y: position.y - size.height / 2,
-        },
-        width: size.width,
-        height: size.height,
-        metadata: imageMetadata(image),
-      };
-
-      setNodes((prev) => [...prev, newNode]);
-      setSelectedNodeIds(new Set([id]));
-      setSelectedConnectionId(null);
-      setDialogNodeId(id);
-    },
-    [],
-  );
-
-  const createVideoFileNode = useCallback(
-    async (file: File, position: Position) => {
-      const video = await uploadMediaFile(file, "video");
-      const size = fitNodeSize(
-        video.width || 1280,
-        video.height || 720,
-        VIDEO_NODE_MAX_WIDTH,
-        VIDEO_NODE_MAX_HEIGHT,
-      );
-      const id = `video-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setNodes((prev) => [
-        ...prev,
-        {
-          id,
-          type: CanvasNodeType.Video,
-          title: file.name,
-          position: {
-            x: position.x - size.width / 2,
-            y: position.y - size.height / 2,
-          },
-          width: size.width,
-          height: size.height,
-          metadata: videoMetadata(video),
-        },
-      ]);
-      setSelectedNodeIds(new Set([id]));
-      setSelectedConnectionId(null);
-      setDialogNodeId(id);
-    },
-    [],
-  );
-
-  const createAudioFileNode = useCallback(
-    async (file: File, position: Position) => {
-      const audio = await uploadMediaFile(file, "audio");
-      const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Audio];
-      const id = `audio-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setNodes((prev) => [
-        ...prev,
-        {
-          id,
-          type: CanvasNodeType.Audio,
-          title: file.name,
-          position: {
-            x: position.x - spec.width / 2,
-            y: position.y - spec.height / 2,
-          },
-          width: spec.width,
-          height: spec.height,
-          metadata: audioMetadata(audio),
-        },
-      ]);
-      setSelectedNodeIds(new Set([id]));
-      setSelectedConnectionId(null);
-    },
-    [],
-  );
-
-  const createTextNodeFromClipboard = useCallback(
-    (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return false;
-
-      const node = {
-        ...createCanvasNode(CanvasNodeType.Text, getCanvasCenter(), {
-          content: trimmed,
-          status: NODE_STATUS_SUCCESS,
-        }),
-        title: trimmed.slice(0, 32) || t("canvas.projectPage.clipboardText"),
-      };
-
-      setNodes((prev) => [...prev, node]);
-      setSelectedNodeIds(new Set([node.id]));
-      setSelectedConnectionId(null);
-      setContextMenu(null);
-      setDialogNodeId(node.id);
-      return true;
-    },
-    [getCanvasCenter, t],
+    [commitMediaNodes, discardImportedMedia, getCanvasCenter, runMediaTransfer],
   );
 
   const pasteSystemClipboard = useCallback(async () => {
     if (!navigator.clipboard) return;
-
-    const items = await navigator.clipboard.read();
-    const imageItem = items.find((item) =>
-      item.types.some((type) => type.startsWith("image/")),
-    );
-    if (imageItem) {
-      const imageType = imageItem.types.find((type) =>
-        type.startsWith("image/"),
-      );
-      if (!imageType) return;
-      const blob = await imageItem.getType(imageType);
-      const file = new File([blob], "clipboard-image.png", { type: imageType });
-      void createImageFileNode(file, getCanvasCenter());
-      message.success(t("canvas.projectPage.clipboardImageAdded"));
-      return;
-    }
-
-    const text = await navigator.clipboard.readText();
-    if (createTextNodeFromClipboard(text))
-      message.success(t("canvas.projectPage.clipboardTextAdded"));
-  }, [
-    createImageFileNode,
-    createTextNodeFromClipboard,
-    getCanvasCenter,
-    message,
-    t,
-  ]);
+    const outcome = await runMediaTransfer(async (context) => {
+      const payload = await readAtlasClipboard({ read: () => navigator.clipboard.read(), readText: () => navigator.clipboard.readText() }, context.signal);
+      if (!payload) return null;
+      const center = getCanvasCenter();
+      if (payload.kind === "text") return { kind: payload.kind, node: createAtlasClipboardTextNode(payload.text, center, t("canvas.projectPage.clipboardText")) };
+      const file = new File([payload.blob], "clipboard-image.png", { type: payload.mimeType });
+      const results = await importAtlasMediaBatch([{ file, kind: "image", position: center }], { uploadImage, uploadMediaFile }, { signal: context.signal, rollback: discardImportedMedia });
+      results.forEach(({ media }) => context.retain(media));
+      return { kind: payload.kind, node: results[0]!.node };
+    }, (result) => {
+      if (!result?.node) return;
+      commitMediaNodes([result.node]);
+      setContextMenu(null);
+      setDialogNodeId(result.node.id);
+    }, "clipboard");
+    if (outcome.status === "committed" && outcome.value?.node) message.success(t(outcome.value.kind === "image" ? "canvas.projectPage.clipboardImageAdded" : "canvas.projectPage.clipboardTextAdded"));
+  }, [commitMediaNodes, discardImportedMedia, getCanvasCenter, message, runMediaTransfer, t]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -2572,59 +2147,18 @@ function InfiniteCanvasPage() {
   }, []);
 
   const setBatchPrimary = useCallback((nodeId: string, variantId: string) => {
-    setNodes((nodes) =>
-      applyCanvasNodeCommand(nodes, {
-        kind: "select-variant",
-        nodeId,
-        variantId,
-      }),
-    );
+    setNodes((nodes) => planAtlasBatchPrimary(nodes, nodeId, variantId));
   }, []);
 
   const duplicateBatchImage = useCallback(
     (node: CanvasNodeData, imageId: string) => {
-      const image = node.metadata?.images?.find((item) => item.id === imageId);
-      if (!image?.content) return;
-      const id = nanoid();
-      const edge = Math.max(node.width, node.height);
-      const size = fitNodeSize(
-        image.naturalWidth,
-        image.naturalHeight,
-        edge,
-        edge,
-      );
-      const copy: CanvasNodeData = {
-        id,
-        type: CanvasNodeType.Image,
-        title: node.title,
-        position: {
-          x: node.position.x + node.width * 2 + 96,
-          y: node.position.y + node.height / 2 - size.height / 2,
-        },
-        ...size,
-        metadata: {
-          content: image.content,
-          storageKey: image.storageKey,
-          naturalWidth: image.naturalWidth,
-          naturalHeight: image.naturalHeight,
-          bytes: image.bytes,
-          mimeType: image.mimeType,
-          status: NODE_STATUS_SUCCESS,
-          prompt: node.metadata?.prompt,
-          generationType: node.metadata?.generationType,
-          model: node.metadata?.model,
-          size: node.metadata?.size,
-          quality: node.metadata?.quality,
-          background: node.metadata?.background,
-          references: node.metadata?.references,
-        },
-      };
-      setNodes((prev) => [...prev, copy]);
-      setSelectedNodeIds(new Set([id]));
-      setSelectedConnectionId(null);
-      setDialogNodeId(id);
+      const source = nodesRef.current.find((item) => item.id === node.id) || node;
+      const copy = planAtlasBatchImageDuplicate(source, imageId);
+      if (!copy) return;
+      dispatchAtlasCommands(planAtlasNodeInsertion([copy]));
+      setDialogNodeId(copy.id);
     },
-    [],
+    [dispatchAtlasCommands],
   );
 
   const handleNodePromptChange = useCallback(
@@ -2674,569 +2208,258 @@ function InfiniteCanvasPage() {
   const captureVideoNodeFrame = useCallback(
     async (nodeId: string, position: VideoFramePosition) => {
       setContextMenu(null);
-      const node = nodesRef.current.find((item) => item.id === nodeId);
-      const video = Array.from(
-        containerRef.current!.querySelectorAll<HTMLVideoElement>(
-          "video[data-canvas-video]",
-        ),
-      ).find((item) => item.dataset.canvasVideo === nodeId);
-      if (
-        node?.type !== CanvasNodeType.Video ||
-        !node.metadata?.content ||
-        !video
-      )
-        return message.error(t("canvas.videoFrames.failed"));
-      try {
-        const image = await uploadImage(
-          await captureVideoFrame(
-            node.metadata.content,
-            position,
-            video.currentTime,
-          ),
-        );
-        const size = fitNodeSize(
-          image.width,
-          image.height,
-          VIDEO_NODE_MAX_WIDTH,
-          VIDEO_NODE_MAX_HEIGHT,
-        );
-        const id = nanoid();
-        const x = node.position.x + node.width + 96;
-        let y = node.position.y + node.height / 2 - size.height / 2;
-        while (
-          nodesRef.current.some(
-            (item) =>
-              item.id !== node.id &&
-              item.position.x < x + size.width &&
-              item.position.x + item.width > x &&
-              item.position.y < y + size.height &&
-              item.position.y + item.height > y,
-          )
-        )
-          y += size.height + 24;
-        const child: CanvasNodeData = {
-          id,
-          type: CanvasNodeType.Image,
-          title: t(`canvas.videoFrames.${position}Title`, {
-            name: node.title || t("assets.kinds.video"),
-          }),
-          position: { x, y },
-          ...size,
-          metadata: imageMetadata(image),
-        };
-        setNodes((prev) => [...prev, child]);
-        setConnections((prev) => [
-          ...prev,
-          { id: nanoid(), fromNodeId: node.id, toNodeId: id },
-        ]);
-        setSelectedNodeIds(new Set([id]));
-        setSelectedConnectionId(null);
-        setDialogNodeId(id);
-        message.success(t("canvas.videoFrames.captured"));
-      } catch {
+      const source = nodesRef.current.find((node) => node.id === nodeId);
+      const player = containerRef.current?.querySelector<HTMLVideoElement>(`video[data-canvas-video="${nodeId}"]`);
+      if (source?.type !== CanvasNodeType.Video || !source.metadata?.content || (position === "current" && !player)) {
         message.error(t("canvas.videoFrames.failed"));
+        return;
       }
+      const sourceUrl = source.metadata.content;
+      const outcome = await runMediaTransfer(async (context) => {
+        const frame = await captureVideoFrame(sourceUrl, position, player?.currentTime || 0);
+        context.assertCurrent();
+        const image = await uploadImage(frame, { signal: context.signal });
+        context.retain(image);
+        return image;
+      }, (image) => {
+        const current = nodesRef.current.find((node) => node.id === nodeId);
+        if (!current || current.metadata?.content !== sourceUrl) throw new DOMException("视频来源已改变", "AbortError");
+        const child = buildAtlasCapturedFrameNode(current, image, { x: 0, y: 0 }, t(`canvas.videoFrames.${position}Title`, { name: current.title || t("assets.kinds.video") }));
+        child.position = atlasMediaOutputPosition(current, nodesRef.current, child);
+        commitMediaNodes([child], [{ id: nanoid(), fromNodeId: current.id, toNodeId: child.id }]);
+        setDialogNodeId(child.id);
+      }, `frame:${nodeId}`, t("canvas.videoFrames.failed"));
+      if (outcome.status === "committed") message.success(t("canvas.videoFrames.captured"));
     },
-    [message, t],
+    [commitMediaNodes, message, runMediaTransfer, t],
   );
 
   const saveNodeAsset = useCallback(
     async (node: CanvasNodeData) => {
-      if (node.type === CanvasNodeType.Text) {
-        const content = node.metadata?.content?.trim();
-        if (!content)
-          return message.error(t("canvas.projectPage.noTextToSave"));
-        addAsset({
-          kind: "text",
-          title:
-            node.metadata?.prompt?.slice(0, 24) ||
-            t("canvas.projectPage.canvasText"),
-          coverUrl: "",
-          tags: [],
-          source: "Canvas",
-          data: { content },
-          metadata: { source: "canvas", nodeId: node.id },
+      const outcome = await runMediaTransfer(async () => {
+        const asset = buildAtlasAssetDraft(node, {
+          canvasText: t("canvas.projectPage.canvasText"), canvasImage: t("canvas.projectPage.canvasImage"), canvasVideo: t("canvas.projectPage.canvasVideo"),
         });
-        message.success(t("common.addedToAssets"));
-        return;
-      }
-      if (node.type === CanvasNodeType.Video) {
-        if (!node.metadata?.content)
-          return message.error(t("canvas.projectPage.noVideoToSave"));
-        addAsset({
-          kind: "video",
-          title:
-            node.metadata?.prompt?.slice(0, 24) ||
-            t("canvas.projectPage.canvasVideo"),
-          coverUrl: "",
-          tags: [],
-          source: "Canvas",
-          data: {
-            url: node.metadata.content,
-            storageKey: node.metadata.storageKey,
-            width: node.width,
-            height: node.height,
-            bytes: node.metadata.bytes || 0,
-            mimeType: node.metadata.mimeType || "video/mp4",
-          },
-          metadata: {
-            source: "canvas",
-            nodeId: node.id,
-            prompt: node.metadata?.prompt,
-          },
-        });
-        message.success(t("common.addedToAssets"));
-        return;
-      }
-      if (!node.metadata?.content)
-        return message.error(t("canvas.projectPage.noImageToSave"));
-      const dataUrl = node.metadata.storageKey ? "" : node.metadata.content;
-      addAsset({
-        kind: "image",
-        title:
-          node.metadata?.prompt?.slice(0, 24) ||
-          t("canvas.projectPage.canvasImage"),
-        coverUrl: node.metadata.content,
-        tags: [],
-        source: "Canvas",
-        data: {
-          dataUrl,
-          storageKey: node.metadata.storageKey,
-          width: node.metadata.naturalWidth || node.width,
-          height: node.metadata.naturalHeight || node.height,
-          bytes: node.metadata.bytes || getDataUrlByteSize(dataUrl),
-          mimeType: node.metadata.mimeType || "image/png",
-        },
-        metadata: {
-          source: "canvas",
-          nodeId: node.id,
-          prompt: node.metadata?.prompt,
-        },
-      });
-      message.success(t("common.addedToAssets"));
+        if (!asset) {
+          const key = node.type === CanvasNodeType.Text ? "canvas.projectPage.noTextToSave" : node.type === CanvasNodeType.Video ? "canvas.projectPage.noVideoToSave" : "canvas.projectPage.noImageToSave";
+          throw new Error(t(key));
+        }
+        return asset;
+      }, (asset) => { addAsset(asset); });
+      if (outcome.status === "committed") message.success(t("common.addedToAssets"));
     },
-    [addAsset, message, t],
+    [addAsset, message, runMediaTransfer, t],
   );
 
   const createImageReversePromptNodes = useCallback(
     (node: CanvasNodeData) => {
-      if (node.type !== CanvasNodeType.Image || !node.metadata?.content) {
+      const plan = planAtlasImageReversePrompt({
+        source: nodesRef.current.find((item) => item.id === node.id),
+        model: effectiveConfig.textModel || effectiveConfig.model || defaultConfig.textModel,
+        instruction: t("canvas.projectPage.reversePreset"),
+        instructionTitle: t("canvas.projectPage.reverseTitle"),
+        configurationTitle: t("canvas.projectPage.reverseConfigTitle"),
+        compose: (imageId, textId) => t("canvas.reverseComposer", { imageId, textId }),
+      });
+      if (!plan) {
         message.warning(t("canvas.projectPage.emptyReverse"));
         return;
       }
-
-      const gap = 96;
-      const textSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
-      const configSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Config];
-      const centerY = node.position.y + node.height / 2;
-      const textNode = {
-        ...createCanvasNode(
-          CanvasNodeType.Text,
-          {
-            x: node.position.x + node.width + gap + textSpec.width / 2,
-            y: centerY,
-          },
-          {
-            content: t("canvas.projectPage.reversePreset"),
-            prompt: t("canvas.projectPage.reversePreset"),
-            status: NODE_STATUS_SUCCESS,
-            fontSize: 14,
-          },
-        ),
-        title: t("canvas.projectPage.reverseTitle"),
-      };
-      const configNode = {
-        ...createCanvasNode(
-          CanvasNodeType.Config,
-          {
-            x:
-              textNode.position.x + textNode.width + gap + configSpec.width / 2,
-            y: centerY,
-          },
-          {
-            generationMode: "text",
-            model:
-              effectiveConfig.textModel ||
-              effectiveConfig.model ||
-              defaultConfig.textModel,
-            count: 1,
-            composerContent: t("canvas.reverseComposer", {
-              imageId: node.id,
-              textId: textNode.id,
-            }),
-          },
-        ),
-        title: t("canvas.projectPage.reverseConfigTitle"),
-      };
-
-      setNodes((prev) => [...prev, textNode, configNode]);
-      setConnections((prev) => [
-        ...prev,
-        { id: nanoid(), fromNodeId: node.id, toNodeId: configNode.id },
-        { id: nanoid(), fromNodeId: textNode.id, toNodeId: configNode.id },
-      ]);
-      setSelectedNodeIds(new Set([configNode.id]));
-      setSelectedConnectionId(null);
-      setDialogNodeId(configNode.id);
+      dispatchAtlasCommands(plan.commands);
+      setDialogNodeId(plan.panelId);
       setContextMenu(null);
     },
-    [effectiveConfig.model, effectiveConfig.textModel, message, t],
+    [dispatchAtlasCommands, effectiveConfig.model, effectiveConfig.textModel, message, t],
   );
 
   const cropImageNode = useCallback(
     async (node: CanvasNodeData, crop: CanvasImageCropRect) => {
-      if (!node.metadata?.content) return;
-      const cropped = await cropDataUrl(node.metadata.content, crop);
-      const image = await uploadImage(cropped);
-      const childId = nanoid();
-      const child = createCropImageResult(node, childId, image);
-      setNodes((prev) => [...prev, child]);
-      setConnections((prev) => [
-        ...prev,
-        { id: nanoid(), fromNodeId: node.id, toNodeId: childId },
-      ]);
-      setSelectedNodeIds(new Set([childId]));
-      setDialogNodeId(childId);
-      setCropNodeId(null);
+      const source = nodesRef.current.find((item) => item.id === node.id);
+      if (!source?.metadata?.content) return;
+      const sourceUrl = source.metadata.content;
+      setCropNodeId((current) => current === node.id ? null : current);
+      await runMediaTransfer(async (context) => {
+        const data = await cropDataUrl(sourceUrl, crop);
+        context.assertCurrent();
+        const image = await uploadImage(data, { signal: context.signal });
+        context.retain(image);
+        return image;
+      }, (image) => {
+        const current = nodesRef.current.find((item) => item.id === source.id);
+        if (!current || current.metadata?.content !== sourceUrl) throw new DOMException("图片来源已改变", "AbortError");
+        const child = createCropImageResult(current, nanoid(), image);
+        commitMediaNodes([child], [{ id: nanoid(), fromNodeId: current.id, toNodeId: child.id }]);
+        setDialogNodeId(child.id);
+      }, `crop:${node.id}`);
     },
-    [],
+    [commitMediaNodes, runMediaTransfer, setCropNodeId],
   );
 
   const splitImageNode = useCallback(
     async (node: CanvasNodeData, params: CanvasImageSplitParams) => {
-      if (!node.metadata?.content) return;
-      setSplitNodeId(null);
-      const pieces = await splitDataUrl(node.metadata.content, params);
-      const results = await Promise.all(
-        pieces.map(async (piece) => {
-          const image = await uploadImage(piece.dataUrl);
-          return {
-            id: nanoid(),
-            title: t("canvas.projectPage.splitTitle", {
-              name: node.title || t("assets.kinds.image"),
-              row: piece.row + 1,
-              column: piece.column + 1,
-            }),
-            row: piece.row,
-            column: piece.column,
-            image,
-          };
-        }),
-      );
-      const childNodes = createSplitImageResults(node, results, params);
-      setNodes((prev) => [...prev, ...childNodes]);
-      setConnections((prev) => [
-        ...prev,
-        ...childNodes.map((child) => ({
-          id: nanoid(),
-          fromNodeId: node.id,
-          toNodeId: child.id,
-        })),
-      ]);
-      setSelectedNodeIds(new Set(childNodes.map((child) => child.id)));
-      setSelectedConnectionId(null);
-      setDialogNodeId(null);
-      message.success(
-        t("canvas.projectPage.splitSuccess", { count: childNodes.length }),
-      );
+      const source = nodesRef.current.find((item) => item.id === node.id);
+      if (!source?.metadata?.content) return;
+      const sourceUrl = source.metadata.content;
+      setSplitNodeId((current) => current === node.id ? null : current);
+      let insertedCount = 0;
+      const outcome = await runMediaTransfer(async (context) => {
+        const pieces = await splitDataUrl(sourceUrl, params);
+        context.assertCurrent();
+        return mapConcurrent(pieces, 3, async (piece) => {
+          const image = await uploadImage(piece.dataUrl, { signal: context.signal });
+          context.retain(image);
+          return { id: nanoid(), title: t("canvas.projectPage.splitTitle", { name: source.title || t("assets.kinds.image"), row: piece.row + 1, column: piece.column + 1 }), row: piece.row, column: piece.column, image };
+        });
+      }, (results) => {
+        const current = nodesRef.current.find((item) => item.id === source.id);
+        if (!current || current.metadata?.content !== sourceUrl) throw new DOMException("图片来源已改变", "AbortError");
+        const children = createSplitImageResults(current, results, params);
+        commitMediaNodes(children, children.map((child) => ({ id: nanoid(), fromNodeId: current.id, toNodeId: child.id })));
+        insertedCount = children.length;
+        setDialogNodeId(null);
+      }, `split:${node.id}`);
+      if (outcome.status === "committed") message.success(t("canvas.projectPage.splitSuccess", { count: insertedCount }));
     },
-    [message, t],
+    [commitMediaNodes, message, runMediaTransfer, setSplitNodeId, t],
+  );
+
+  const runImageEdit = useCallback(
+    async (
+      source: CanvasNodeData,
+      prepare: (outputId: string, signal: AbortSignal) => Promise<AtlasImageEditPlan>,
+      generate: boolean,
+      failureText: string,
+      notifyFailure = false,
+    ) => {
+      const outputId = nanoid();
+      const scopeId = getPlatformInit()?.scopeId;
+      const controller = startGenerationRequest(outputId, source.id, outputId);
+      const isCurrent = () =>
+        activeProjectIdRef.current === projectId &&
+        getPlatformInit()?.scopeId === scopeId &&
+        generationRequests.canWrite(outputId, controller);
+      const assertCurrent = createAtlasImageEditGuard(
+        source,
+        controller.signal,
+        () => nodesRef.current.find((node) => node.id === source.id),
+        isCurrent,
+      );
+      try {
+        assertCurrent();
+        if (generate) setRunningNodeId(outputId);
+        const plan = await prepare(outputId, controller.signal);
+        assertCurrent();
+        dispatchAtlasCommands(plan.commands);
+        setDialogNodeId(outputId);
+        if (!plan.generate) return;
+        const image = await executeAtlasImageEdit({
+          plan,
+          signal: controller.signal,
+          assertCurrent,
+          edit: requestEdit,
+          store: uploadImage,
+        });
+        setNodesForGeneration(outputId, controller, (current) =>
+          applyAtlasImageEditMedia(current, plan, image),
+        );
+      } catch (error) {
+        if (!isCurrent()) return;
+        if (isGenerationCanceled(error)) {
+          setNodesForGeneration(outputId, controller, (current) =>
+            restoreAtlasImageEditCancellation(current, outputId),
+          );
+          return;
+        }
+        const details = error instanceof Error ? error.message : failureText;
+        if (notifyFailure) message.error(details);
+        setNodesForGeneration(outputId, controller, (current) =>
+          applyAtlasGenerationFailure(current, {
+            sourceId: source.id,
+            pendingOutputIds: [outputId],
+            markSource: false,
+            details,
+            clearFailedVideoTask: false,
+          }),
+        );
+      } finally {
+        finishGenerationRequest(outputId, controller);
+        if (
+          activeProjectIdRef.current === projectId &&
+          generationRequests.isLastWriter(outputId, controller)
+        )
+          setRunningNodeId((current) => current === outputId ? null : current);
+      }
+    },
+    [dispatchAtlasCommands, finishGenerationRequest, generationRequests, message, projectId, setNodesForGeneration, startGenerationRequest],
   );
 
   const maskEditImageNode = useCallback(
     async (node: CanvasNodeData, payload: CanvasImageMaskEditPayload) => {
-      if (!node.metadata?.content) return;
-      const generationConfig = {
-        ...buildGenerationConfig(effectiveConfig, node, "image"),
-        count: "1",
-        size: node.metadata?.size || "auto",
-      };
-      if (
-        payload.generate &&
-        !isAiConfigReady(generationConfig, generationConfig.model)
-      ) {
+      const source = nodesRef.current.find((item) => item.id === node.id);
+      if (source?.type !== CanvasNodeType.Image || !source.metadata?.content) return;
+      const config = { ...buildGenerationConfig(effectiveConfig, source, "image"), count: "1", size: source.metadata.size || "auto" };
+      if (payload.generate && !isAiConfigReady(config, config.model)) {
         openConfigDialog(true);
         return;
       }
-      const userPrompt = payload.prompt.trim();
-      const prompt = t("canvas.projectPage.maskPrompt", {
-        source: imageReferenceLabel(0),
-        mask: imageReferenceLabel(1),
-        prompt: userPrompt,
-      });
+      const prompt = t("canvas.projectPage.maskPrompt", { source: imageReferenceLabel(0), mask: imageReferenceLabel(1), prompt: payload.prompt.trim() });
       setMaskEditNodeId(null);
-      const maskImage = await uploadImage(payload.maskDataUrl);
-      const maskNodeId = nanoid();
-      const childId = nanoid();
-      const source = {
-        id: node.id,
-        name: `${node.title || node.id}.png`,
-        type: node.metadata.mimeType || "image/png",
-        dataUrl: node.metadata.content,
-        storageKey: node.metadata.storageKey,
-      };
-      const maskSource = {
-        id: maskNodeId,
-        name: "mask.png",
-        type: maskImage.mimeType || "image/png",
-        dataUrl: maskImage.url,
-        storageKey: maskImage.storageKey,
-      };
-      const references = [source, maskSource];
-      const generationMetadata = buildImageGenerationMetadata(
-        "edit",
-        generationConfig,
-        1,
-        references,
-      );
-      const childMetadata = payload.generate
-        ? { prompt, status: NODE_STATUS_LOADING, ...generationMetadata }
-        : { prompt };
-      setNodes((prev) => [
-        ...prev,
-        {
-          id: maskNodeId,
-          type: CanvasNodeType.Image,
-          title: t("canvas.projectPage.maskNodeTitle"),
-          position: {
-            x: node.position.x,
-            y: node.position.y + node.height + 96,
-          },
-          width: node.width,
-          height: node.height,
-          metadata: imageMetadata(maskImage),
-        },
-        {
-          id: childId,
-          type: CanvasNodeType.Image,
-          title: userPrompt.slice(0, 32) || t("canvas.projectPage.maskResult"),
-          position: {
-            x: node.position.x + node.width + 96,
-            y: node.position.y,
-          },
-          width: node.width,
-          height: node.height,
-          metadata: childMetadata,
-        },
-      ]);
-      setConnections((prev) => [
-        ...prev,
-        { id: nanoid(), fromNodeId: node.id, toNodeId: childId },
-        { id: nanoid(), fromNodeId: maskNodeId, toNodeId: childId },
-      ]);
-      setSelectedNodeIds(new Set([childId]));
-      setSelectedConnectionId(null);
-      setDialogNodeId(childId);
-      if (!payload.generate) return;
-      setRunningNodeId(childId);
-      const controller = startGenerationRequest(childId, node.id, childId);
-      try {
-        const image = await requestEdit(generationConfig, prompt, references, {
-          signal: controller.signal,
-        }).then((items) => items[0]);
-        const uploaded = await uploadImage(image.dataUrl, {
-          signal: controller.signal,
-        });
-        if (!generationRequests.canWrite(childId, controller)) return;
-        const size = fitNodeSize(
-          uploaded.width,
-          uploaded.height,
-          node.width,
-          node.height,
-        );
-        setNodesForGeneration(childId, controller, (prev) =>
-          prev.map((item) =>
-            item.id === childId
-              ? {
-                  ...item,
-                  width: size.width,
-                  height: size.height,
-                  metadata: {
-                    ...item.metadata,
-                    ...imageMetadata(uploaded),
-                    prompt,
-                    ...generationMetadata,
-                  },
-                }
-              : item,
-          ),
-        );
-      } catch (error) {
-        if (
-          isGenerationCanceled(error) ||
-          !generationRequests.canWrite(childId, controller)
-        )
-          return;
-        const errorDetails =
-          error instanceof Error
-            ? error.message
-            : t("canvas.projectPage.maskFailed");
-        message.error(errorDetails);
-        setNodesForGeneration(childId, controller, (prev) =>
-          prev.map((item) =>
-            item.id === childId
-              ? {
-                  ...item,
-                  metadata: {
-                    ...item.metadata,
-                    status: NODE_STATUS_ERROR,
-                    errorDetails,
-                  },
-                }
-              : item,
-          ),
-        );
-      } finally {
-        finishGenerationRequest(childId, controller);
-        if (generationRequests.canWrite(childId, controller))
-          setRunningNodeId(null);
-      }
+      await runImageEdit(source, async (outputId, signal) => planAtlasMaskImageEdit({
+        source,
+        outputId,
+        mask: await uploadImage(payload.maskDataUrl, { signal }),
+        config,
+        prompt,
+        title: payload.prompt.trim().slice(0, 32) || t("canvas.projectPage.maskResult"),
+        maskTitle: t("canvas.projectPage.maskNodeTitle"),
+        generate: payload.generate,
+      }), payload.generate, t("canvas.projectPage.maskFailed"), true);
     },
-    [
-      effectiveConfig,
-      finishGenerationRequest,
-      generationRequests,
-      isAiConfigReady,
-      message,
-      openConfigDialog,
-      setNodesForGeneration,
-      startGenerationRequest,
-      t,
-    ],
+    [effectiveConfig, isAiConfigReady, openConfigDialog, runImageEdit, t],
   );
 
   const upscaleImageNode = useCallback(
     async (node: CanvasNodeData, params: CanvasImageUpscaleParams) => {
-      if (!node.metadata?.content) return;
-      setUpscaleNodeId(null);
-      const upscaled = await upscaleDataUrl(node.metadata.content, params);
-      const image = await uploadImage(upscaled);
-      const childId = nanoid();
-      const child = createUpscaleImageResult(node, childId, image);
-      setNodes((prev) => [...prev, child]);
-      setConnections((prev) => [
-        ...prev,
-        { id: nanoid(), fromNodeId: node.id, toNodeId: childId },
-      ]);
-      setSelectedNodeIds(new Set([childId]));
-      setDialogNodeId(childId);
+      const source = nodesRef.current.find((item) => item.id === node.id);
+      if (!source?.metadata?.content) return;
+      const sourceUrl = source.metadata.content;
+      setUpscaleNodeId((current) => current === node.id ? null : current);
+      await runMediaTransfer(async (context) => {
+        const data = await upscaleDataUrl(sourceUrl, params);
+        context.assertCurrent();
+        const image = await uploadImage(data, { signal: context.signal });
+        context.retain(image);
+        return image;
+      }, (image) => {
+        const current = nodesRef.current.find((item) => item.id === source.id);
+        if (!current || current.metadata?.content !== sourceUrl) throw new DOMException("图片来源已改变", "AbortError");
+        const child = createUpscaleImageResult(current, nanoid(), image);
+        commitMediaNodes([child], [{ id: nanoid(), fromNodeId: current.id, toNodeId: child.id }]);
+        setDialogNodeId(child.id);
+      }, `upscale:${node.id}`);
     },
-    [],
+    [commitMediaNodes, runMediaTransfer, setUpscaleNodeId],
   );
 
   const generateAngleNode = useCallback(
     async (node: CanvasNodeData, params: CanvasImageAngleParams) => {
-      if (!node.metadata?.content) return;
-      const generationConfig = {
-        ...buildGenerationConfig(effectiveConfig, node, "image"),
-        count: "1",
-      };
-      if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+      const source = nodesRef.current.find((item) => item.id === node.id);
+      if (source?.type !== CanvasNodeType.Image || !source.metadata?.content) return;
+      const config = { ...buildGenerationConfig(effectiveConfig, source, "image"), count: "1" };
+      if (!isAiConfigReady(config, config.model)) {
         openConfigDialog(true);
         return;
       }
-      const childId = nanoid();
-      const imageConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
-      const title = buildAngleLabel(params);
-      const prompt = buildAnglePrompt(params);
-      const generationMetadata = buildImageGenerationMetadata(
-        "edit",
-        generationConfig,
-        1,
-        [
-          {
-            id: node.id,
-            name: `${node.title || node.id}.png`,
-            type: node.metadata.mimeType || "image/png",
-            dataUrl: node.metadata.content,
-            storageKey: node.metadata.storageKey,
-          },
-        ],
-      );
       setAngleNodeId(null);
-      setRunningNodeId(childId);
-      const outputNode = createAngleImageDraft(
-        node,
-        childId,
-        title,
-        prompt,
-        generationMetadata,
-      );
-      setNodes((prev) => [...prev, outputNode]);
-      setConnections((prev) => [
-        ...prev,
-        { id: nanoid(), fromNodeId: node.id, toNodeId: childId },
-      ]);
-      setSelectedNodeIds(new Set([childId]));
-      setDialogNodeId(childId);
-      const controller = startGenerationRequest(childId, node.id, childId);
-      try {
-        const image = await requestEdit(
-          generationConfig,
-          prompt,
-          [
-            {
-              id: node.id,
-              name: `${node.title || node.id}.png`,
-              type: node.metadata.mimeType || "image/png",
-              dataUrl: node.metadata.content,
-              storageKey: node.metadata.storageKey,
-            },
-          ],
-          { signal: controller.signal },
-        ).then((items) => items[0]);
-        const uploaded = await uploadImage(image.dataUrl, {
-          signal: controller.signal,
-        });
-        if (!generationRequests.canWrite(childId, controller)) return;
-        setNodesForGeneration(childId, controller, (prev) =>
-          prev.map((item) =>
-            item.id === childId
-              ? applyAngleImageResult(
-                  item,
-                  uploaded,
-                  prompt,
-                  generationMetadata,
-                  imageConfig,
-                )
-              : item,
-          ),
-        );
-      } catch (error) {
-        if (isGenerationCanceled(error)) return;
-        const errorDetails =
-          error instanceof Error
-            ? error.message
-            : t("canvas.projectPage.generationFailed");
-        setNodesForGeneration(childId, controller, (prev) =>
-          prev.map((item) =>
-            item.id === childId
-              ? {
-                  ...item,
-                  metadata: {
-                    ...item.metadata,
-                    status: NODE_STATUS_ERROR,
-                    errorDetails,
-                  },
-                }
-              : item,
-          ),
-        );
-      } finally {
-        finishGenerationRequest(childId, controller);
-        if (generationRequests.canWrite(childId, controller))
-          setRunningNodeId(null);
-      }
+      await runImageEdit(source, async (outputId) => planAtlasAngleImageEdit({
+        source,
+        outputId,
+        config,
+        title: buildAngleLabel(params),
+        prompt: buildAnglePrompt(params),
+      }), true, t("canvas.projectPage.generationFailed"));
     },
-    [
-      effectiveConfig,
-      finishGenerationRequest,
-      generationRequests,
-      openConfigDialog,
-      setNodesForGeneration,
-      startGenerationRequest,
-      t,
-    ],
+    [effectiveConfig, isAiConfigReady, openConfigDialog, runImageEdit, t],
   );
 
   const handleFontSizeChange = useCallback((nodeId: string, value: number) => {
@@ -3256,116 +2479,23 @@ function InfiniteCanvasPage() {
   const handleImageInputChange = useCallback(
     async (event: ReactChangeEvent<HTMLInputElement>) => {
       const input = event.currentTarget;
-      try {
-        const target = uploadTargetRef.current;
-        const bounds = containerRef.current?.getBoundingClientRect();
-        const canvasCenter = screenToCanvas(
-          (bounds?.left || 0) + size.width / 2,
-          (bounds?.top || 0) + size.height / 2,
-        );
-        const plan = planMediaImport(
-          Array.from(input.files || []),
-          target,
-          canvasCenter,
-          isAudioFile,
-        );
-        if (!plan.replacement && !plan.additions.length) return;
-
-        if (plan.replacement) {
-          const { file, kind, nodeId } = plan.replacement;
-
-          if (kind === "audio") {
-            const audio = await uploadMediaFile(file, "audio");
-            setNodes((prev) =>
-              applyMediaReplacement(prev, nodeId, {
-                fileName: file.name,
-                kind,
-                media: audio,
-              }),
-            );
-            setSelectedNodeIds(new Set([nodeId]));
-            setSelectedConnectionId(null);
-          } else if (kind === "video") {
-            const video = await uploadMediaFile(file, "video");
-            setNodes((prev) =>
-              applyMediaReplacement(
-                prev,
-                nodeId,
-                { fileName: file.name, kind, media: video },
-                { width: VIDEO_NODE_MAX_WIDTH, height: VIDEO_NODE_MAX_HEIGHT },
-              ),
-            );
-            setSelectedNodeIds(new Set([nodeId]));
-            setSelectedConnectionId(null);
-          } else {
-            const image = await uploadImage(file);
-            setNodes((prev) =>
-              applyMediaReplacement(prev, nodeId, {
-                fileName: file.name,
-                kind,
-                media: image,
-              }),
-            );
-            setSelectedNodeIds(new Set([nodeId]));
-            setSelectedConnectionId(null);
-          }
-        }
-
-        for (const { file, kind, position } of plan.additions) {
-          if (kind === "audio") {
-            void createAudioFileNode(file, position);
-          } else if (kind === "video") {
-            void createVideoFileNode(file, position);
-          } else {
-            void createImageFileNode(file, position);
-          }
-        }
-      } finally {
-        uploadTargetRef.current = null;
-        input.value = "";
-      }
+      const files = Array.from(input.files || []);
+      const target = uploadTargetRef.current;
+      uploadTargetRef.current = null;
+      input.value = "";
+      await importFilesToCanvas(files, target);
     },
-    [
-      createAudioFileNode,
-      createImageFileNode,
-      createVideoFileNode,
-      screenToCanvas,
-      size.height,
-      size.width,
-    ],
+    [importFilesToCanvas],
   );
 
   const handleDrop = useCallback(
     (event: ReactDragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const files = Array.from(event.dataTransfer.files).filter(
-        (item) =>
-          item.type.startsWith("image/") ||
-          item.type.startsWith("video/") ||
-          isAudioFile(item),
-      );
+      const files = Array.from(event.dataTransfer.files);
       if (!files.length) return;
-
-      const basePos = screenToCanvas(event.clientX, event.clientY);
-      const STAGGER = 40;
-      for (let i = 0; i < files.length; i++) {
-        const pos = { x: basePos.x + i * STAGGER, y: basePos.y + i * STAGGER };
-        const f = files[i];
-        if (isAudioFile(f)) {
-          void createAudioFileNode(f, pos);
-        } else if (f.type.startsWith("video/")) {
-          void createVideoFileNode(f, pos);
-        } else {
-          void createImageFileNode(f, pos);
-        }
-      }
+      void importFilesToCanvas(files, { position: screenToCanvas(event.clientX, event.clientY) });
     },
-    [
-      createAudioFileNode,
-      createImageFileNode,
-      createVideoFileNode,
-      screenToCanvas,
-    ],
+    [importFilesToCanvas, screenToCanvas],
   );
 
   const startTitleEditing = useCallback(() => {
@@ -3405,6 +2535,7 @@ function InfiniteCanvasPage() {
   const handleGenerateNode = useCallback(
     async (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => {
       const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
+      if (!sourceNode) return;
       const generationConfig = buildGenerationConfig(
         effectiveConfig,
         sourceNode,
@@ -3415,760 +2546,258 @@ function InfiniteCanvasPage() {
         return;
       }
 
-      // useBuiltinPanel.writeBackToSelf reuses built-in generation while writing the result back to the plugin node.
-      // Image mode currently supports display-only nodes such as panoramas, with a useBuiltinPanel.promptPrefix.
-      const builtinPanel = sourceNode
-        ? getNodeDefinition(sourceNode.type)?.useBuiltinPanel
-        : undefined;
-      if (
-        sourceNode &&
-        builtinPanel?.writeBackToSelf &&
-        builtinPanel.mode === "image"
-      ) {
-        const scene = prompt.trim();
+      const request = resolveAtlasGenerationRequest({
+        nodeId,
+        mode,
+        prompt,
+        sourceNode,
+        nodes: nodesRef.current,
+        connections: connectionsRef.current,
+        config: generationConfig,
+        overwriteExisting:
+          effectiveConfig.nodeRegenerateBehavior === "overwrite",
+        resourceIndex,
+        builtinPanel: sourceNode
+          ? getNodeDefinition(sourceNode.type)?.useBuiltinPanel
+          : undefined,
+        formatTextEdit: (source, instruction) =>
+          t("canvas.projectPage.editTextPrompt", {
+            source,
+            prompt: instruction,
+          }),
+      });
+
+      if (request.kind === "plugin-image-writeback") {
+        const { scene, panel } = request;
         if (!scene) return;
-        await runNodeGenerationFlow({
-          begin: () => {
+        await generationRequests.run({
+          nodeId,
+          start: ({ controller }) => {
             setRunningNodeId(nodeId);
-            const controller = startGenerationRequest(nodeId, nodeId, nodeId);
-            setNodes((prev) =>
-              prev.map((node) =>
-                node.id === nodeId
-                  ? {
-                      ...node,
-                      metadata: {
-                        ...node.metadata,
-                        prompt: scene,
-                        status: NODE_STATUS_LOADING,
-                        errorDetails: undefined,
-                      },
-                    }
-                  : node,
-              ),
-            );
-            return controller;
-          },
-          prepare: (signal) => {
-            const fullPrompt = (builtinPanel.promptPrefix || "") + scene;
-            return hydrateNodeGenerationContext(
-            buildNodeGenerationContext(
-              nodeId,
-              nodesRef.current,
-              connectionsRef.current,
-              fullPrompt,
-              { resourceIndex },
-            ),
-              { signal },
+            setNodesForGeneration(nodeId, controller, (current) =>
+              patchAtlasGenerationMetadata(current, nodeId, { prompt: scene, status: "loading", errorDetails: undefined }),
             );
           },
-          execute: async (context, controller) => {
-            const refs = context.referenceImages;
-            const image = refs.length
-              ? await requestEdit(
-                  { ...generationConfig, count: "1" },
-                  context.prompt,
-                  refs,
-                  { signal: controller.signal },
-                ).then((items) => items[0])
-              : await requestGeneration(
-                  { ...generationConfig, count: "1" },
-                  context.prompt,
-                  { signal: controller.signal },
-                ).then((items) => items[0]);
-            const uploaded = await uploadImage(image.dataUrl, {
-              signal: controller.signal,
+          prepare: (signal) => hydrateNodeGenerationContext(
+            buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, (panel.promptPrefix || "") + scene, { resourceIndex }),
+            { signal },
+          ),
+          execute: async (context, lease) => {
+            const uploaded = await executeAtlasImageWriteback({
+              config: generationConfig,
+              context,
+              signal: lease.controller.signal,
+              ports: { generate: requestGeneration, edit: requestEdit, upload: uploadImage, isCancelled: isGenerationCanceled },
             });
-            if (!generationRequests.canWrite(nodeId, controller)) return;
-            setNodesForGeneration(nodeId, controller, (prev) =>
-              prev.map((node) =>
-                node.id === nodeId
-                  ? {
-                      ...node,
-                      metadata: {
-                        ...node.metadata,
-                        ...imageMetadata(uploaded),
-                        prompt: scene,
-                        model: generationConfig.model,
-                        status: NODE_STATUS_SUCCESS,
-                        errorDetails: undefined,
-                      },
-                    }
-                  : node,
-              ),
+            lease.assertCurrent();
+            setNodesForGeneration(nodeId, lease.controller, (current) =>
+              patchAtlasGenerationMetadata(current, nodeId, { ...imageMetadata(uploaded), prompt: scene, model: generationConfig.model, status: "success", errorDetails: undefined }),
             );
-            setDialogNodeId(null);
+            setDialogNodeId((current) => current === nodeId ? null : current);
           },
-          ignoreError: (error) => isGenerationCanceled(error),
-          onError: (error, controller) => {
-            const errorDetails =
-              error instanceof Error
-                ? error.message
-                : t("canvas.projectPage.generationFailed");
-            message.error(errorDetails);
-            setNodesForGeneration(nodeId, controller, (prev) =>
-              prev.map((node) =>
-                node.id === nodeId
-                  ? {
-                      ...node,
-                      metadata: {
-                        ...node.metadata,
-                        status: NODE_STATUS_ERROR,
-                        errorDetails,
-                      },
-                    }
-                  : node,
-              ),
+          failed: (error, { controller }) => {
+            const details = error instanceof Error ? error.message : t("canvas.projectPage.generationFailed");
+            message.error(details);
+            setNodesForGeneration(nodeId, controller, (current) =>
+              patchAtlasGenerationMetadata(current, nodeId, { status: "error", errorDetails: details }),
             );
           },
-          finish: (controller) =>
-            finishGenerationRequest(nodeId, controller),
+          settled: (_lease, latest) => {
+            if (latest) setRunningNodeId((current) => current === nodeId ? null : current);
+          },
         });
         return;
       }
 
-      const sourceTextContent =
-        sourceNode?.type === CanvasNodeType.Text
-          ? sourceNode.metadata?.content?.trim() || ""
-          : "";
-      const editingTextNode = mode === "text" && Boolean(sourceTextContent);
-      const frameMode =
-        mode === "video" && generationConfig.videoMode === "frames";
-      const generationInput = buildNodeGenerationContext(
-        nodeId,
-        nodesRef.current,
-        connectionsRef.current,
-        editingTextNode
-          ? t("canvas.projectPage.editTextPrompt", {
-              source: sourceTextContent,
-              prompt,
-            })
-          : prompt,
-        { frameMode, resourceIndex },
-      );
-      const frameIssue = frameMode
-        ? frameReferenceIssue(generationInput.referenceImages.length)
-        : undefined;
+      if (request.kind !== "node-generation") return;
+      const generationInput = request.context;
+      const frameIssue = request.frameIssue;
       if (frameIssue) {
         message.error(frameIssue);
         return;
       }
-      const overwriteExisting =
-        effectiveConfig.nodeRegenerateBehavior === "overwrite";
-      const markSourceStatus =
-        sourceNode?.type !== CanvasNodeType.Image && !editingTextNode;
+      const overwriteExisting = request.overwriteExisting;
+      const markSourceStatus = request.markSourceStatus;
       let pendingChildIds: string[] = [];
-      await runNodeGenerationFlow({
-        begin: () => {
-          setRunningNodeId(nodeId);
-          return startGenerationRequest(nodeId, nodeId, nodeId);
-        },
+      await generationRequests.run({
+        nodeId,
+        start: () => setRunningNodeId(nodeId),
         prepare: (signal) =>
           hydrateNodeGenerationContext(generationInput, { signal }),
-        shouldSkip: (generationContext) =>
+        skip: (generationContext) =>
           !generationContext.prompt.trim() &&
           (mode === "text" || mode === "audio"),
-        execute: async (generationContext, runController) => {
+        execute: async (generationContext, lease) => {
+          const runController = lease.controller;
           const effectivePrompt = generationContext.prompt.trim();
           if (markSourceStatus)
-            setNodesForGeneration(nodeId, runController, (prev) =>
-              prev.map((node) =>
-                node.id === nodeId
-                  ? {
-                      ...node,
-                      metadata: {
-                        ...node.metadata,
-                        ...(node.type === CanvasNodeType.Config
-                          ? {}
-                          : { prompt }),
-                        status: NODE_STATUS_LOADING,
-                        errorDetails: undefined,
-                      },
-                    }
-                  : node,
-              ),
+            setNodesForGeneration(nodeId, runController, (current) =>
+              beginAtlasGenerationSource(current, nodeId, prompt),
             );
 
-          if (mode === "image") {
-            const count = getGenerationCount(generationConfig.count);
-            const imagePlan = planCanvasImageOutput({
-              sourceId: nodeId,
-              sourceNode,
-              prompt: effectivePrompt,
-              sourcePrompt: prompt,
-              config: generationConfig,
-              overwriteExisting,
-              count,
-              references: generationContext.referenceImages,
-              createId: nanoid,
-            });
-            const isConfigNode = imagePlan.isConfigurationSource;
-            const referenceImages = imagePlan.references;
-            const rootId = imagePlan.outputId;
-            const imageIds = imagePlan.imageIds;
-            const outputConnection = imagePlan.connection;
-            pendingChildIds = [rootId];
-            setNodes((prev) => applyCanvasImageOutputPlan(prev, imagePlan));
-            if (outputConnection)
-              setConnections((prev) => [
-                ...prev,
-                outputConnection,
-              ]);
+          const outputPlan = planAtlasNodeOutput({
+            mode,
+            sourceId: nodeId,
+            sourceNode,
+            prompt: effectivePrompt,
+            sourcePrompt: prompt,
+            config: generationConfig,
+            overwriteExisting,
+            imageCount: getGenerationCount(generationConfig.count),
+            textCount: getGenerationCount(
+              String(sourceNode?.metadata?.textCount || 1),
+            ),
+            references: generationContext.referenceImages,
+            referenceUrls: generationReferenceUrls(generationContext),
+            createId: nanoid,
+          });
+          const outputId = atlasNodeOutputId(outputPlan);
+          pendingChildIds = [outputId];
+          setNodesForGeneration(nodeId, runController, (prev) => applyAtlasNodeOutputPlan(prev, outputPlan));
+          const outputConnection = atlasNodeOutputConnection(outputPlan);
+          if (outputConnection)
+            setConnections(generationRequests.guard(nodeId, runController, (prev: CanvasConnection[]) => [...prev, outputConnection]));
+
+          if (outputPlan.mode === "image" || outputPlan.mode === "text") {
             setSelectedNodeIds(new Set([nodeId]));
             setSelectedConnectionId(null);
             setDialogNodeId(nodeId);
+          }
 
-            const controller =
-              rootId === nodeId
-                ? runController
-                : startGenerationRequest(rootId, nodeId, nodeId, runController);
-            let firstError = "";
-            const outcomes = await generateCanvasImageBatch({
-              imageIds,
+          const controller = lease.track(outputId);
+          const result = await executeAtlasProvider({
+              plan: outputPlan,
               config: generationConfig,
-              prompt: effectivePrompt,
-              references: referenceImages,
+              context: generationContext,
               signal: controller.signal,
               ports: {
-                generate: requestGeneration,
-                edit: requestEdit,
-                upload: uploadImage,
-                isCancelled: isGenerationCanceled,
-              },
-              onImage: (imageId, uploaded) => {
-                const item: CanvasNodeImage = {
-                  id: imageId,
-                  status: NODE_STATUS_SUCCESS,
-                  content: uploaded.url,
-                  storageKey: uploaded.storageKey,
-                  naturalWidth: uploaded.width,
-                  naturalHeight: uploaded.height,
-                  bytes: uploaded.bytes,
-                  mimeType: uploaded.mimeType,
-                };
-                setNodesForGeneration(rootId, controller, (prev) =>
-                  applyCanvasImageBatchSuccess(prev, rootId, item),
-                );
-                if (isConfigNode)
-                  setNodesForGeneration(nodeId, controller, (prev) =>
-                    prev.map((node) =>
-                      node.id === nodeId
-                        ? {
-                            ...node,
-                            metadata: {
-                              ...node.metadata,
-                              status: NODE_STATUS_SUCCESS,
-                              errorDetails: undefined,
-                            },
-                          }
-                        : node,
-                    ),
-                  );
-              },
-              onFailure: (imageId, error) => {
-                const errorDetails =
-                  error instanceof Error
-                    ? error.message
-                    : t("canvas.projectPage.generationFailed");
-                if (!firstError) firstError = errorDetails;
-                setNodesForGeneration(rootId, controller, (prev) =>
-                  applyCanvasImageBatchFailure(
-                    prev,
-                    rootId,
-                    imageId,
-                    errorDetails,
-                  ),
-                );
-              },
-            });
-            const batch = summarizeCanvasGenerationBatch(
-              outcomes.map(({ outcome }) => outcome),
-            );
-            if (rootId !== nodeId) finishGenerationRequest(rootId, controller);
-            if (controller.signal.aborted) {
-              setNodes((prev) =>
-                generationRequests.isLastWriter(nodeId, controller)
-                  ? prev.map((node) =>
-                      node.id === nodeId &&
-                      isConfigNode &&
-                      node.metadata?.status === NODE_STATUS_LOADING
-                        ? {
-                            ...node,
-                            metadata: {
-                              ...node.metadata,
-                              status: NODE_STATUS_IDLE,
-                              errorDetails: undefined,
-                            },
-                          }
-                        : node,
-                    )
-                  : prev,
-              );
-              return;
-            }
-            if (batch.hasFailure) {
-              message.error(
-                batch.hasSuccess
-                  ? t("canvas.projectPage.partialFailed")
-                  : firstError || t("canvas.projectPage.generationFailed"),
-              );
-            }
-            setNodesForGeneration(nodeId, controller, (prev) =>
-              prev.map((node) =>
-                node.id === nodeId && isConfigNode
-                  ? {
-                      ...node,
-                      metadata: {
-                        ...node.metadata,
-                        status: batch.hasSuccess
-                          ? NODE_STATUS_SUCCESS
-                          : NODE_STATUS_ERROR,
-                        errorDetails: batch.hasSuccess
-                          ? undefined
-                          : t("canvas.projectPage.generationFailed"),
-                      },
-                    }
-                  : node.id === rootId
-                    ? {
-                        ...node,
-                        metadata: {
-                          ...node.metadata,
-                          status: batch.hasSuccess
-                            ? NODE_STATUS_SUCCESS
-                            : NODE_STATUS_ERROR,
-                          errorDetails: batch.hasSuccess
-                            ? undefined
-                            : t("canvas.projectPage.allFailed"),
-                        },
-                      }
-                    : node,
-              ),
-            );
-            return;
-          }
-
-          if (mode === "video") {
-            const spec =
-              nodeSizeFromRatio(
-                generationConfig.size,
-                NODE_DEFAULT_SIZE[CanvasNodeType.Video].width,
-                NODE_DEFAULT_SIZE[CanvasNodeType.Video].height,
-              ) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
-            const isEmptyVideoNode =
-              sourceNode?.type === CanvasNodeType.Video &&
-              !sourceNode.metadata?.content;
-            const reuseVideoNode =
-              sourceNode?.type === CanvasNodeType.Video &&
-              (overwriteExisting || isEmptyVideoNode);
-            const videoId = reuseVideoNode ? nodeId : nanoid();
-            const parent = sourceNode?.position || { x: 0, y: 0 };
-            const videoNode: CanvasNodeData = {
-              id: videoId,
-              type: CanvasNodeType.Video,
-              title: effectivePrompt.slice(0, 32) || "Generated Video",
-              position: reuseVideoNode
-                ? sourceNode.position
-                : {
-                    x: parent.x + (sourceNode?.width || spec.width) + 96,
-                    y: parent.y,
-                  },
-              width: reuseVideoNode ? sourceNode.width : spec.width,
-              height: reuseVideoNode ? sourceNode.height : spec.height,
-              metadata: {
-                prompt: effectivePrompt,
-                status: NODE_STATUS_LOADING,
-                model: generationConfig.model,
-                size: generationConfig.size,
-                seconds: generationConfig.videoSeconds,
-                vquality: generationConfig.vquality,
-                generateAudio: generationConfig.videoGenerateAudio,
-                watermark: generationConfig.videoWatermark,
-                videoMode: generationConfig.videoMode,
-                references: generationReferenceUrls(generationContext),
-              },
-            };
-            pendingChildIds = [videoId];
-            setNodes((prev) =>
-              reuseVideoNode
-                ? prev.map((node) =>
-                    node.id === nodeId ? { ...node, ...videoNode } : node,
-                  )
-                : [
-                    ...prev.map((node) =>
-                      node.id === nodeId
-                        ? {
-                            ...node,
-                            metadata: {
-                              ...node.metadata,
-                              status: NODE_STATUS_SUCCESS,
-                            },
-                          }
-                        : node,
-                    ),
-                    videoNode,
-                  ],
-            );
-            if (!reuseVideoNode)
-              setConnections((prev) => [
-                ...prev,
-                { id: nanoid(), fromNodeId: nodeId, toNodeId: videoId },
-              ]);
-            const controller = startGenerationRequest(
-              videoId,
-              nodeId,
-              nodeId,
-              runController,
-            );
-            try {
-              await completeVideoNodeTask(
-                videoId,
-                generationConfig,
-                effectivePrompt,
-                generationContext.referenceImages,
-                controller.signal,
-                controller,
-                {
-                  size: generationConfig.size,
-                  seconds: generationConfig.videoSeconds,
-                  vquality: generationConfig.vquality,
-                  generateAudio: generationConfig.videoGenerateAudio,
-                  watermark: generationConfig.videoWatermark,
-                  videoMode: generationConfig.videoMode,
-                  references: generationReferenceUrls(generationContext),
+                image: {
+                  generate: requestGeneration,
+                  edit: requestEdit,
+                  upload: uploadImage,
+                  isCancelled: isGenerationCanceled,
                 },
-                generationContext.referenceVideos,
-                generationContext.referenceAudios,
-              );
-            } finally {
-              finishGenerationRequest(videoId, controller);
-            }
-            return;
-          }
-
-          if (mode === "audio") {
-            const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Audio];
-            const isEmptyAudioNode =
-              sourceNode?.type === CanvasNodeType.Audio &&
-              !sourceNode.metadata?.content;
-            const reuseAudioNode =
-              sourceNode?.type === CanvasNodeType.Audio &&
-              (overwriteExisting || isEmptyAudioNode);
-            const audioId = reuseAudioNode ? nodeId : nanoid();
-            const parent = sourceNode?.position || { x: 0, y: 0 };
-            const audioNode: CanvasNodeData = {
-              id: audioId,
-              type: CanvasNodeType.Audio,
-              title: effectivePrompt.slice(0, 32) || "Generated Audio",
-              position: reuseAudioNode
-                ? sourceNode.position
-                : {
-                    x: parent.x + (sourceNode?.width || spec.width) + 96,
-                    y:
-                      parent.y +
-                      ((sourceNode?.height || spec.height) - spec.height) / 2,
-                  },
-              width: reuseAudioNode ? sourceNode.width : spec.width,
-              height: reuseAudioNode ? sourceNode.height : spec.height,
-              metadata: {
-                prompt: effectivePrompt,
-                status: NODE_STATUS_LOADING,
-                ...buildAudioGenerationMetadata(generationConfig),
-              },
-            };
-            pendingChildIds = [audioId];
-            setNodes((prev) =>
-              reuseAudioNode
-                ? prev.map((node) =>
-                    node.id === nodeId ? { ...node, ...audioNode } : node,
-                  )
-                : [
-                    ...prev.map((node) =>
-                      node.id === nodeId
-                        ? {
-                            ...node,
-                            metadata: {
-                              ...node.metadata,
-                              status: NODE_STATUS_SUCCESS,
-                            },
-                          }
-                        : node,
-                    ),
-                    audioNode,
-                  ],
-            );
-            if (!reuseAudioNode)
-              setConnections((prev) => [
-                ...prev,
-                { id: nanoid(), fromNodeId: nodeId, toNodeId: audioId },
-              ]);
-            const controller = startGenerationRequest(
-              audioId,
-              nodeId,
-              nodeId,
-              runController,
-            );
-            try {
-              await generateCanvasAudio({
-                config: generationConfig,
-                prompt: effectivePrompt,
-                signal: controller.signal,
-                ports: {
+                text: {
+                  request: requestImageQuestion,
+                  isCancelled: isGenerationCanceled,
+                },
+                audio: {
                   generate: requestAudioGeneration,
                   store: storeGeneratedAudio,
                 },
-                onAudio: (audio) =>
-                  setNodesForGeneration(audioId, controller, (prev) =>
-                    prev.map((node) =>
-                      node.id === audioId
-                        ? {
-                            ...node,
-                            metadata: {
-                              ...node.metadata,
-                              ...audioMetadata(audio),
-                              prompt: effectivePrompt,
-                              ...buildAudioGenerationMetadata(generationConfig),
-                            },
-                          }
-                        : node,
-                    ),
+                video: ({ outputId: targetId, config, prompt, context, signal }) =>
+                  completeVideoNodeTask(
+                    targetId,
+                    config,
+                    prompt,
+                    context.referenceImages,
+                    signal,
+                    controller,
+                    {
+                      size: config.size,
+                      seconds: config.videoSeconds,
+                      vquality: config.vquality,
+                      generateAudio: config.videoGenerateAudio,
+                      watermark: config.videoWatermark,
+                      videoMode: config.videoMode,
+                      references: generationReferenceUrls(context),
+                    },
+                    context.referenceVideos,
+                    context.referenceAudios,
                   ),
-              });
-            } finally {
-              finishGenerationRequest(audioId, controller);
-            }
-            return;
-          }
-
-          const isConfigNode = sourceNode?.type === CanvasNodeType.Config;
-          const textCount = getGenerationCount(
-            String(sourceNode?.metadata?.textCount || 1),
-          );
-          const parentConfig =
-            NODE_DEFAULT_SIZE[
-              isConfigNode ? CanvasNodeType.Config : CanvasNodeType.Text
-            ];
-          const textConfig = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
-          const parentPosition = sourceNode?.position || { x: 0, y: 0 };
-          const isEmptyTextNode =
-            sourceNode?.type === CanvasNodeType.Text && !sourceTextContent;
-          const reuseTextNode =
-            sourceNode?.type === CanvasNodeType.Text &&
-            (overwriteExisting || isEmptyTextNode);
-          const rootId = reuseTextNode ? nodeId : nanoid();
-          const textIds = Array.from({ length: textCount }, () => nanoid());
-          const rootNode: CanvasNodeData = {
-            id: rootId,
-            type: CanvasNodeType.Text,
-            title: effectivePrompt.slice(0, 32) || "Generated Text",
-            position: reuseTextNode
-              ? sourceNode.position
-              : {
-                  x: parentPosition.x + parentConfig.width + 96,
-                  y:
-                    parentPosition.y +
-                    parentConfig.height / 2 -
-                    textConfig.height / 2,
-                },
-            width: reuseTextNode ? sourceNode.width : textConfig.width,
-            height: reuseTextNode ? sourceNode.height : textConfig.height,
-            metadata: {
-              prompt: effectivePrompt,
-              status: NODE_STATUS_LOADING,
-              fontSize: 14,
-              model: generationConfig.model,
-              reasoningEffort: generationConfig.reasoningEffort,
-              textCount,
-              texts: textIds.map((id) => ({
-                id,
-                status: NODE_STATUS_LOADING,
-                content: "",
-              })),
-              primaryTextId: textIds[0],
-            },
-          };
-          pendingChildIds = [rootId];
-          setNodes((prev) =>
-            reuseTextNode
-              ? prev.map((node) =>
-                  node.id === nodeId ? { ...node, ...rootNode } : node,
+              },
+              emit: (event) => {
+                if (!lease.owns(outputId)) return;
+                setNodesForGeneration(outputId, controller, (current) =>
+                  applyAtlasGenerationEvent(current, outputId, event),
+                );
+                if (
+                  event.type === "image-stored" &&
+                  outputPlan.mode === "image" &&
+                  outputPlan.output.isConfigurationSource
                 )
-              : [
-                  ...prev.map((node) =>
-                    node.id === nodeId && isConfigNode
-                      ? {
-                          ...node,
-                          metadata: {
-                            ...node.metadata,
-                            status: NODE_STATUS_LOADING,
-                            errorDetails: undefined,
-                          },
-                        }
-                      : node,
-                  ),
-                  rootNode,
-                ],
-          );
-          if (!reuseTextNode)
-            setConnections((prev) => [
-              ...prev,
-              { id: nanoid(), fromNodeId: nodeId, toNodeId: rootId },
-            ]);
-          setSelectedNodeIds(new Set([nodeId]));
-          setSelectedConnectionId(null);
-          setDialogNodeId(nodeId);
-
-          const controller =
-            rootId === nodeId
-              ? runController
-              : startGenerationRequest(rootId, nodeId, nodeId, runController);
-          const updateTextVariant = (
-            textId: string,
-            patch: Partial<CanvasNodeText>,
-          ) =>
-            setNodesForGeneration(rootId, controller, (current) =>
-              current.map((node) =>
-                node.id === rootId
-                  ? {
-                      ...node,
-                      metadata: {
-                        ...node.metadata,
-                        ...(node.metadata?.primaryTextId === textId &&
-                        patch.content !== undefined
-                          ? { content: patch.content }
-                          : {}),
-                        texts: node.metadata?.texts?.map((variant) =>
-                          variant.id === textId
-                            ? { ...variant, ...patch }
-                            : variant,
-                        ),
-                      },
-                    }
-                  : node,
-              ),
-            );
-          const results = await generateCanvasTextBatch({
-            textIds,
-            config: generationConfig,
-            messages: buildNodeResponseMessages({
-              ...generationContext,
-              prompt: effectivePrompt,
-            }),
-            signal: controller.signal,
-            ports: {
-              request: requestImageQuestion,
-              isCancelled: isGenerationCanceled,
-            },
-            onStream: (textId, content) =>
-              updateTextVariant(textId, { content }),
-            onSuccess: (textId, content) =>
-              updateTextVariant(textId, {
-                content,
-                status: NODE_STATUS_SUCCESS,
-              }),
-            onFailure: (textId, error) => {
-              const errorDetails =
+                  setNodesForGeneration(nodeId, controller, (current) =>
+                    patchAtlasGenerationMetadata(current, nodeId, { status: "success", errorDetails: undefined }),
+                  );
+              },
+              errorText: (error) =>
                 error instanceof Error
                   ? error.message
-                  : t("canvas.projectPage.generationFailed");
-              updateTextVariant(textId, {
-                status: NODE_STATUS_ERROR,
-                errorDetails,
-              });
-              return errorDetails;
-            },
-          });
-          if (rootId !== nodeId) finishGenerationRequest(rootId, controller);
-          if (controller.signal.aborted) return;
-          const completedTexts = results.flatMap((item) =>
-            item?.status === NODE_STATUS_SUCCESS ? [item] : [],
-          );
-          const failedTexts = results.filter(
-            (item) => item?.status === NODE_STATUS_ERROR,
-          );
-          const firstText = completedTexts[0];
-          if (completedTexts.length <= 1)
+                  : t("canvas.projectPage.generationFailed"),
+            });
+          if (!lease.owns(outputId)) {
+            if (outputPlan.mode === "image")
+              setNodes((current) =>
+                generationRequests.isLastWriter(nodeId, controller)
+                  ? restoreAtlasCancelledImageSource(
+                      current,
+                      nodeId,
+                      outputPlan.output.isConfigurationSource,
+                    )
+                  : current,
+              );
+            return;
+          }
+          if (result.kind === "media") return;
+          if (result.kind === "images") {
+            if (result.summary.hasFailure)
+              message.error(
+                result.summary.hasSuccess
+                  ? t("canvas.projectPage.partialFailed")
+                  : result.firstError || t("canvas.projectPage.generationFailed"),
+              );
+            setNodesForGeneration(outputId, controller, (current) =>
+              finalizeAtlasImageBatch(current, {
+                sourceId: nodeId,
+                outputId,
+                configurationSource:
+                  outputPlan.mode === "image" && outputPlan.output.isConfigurationSource,
+                hasSuccess: result.summary.hasSuccess,
+                failureDetails: t("canvas.projectPage.generationFailed"),
+                allFailedDetails: t("canvas.projectPage.allFailed"),
+              }),
+            );
+            return;
+          }
+          if (result.completed.length <= 1)
             setExpandedBatchNodeIds(
-              (current) => new Set([...current].filter((id) => id !== rootId)),
+              (current) => new Set([...current].filter((id) => id !== outputId)),
             );
-          if (failedTexts.length)
+          if (result.failed.length)
             message.error(
-              firstText
+              result.completed.length
                 ? t("canvas.projectPage.partialTextFailed")
-                : failedTexts[0]?.errorDetails ||
-                    t("canvas.projectPage.generationFailed"),
+                : result.failed[0]?.errorDetails || t("canvas.projectPage.generationFailed"),
             );
-          setNodesForGeneration(nodeId, runController, (prev) =>
-            prev.map((node) => {
-              if (node.id === rootId) {
-                const primaryText =
-                  completedTexts.find(
-                    (text) => text.id === node.metadata?.primaryTextId,
-                  ) || firstText;
-                return {
-                  ...node,
-                  metadata: {
-                    ...node.metadata,
-                    content: primaryText?.content || "",
-                    texts: completedTexts,
-                    primaryTextId: primaryText?.id,
-                    status: primaryText
-                      ? NODE_STATUS_SUCCESS
-                      : NODE_STATUS_ERROR,
-                    errorDetails: primaryText
-                      ? undefined
-                      : t("canvas.projectPage.generationFailed"),
-                  },
-                };
-              }
-              return node.id === nodeId && isConfigNode
-                ? {
-                    ...node,
-                    metadata: {
-                      ...node.metadata,
-                      status: firstText
-                        ? NODE_STATUS_SUCCESS
-                        : NODE_STATUS_ERROR,
-                      errorDetails: firstText
-                        ? undefined
-                        : t("canvas.projectPage.generationFailed"),
-                    },
-                  }
-                : node;
+          setNodesForGeneration(outputId, controller, (current) =>
+            finalizeAtlasTextBatch(current, {
+              sourceId: nodeId,
+              outputId,
+              configurationSource:
+                outputPlan.mode === "text" && outputPlan.output.configurationSource,
+              completed: result.completed,
+              failureDetails: t("canvas.projectPage.generationFailed"),
             }),
           );
         },
-        ignoreError: (error, runController) =>
-          isGenerationCanceled(error) ||
-          !generationRequests.canWrite(nodeId, runController),
-        onError: (error, runController) => {
+        failed: (error, { controller }) => {
           const errorDetails =
             error instanceof Error
               ? error.message
               : t("canvas.projectPage.generationFailed");
           message.error(errorDetails);
-          setNodes((prev) =>
-            prev.map((node) =>
-              node.id === nodeId || pendingChildIds.includes(node.id)
-                ? node.id === nodeId && !markSourceStatus
-                  ? node
-                  : {
-                      ...node,
-                      metadata: {
-                        ...node.metadata,
-                        status: NODE_STATUS_ERROR,
-                        errorDetails,
-                        ...(isVideoTaskFailed(error) &&
-                        node.type === CanvasNodeType.Video
-                          ? { videoTaskId: undefined }
-                          : {}),
-                      },
-                    }
-                : node,
-            ),
+          setNodesForGeneration(nodeId, controller, (prev) =>
+            applyAtlasGenerationFailure(prev, {
+              sourceId: nodeId,
+              pendingOutputIds: pendingChildIds,
+              markSource: markSourceStatus,
+              details: errorDetails,
+              clearFailedVideoTask: isVideoTaskFailed(error),
+            }),
           );
         },
-        finish: (runController) => {
-          finishGenerationRequest(nodeId, runController);
-          if (generationRequests.isLastWriter(nodeId, runController))
+        settled: (_lease, latest) => {
+          if (latest)
             setRunningNodeId((current) =>
               current === nodeId ? null : current,
             );
@@ -4178,14 +2807,12 @@ function InfiniteCanvasPage() {
     [
       completeVideoNodeTask,
       effectiveConfig,
-      finishGenerationRequest,
       generationRequests,
       isAiConfigReady,
       message,
       openConfigDialog,
       resourceIndex,
       setNodesForGeneration,
-      startGenerationRequest,
       t,
     ],
   );
@@ -4236,18 +2863,11 @@ function InfiniteCanvasPage() {
     ],
   );
   const deleteBatchImage = useCallback((nodeId: string, variantId: string) => {
-    const node = nodesRef.current.find((item) => item.id === nodeId);
-    if ((node?.metadata?.images?.length || 0) <= 2)
+    if (atlasBatchRemovalCollapses(nodesRef.current.find((node) => node.id === nodeId)))
       setExpandedBatchNodeIds(
         (current) => new Set([...current].filter((id) => id !== nodeId)),
       );
-    setNodes((nodes) =>
-      applyCanvasNodeCommand(nodes, {
-        kind: "remove-variant",
-        nodeId,
-        variantId,
-      }),
-    );
+    setNodes((current) => planAtlasBatchImageRemoval(current, nodeId, variantId).nodes);
   }, []);
 
   const retryBatchImage = useCallback(
@@ -4258,71 +2878,18 @@ function InfiniteCanvasPage() {
 
   const generateImageFromTextNode = useCallback(
     (node: CanvasNodeData) => {
-      const prompt = (
-        node.metadata?.content ||
-        node.metadata?.prompt ||
-        ""
-      ).trim();
-      if (!prompt) {
+      const plan = planAtlasTextToImage(
+        nodesRef.current.find((item) => item.id === node.id),
+        effectiveConfig,
+      );
+      if (!plan) {
         message.warning(t("canvas.projectPage.emptyTextImage"));
         return;
       }
-      const sourceNode = nodesRef.current.find((item) => item.id === node.id);
-      if (!sourceNode) return;
-      const nodeSize = getNodeSpec(CanvasNodeType.Config);
-      const configNode = createCanvasNode(
-        CanvasNodeType.Config,
-        {
-          x: sourceNode.position.x + sourceNode.width + 96 + nodeSize.width / 2,
-          y: sourceNode.position.y + sourceNode.height / 2,
-        },
-        {
-          prompt: "",
-          model: effectiveConfig.imageModel,
-          size: effectiveConfig.size,
-          count: getGenerationCount(
-            effectiveConfig.canvasImageCount || effectiveConfig.count,
-          ),
-        },
-      );
-      const connection = {
-        id: nanoid(),
-        fromNodeId: sourceNode.id,
-        toNodeId: configNode.id,
-      };
-      const nextNodes = nodesRef.current
-        .map((item) =>
-          item.id === sourceNode.id
-            ? {
-                ...item,
-                metadata: {
-                  ...item.metadata,
-                  content: prompt,
-                  prompt,
-                  status: NODE_STATUS_SUCCESS,
-                },
-              }
-            : item,
-        )
-        .concat(configNode);
-      const nextConnections = [...connectionsRef.current, connection];
-      nodesRef.current = nextNodes;
-      connectionsRef.current = nextConnections;
-      setNodes(nextNodes);
-      setConnections(nextConnections);
-      setSelectedNodeIds(new Set([configNode.id]));
-      setSelectedConnectionId(null);
-      setDialogNodeId(configNode.id);
+      dispatchAtlasCommands(plan.commands);
+      setDialogNodeId(plan.panelId);
     },
-    [
-      effectiveConfig.canvasImageCount,
-      effectiveConfig.count,
-      effectiveConfig.imageModel,
-      effectiveConfig.model,
-      effectiveConfig.size,
-      message,
-      t,
-    ],
+    [dispatchAtlasCommands, effectiveConfig, message, t],
   );
 
   const prepareVideoFromTextNode = useCallback(
@@ -4351,185 +2918,71 @@ function InfiniteCanvasPage() {
         sourceNode?.type !== CanvasNodeType.Text
       )
         throw platformAbortError();
-      const nodeSize = getNodeSpec(CanvasNodeType.Config);
-      const configNode = createCanvasNode(
-        CanvasNodeType.Config,
-        {
-          x: sourceNode.position.x + sourceNode.width + 96 + nodeSize.width / 2,
-          y: sourceNode.position.y + sourceNode.height / 2,
-        },
-        prepared.metadata,
-      );
-      configNode.title = selected ? `${selected.name} · 视频参数` : "视频参数";
-      const nextNodes = [...nodesRef.current, configNode];
-      const nextConnections = [
-        ...connectionsRef.current,
-        { id: nanoid(), fromNodeId: sourceNode.id, toNodeId: configNode.id },
-      ];
-      nodesRef.current = nextNodes;
-      connectionsRef.current = nextConnections;
-      setNodes(nextNodes);
-      setConnections(nextConnections);
-      setSelectedNodeIds(new Set([configNode.id]));
-      setToolbarNodeId(configNode.id);
-      setSelectedConnectionId(null);
-      setDialogNodeId(configNode.id);
+      const plan = planAtlasTextToVideo(sourceNode, prepared.metadata, selected ? `${selected.name} · 视频参数` : "视频参数");
+      if (!plan) throw platformAbortError();
+      dispatchAtlasCommands(plan.commands);
+      setToolbarNodeId(plan.panelId);
+      setDialogNodeId(plan.panelId);
       // Measure the rendered composer before fitting the new node and its panel.
       requestAnimationFrame(() => {
         if (
           activeProjectIdRef.current !== projectId ||
           getPlatformInit()?.scopeId !== prepared.scopeId ||
-          !selectedNodeIdsRef.current.has(configNode.id)
+          !selectedNodeIdsRef.current.has(plan.panelId)
         )
           return;
-        focusNodeRef.current(configNode.id);
+        focusNodeRef.current(plan.panelId);
       });
       if (prepared.requiresReference)
         message.info("已准备视频参数，请连接参考图片，确认后再生成");
     },
-    [effectiveConfig.videoModel, message, projectId],
+    [dispatchAtlasCommands, effectiveConfig.videoModel, message, projectId],
   );
 
   const insertAssistantImage = useCallback(
     async (image: CanvasAssistantImage) => {
-      const storedImage = image.storageKey
-        ? {
-            url: image.dataUrl,
-            storageKey: image.storageKey,
-            width: 1,
-            height: 1,
-            bytes: 0,
-            mimeType: "image/png",
-          }
-        : await uploadImage(image.dataUrl);
-      await ensureImagePreview(storedImage.storageKey);
-      const meta =
-        storedImage.width === 1 && storedImage.height === 1
-          ? await readImageMeta(storedImage.url)
-          : storedImage;
-      const config = fitNodeSize(meta.width, meta.height);
-      const center = screenToCanvas(
-        (containerRef.current?.getBoundingClientRect().left || 0) +
-          size.width / 2,
-        (containerRef.current?.getBoundingClientRect().top || 0) +
-          size.height / 2,
-      );
-      const id = `image-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const node: CanvasNodeData = {
-        id,
-        type: CanvasNodeType.Image,
-        title: image.prompt.slice(0, 32) || "Generated Image",
-        position: {
-          x: center.x - config.width / 2,
-          y: center.y - config.height / 2,
-        },
-        width: config.width,
-        height: config.height,
-        metadata: {
-          ...imageMetadata({
-            ...storedImage,
-            width: meta.width,
-            height: meta.height,
-          }),
-          prompt: image.prompt,
-        },
-      };
-
-      setNodes((prev) => [...prev, node]);
-      setSelectedNodeIds(new Set([id]));
-      setSelectedConnectionId(null);
-      setDialogNodeId(id);
+      const center = getCanvasCenter();
+      const outcome = await runMediaTransfer((context) => createAtlasAssistantImageNode(
+        image, center, { uploadImage, ensureImagePreview, readImageMeta, resolveImageUrl }, context.signal, context.retain,
+      ), (node) => {
+        commitMediaNodes([node]);
+        setDialogNodeId(node.id);
+      });
+      return outcome.status === "committed";
     },
-    [screenToCanvas, size.height, size.width],
+    [commitMediaNodes, getCanvasCenter, runMediaTransfer],
   );
 
   const insertAssistantText = useCallback(
-    (text: string, title?: string) => {
-      const center = screenToCanvas(
-        (containerRef.current?.getBoundingClientRect().left || 0) +
-          size.width / 2,
-        (containerRef.current?.getBoundingClientRect().top || 0) +
-          size.height / 2,
-      );
-      const node = {
-        ...createCanvasNode(CanvasNodeType.Text, center, {
-          content: text,
-          status: NODE_STATUS_SUCCESS,
-        }),
-        title: title || text.slice(0, 32) || "Assistant Text",
-      };
-
-      setNodes((prev) => [...prev, node]);
-      setSelectedNodeIds(new Set([node.id]));
-      setSelectedConnectionId(null);
+    async (text: string, title?: string) => {
+      const center = getCanvasCenter();
+      const outcome = await runMediaTransfer(async () => createAtlasAssistantTextNode(text, center, title), (node) => {
+        if (node) commitMediaNodes([node]);
+      });
+      return outcome.status === "committed" && Boolean(outcome.value);
     },
-    [screenToCanvas, size.height, size.width],
+    [commitMediaNodes, getCanvasCenter, runMediaTransfer],
   );
 
   const handleAssetInsert = useCallback(
-    (payload: InsertAssetPayload) => {
-      if (payload.kind === "text") {
-        insertAssistantText(payload.content, payload.title);
-      } else if (payload.kind === "video") {
-        const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
-        const center = screenToCanvas(
-          (containerRef.current?.getBoundingClientRect().left || 0) +
-            size.width / 2,
-          (containerRef.current?.getBoundingClientRect().top || 0) +
-            size.height / 2,
-        );
-        const id = `video-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        const nextSize = fitNodeSize(
-          payload.width || spec.width,
-          payload.height || spec.height,
-          VIDEO_NODE_MAX_WIDTH,
-          VIDEO_NODE_MAX_HEIGHT,
-        );
-        setNodes((prev) => [
-          ...prev,
-          {
-            id,
-            type: CanvasNodeType.Video,
-            title: payload.title,
-            position: {
-              x: center.x - nextSize.width / 2,
-              y: center.y - nextSize.height / 2,
-            },
-            width: nextSize.width,
-            height: nextSize.height,
-            metadata: {
-              content: payload.url,
-              storageKey: payload.storageKey,
-              status: NODE_STATUS_SUCCESS,
-              naturalWidth: payload.width,
-              naturalHeight: payload.height,
-            },
-          },
-        ]);
-        setSelectedNodeIds(new Set([id]));
+    async (payload: InsertAssetPayload) => {
+      let inserted = false;
+      if (payload.kind === "image") {
+        inserted = await insertAssistantImage({ id: `asset-${nanoid(8)}`, prompt: payload.title, dataUrl: payload.dataUrl, storageKey: payload.storageKey });
+      } else if (payload.kind === "text") {
+        inserted = await insertAssistantText(payload.content, payload.title);
       } else {
-        insertAssistantImage({
-          id: `asset-${Date.now()}`,
-          prompt: payload.title,
-          dataUrl: payload.dataUrl,
-          storageKey: payload.storageKey,
+        const center = getCanvasCenter();
+        const outcome = await runMediaTransfer(async () => createAtlasAssetNode(payload, center), (node) => {
+          if (node) commitMediaNodes([node]);
         });
+        inserted = outcome.status === "committed" && Boolean(outcome.value);
       }
-      setAssetPickerOpen(false);
+      if (inserted) setAssetPickerOpen(false);
     },
-    [
-      insertAssistantImage,
-      insertAssistantText,
-      screenToCanvas,
-      size.height,
-      size.width,
-    ],
+    [commitMediaNodes, getCanvasCenter, insertAssistantImage, insertAssistantText, runMediaTransfer],
   );
 
-  // Memoize every callback and render function passed to CanvasNode.
-  // CanvasNode uses React.memo, but new prop references would invalidate it on every render and rerender every node
-  // during click, hover, or viewport changes, which is especially expensive for Markdown. These useCallback values
-  // and their memoized map/handler dependencies remain stable during interaction, so unchanged nodes do not rerender.
   const handleNodeHoverStart = useCallback((nodeId: string) => {
     if (nodeDraggingRef.current) return;
     setHoveredNodeId(nodeId);
@@ -4769,7 +3222,7 @@ function InfiniteCanvasPage() {
           onUndo={undoCanvas}
           onRedo={redoCanvas}
           agentOpen={agentPanelOpen}
-          onToggleAgent={() => openHostPanel("skills")}
+          onToggleAgent={toggleAgentPanel}
         />
 
         <CanvasViewport
@@ -4793,147 +3246,72 @@ function InfiniteCanvasPage() {
           onContextMenu={preventCanvasContextMenu}
           onDrop={handleDrop}
         >
-          <svg
-            className="canvas-atlas-connections absolute left-0 top-0 h-[10000px] w-[10000px] overflow-visible"
-            style={{
-              pointerEvents: "none",
-              transform: "translateZ(0)",
-              zIndex: 0,
+          <AtlasBoardScene
+            nodes={visibleNodes}
+            edges={visibleConnections}
+            selection={{
+              nodes: selectedNodeIds,
+              focused: activeNodeId,
+              relatedNodes: relatedHighlight.nodeIds,
+              relatedEdges: relatedHighlight.connectionIds,
+              edge: selectedConnectionId,
             }}
-          >
-            {visibleConnections.map(({ connection, from, to }) => (
-              <ConnectionPath
-                key={connection.id}
-                connection={connection}
-                from={from}
-                to={to}
-                active={
-                  selectedConnectionId === connection.id ||
-                  relatedHighlight.connectionIds.has(connection.id)
-                }
-                onSelect={() => {
-                  setSelectedConnectionId(connection.id);
-                  setSelectedNodeIds(new Set());
-                  setContextMenu(null);
-                }}
-                onContextMenu={(event) => {
-                  setSelectedConnectionId(connection.id);
-                  setSelectedNodeIds(new Set());
-                  setContextMenu({
-                    type: "connection",
-                    x: event.clientX,
-                    y: event.clientY,
-                    connectionId: connection.id,
-                  });
-                }}
-              />
-            ))}
-            {connectingParams ? (
-              <ActiveConnectionPath
-                node={nodeById.get(connectingParams.nodeId)}
-                handle={connectingParams}
-                mouseWorld={mouseWorld}
-                target={
-                  connectionTargetNodeId
-                    ? nodeById.get(connectionTargetNodeId)
-                    : undefined
-                }
-              />
-            ) : null}
-          </svg>
-
-          {visibleNodes.map((node) => (
-            <CanvasNode
-              key={node.id}
-              data={node}
-              scale={viewport.k}
-              isSelected={selectedNodeIds.has(node.id)}
-              isRelated={relatedHighlight.nodeIds.has(node.id)}
-              isFocusRelated={activeNodeId === node.id}
-              isConnectionTarget={connectionTargetNodeId === node.id}
-              isConnecting={Boolean(connectingParams)}
-              referenceSelectionState={
-                !referencePickerNodeId
-                  ? undefined
-                  : node.id === referencePickerNodeId
-                    ? "target"
-                    : referenceConnectedNodeIds.has(node.id) ||
-                        !resourceIndex.isReferenceNode(node)
-                      ? "disabled"
-                      : "available"
-              }
-              showPanel={
-                !isNodeResizing &&
-                dialogNodeId === node.id &&
-                !selectionBox &&
-                !getNodeDefinition(node.type)?.hidePanel
-              }
-              panelWidth={Math.min(600, Math.max(240, size.width - 24))}
-              groupChildCount={groupChildCountById.get(node.id) || 0}
-              isGroupDropTarget={dropTargetGroupId === node.id}
-              batchExpanded={expandedBatchNodeIds.has(node.id)}
-              showImageInfo={showImageInfo}
-              mentionReferences={
-                mentionReferencesByNodeId.get(node.id) || EMPTY_REFERENCES
-              }
-              pluginHost={pluginHost}
-              registryVersion={nodeRegistryVersion}
-              renderPanel={renderNodePanel}
-              renderNodeContent={renderNodeContentPanel}
-              onMouseDown={handleNodeMouseDown}
-              onSelectCapture={handleNodeSelectCapture}
-              onHoverStart={handleNodeHoverStart}
-              onHoverEnd={handleNodeHoverEnd}
-              onConnectStart={handleConnectStart}
-              onResizeStart={handleNodeResizeStart}
-              onResize={handleNodeResize}
-              onResizeEnd={handleNodeResizeEnd}
-              onContentChange={handleNodeContentChange}
-              onTitleChange={handleNodeTitleChange}
-              onToggleBatch={toggleBatchExpanded}
-              onSetBatchPrimary={setBatchPrimary}
-              onDuplicateBatchImage={duplicateBatchImage}
-              onDownloadBatchImage={downloadBatchImage}
-              onRetryBatchImage={retryBatchImage}
-              onDeleteBatchImage={deleteBatchImage}
-              onRetry={handleNodeRetry}
-              onViewImage={handleNodeViewImage}
-              onSelectReference={selectNodeReference}
-              onContextMenu={handleNodeContextMenu}
-            />
-          ))}
-
-          {selectionBox ? (
-            <svg
-              className="pointer-events-none absolute z-[100] overflow-visible"
-              style={{
-                left: Math.min(
-                  selectionBox.startWorldX,
-                  selectionBox.currentWorldX,
-                ),
-                top: Math.min(
-                  selectionBox.startWorldY,
-                  selectionBox.currentWorldY,
-                ),
-                width: Math.abs(
-                  selectionBox.currentWorldX - selectionBox.startWorldX,
-                ),
-                height: Math.abs(
-                  selectionBox.currentWorldY - selectionBox.startWorldY,
-                ),
-              }}
-            >
-              <rect
-                width="100%"
-                height="100%"
-                fill={theme.canvas.selectionFill}
-                stroke={theme.canvas.selectionStroke}
-                strokeOpacity={0.55}
-                strokeWidth={1 / viewport.k}
-                strokeDasharray={`${6 / viewport.k} ${4 / viewport.k}`}
-              />
-            </svg>
-          ) : null}
+            presentation={{
+              scale: viewport.k,
+              panelWidth: Math.min(600, Math.max(240, size.width - 24)),
+              panelNode: dialogNodeId,
+              resizing: isNodeResizing,
+              selecting: Boolean(selectionBox),
+              imageInfo: showImageInfo,
+              dropGroup: dropTargetGroupId,
+              expanded: expandedBatchNodeIds,
+              childCounts: groupChildCountById,
+              mentions: mentionReferencesByNodeId,
+            }}
+            references={{
+              owner: referencePickerNodeId,
+              connected: referenceConnectedNodeIds,
+              accepts: (node) => resourceIndex.isReferenceNode(node),
+            }}
+            gesture={connectingParams ? {
+              handle: connectingParams,
+              node: nodeById.get(connectingParams.nodeId),
+              target: connectionTargetNodeId ? nodeById.get(connectionTargetNodeId) : undefined,
+              cursor: mouseWorld,
+            } : null}
+            marquee={selectionBox}
+            onSelectEdge={(id, point) => {
+              setSelectedConnectionId(id);
+              setSelectedNodeIds(new Set());
+              setContextMenu(point ? { type: "connection", connectionId: id, ...point } : null);
+            }}
+            events={{
+              pluginHost,
+              registryVersion: nodeRegistryVersion,
+              renderPanel: renderNodePanel,
+              renderNodeContent: renderNodeContentPanel,
+              onMouseDown: handleNodeMouseDown,
+              onSelectCapture: handleNodeSelectCapture,
+              onHoverStart: handleNodeHoverStart,
+              onHoverEnd: handleNodeHoverEnd,
+              onConnectStart: handleConnectStart,
+              onResizeStart: handleNodeResizeStart,
+              onResize: handleNodeResize,
+              onResizeEnd: handleNodeResizeEnd,
+              onContentChange: handleNodeContentChange,
+              onTitleChange: handleNodeTitleChange,
+              onToggleBatch: toggleBatchExpanded,
+              onSetBatchPrimary: setBatchPrimary,
+              onDuplicateBatchImage: duplicateBatchImage,
+              onDownloadBatchImage: downloadBatchImage,
+              onRetryBatchImage: retryBatchImage,
+              onDeleteBatchImage: deleteBatchImage,
+              onRetry: handleNodeRetry,
+              onViewImage: handleNodeViewImage,
+              onSelectReference: selectNodeReference,
+              onContextMenu: handleNodeContextMenu,
+            }}
+          />
           {pendingConnectionCreate ? (
             <ConnectionCreateMenu
               pending={pendingConnectionCreate}
@@ -5343,6 +3721,7 @@ function InfiniteCanvasPage() {
           </Suspense>
         ) : null}
       </section>
+      <AtlasAgentPanel />
     </main>
   );
 }

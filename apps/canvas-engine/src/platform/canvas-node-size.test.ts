@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
+import { fitAtlasNodeSize as fitNodeSize, atlasNodeSizeFromRatio as nodeSizeFromRatio } from "@/atlas-engine/model/node-size";
 
 describe("fitNodeSize", () => {
     it("keeps normal dimensions and fits wide or tall media inside the requested bounds", () => {

@@ -8,7 +8,7 @@ import {
   minimapViewportRect,
   viewportAtMinimapPoint,
   worldToMinimap,
-} from "@/lib/canvas/canvas-minimap";
+} from "@/atlas-engine/ui/canvas-minimap";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 const node = (id: string, x: number, y: number): CanvasNodeData => ({
@@ -59,7 +59,7 @@ describe("canvas minimap geometry", () => {
       layout,
     );
     expect(path.match(/M/g)).toHaveLength(1);
-    expect(path).toContain("L");
+    expect(path).toContain("C");
   });
 
   it("converts pointer positions to viewport centers and renders a minimum visible frame", () => {

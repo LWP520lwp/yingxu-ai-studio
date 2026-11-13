@@ -10,7 +10,7 @@ import {
   readCanvasSidePanelPreference,
   transitionCanvasSidePanel,
   writeCanvasSidePanelPreference,
-} from "@/lib/canvas/canvas-side-panel-state";
+} from "@/atlas-engine/ui/side-panel-state";
 
 describe("canvas side panel state", () => {
   it("keeps the panel mounted during close and lets reopen invalidate the close", () => {

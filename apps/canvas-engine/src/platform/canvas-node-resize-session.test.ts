@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  createCanvasNodeResizeGesture,
-  resolveCanvasNodeResize,
-  trackCanvasNodeResizePointer,
-  type ResizePointerEndReason,
-  type ResizePointerPoint,
-} from "@/lib/canvas/canvas-node-resize-session";
+  beginAtlasResizeGesture,
+  resolveAtlasResizeGesture,
+  observeAtlasResizePointer,
+  type AtlasPointerEndReason,
+  type AtlasPointerPoint,
+} from "@/atlas-engine/interaction/node-editing";
 
 describe("canvas node resize gesture", () => {
   it("binds resize geometry to its originating pointer", () => {
-    const gesture = createCanvasNodeResizeGesture(7, {
+    const gesture = beginAtlasResizeGesture(7, {
       corner: "bottom-right",
       pointerStart: { x: 10, y: 20 },
       position: { x: 4, y: 8 },
@@ -19,8 +19,8 @@ describe("canvas node resize gesture", () => {
       keepRatio: false,
     });
 
-    expect(resolveCanvasNodeResize(gesture, 8, { x: 90, y: 100 })).toBeNull();
-    expect(resolveCanvasNodeResize(gesture, 7, { x: 90, y: 100 })).toEqual({
+    expect(resolveAtlasResizeGesture(gesture, 8, { x: 90, y: 100 })).toBeNull();
+    expect(resolveAtlasResizeGesture(gesture, 7, { x: 90, y: 100 })).toEqual({
       position: { x: 4, y: 8 },
       width: 340,
       height: 240,
@@ -29,9 +29,9 @@ describe("canvas node resize gesture", () => {
 
   it("ignores other pointers and sends the final pointer-up position before ending", () => {
     const host = new EventTarget();
-    const moves: ResizePointerPoint[] = [];
-    const ends: ResizePointerEndReason[] = [];
-    trackCanvasNodeResizePointer(host as unknown as Window, 2, {
+    const moves: AtlasPointerPoint[] = [];
+    const ends: AtlasPointerEndReason[] = [];
+    observeAtlasResizePointer(host as unknown as Window, 2, {
       onMove: (point) => moves.push(point),
       onEnd: (reason) => ends.push(reason),
     });
@@ -59,7 +59,7 @@ describe("canvas node resize gesture", () => {
     const host = new EventTarget();
     const onMove = vi.fn();
     const onEnd = vi.fn();
-    trackCanvasNodeResizePointer(host as unknown as Window, 5, {
+    observeAtlasResizePointer(host as unknown as Window, 5, {
       onMove,
       onEnd,
     });
@@ -80,7 +80,7 @@ describe("canvas node resize gesture", () => {
   it("uses unmount cleanup as a single terminal path", () => {
     const host = new EventTarget();
     const onEnd = vi.fn();
-    const cleanup = trackCanvasNodeResizePointer(host as unknown as Window, 4, {
+    const cleanup = observeAtlasResizePointer(host as unknown as Window, 4, {
       onMove: vi.fn(),
       onEnd,
     });

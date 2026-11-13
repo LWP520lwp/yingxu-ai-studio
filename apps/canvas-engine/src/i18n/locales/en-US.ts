@@ -1,11 +1,15 @@
 export default {
   meta: {
     title: "Yingxu Studio",
-    description: "An infinite canvas creation tool",
+    description:
+      "An AI workspace for connected image, video, audio, and canvas projects.",
   },
   theme: { toggle: "Toggle theme" },
+  model: "Model",
   common: {
     cancel: "Cancel",
+    close: "Close",
+    untitled: "Untitled",
     save: "Save",
     edit: "Edit",
     done: "Done",
@@ -31,6 +35,8 @@ export default {
   },
   settingsPanels: {
     common: {
+      zoomOut: "Zoom out on canvas",
+      zoomIn: "Zoom in on canvas",
       auto: "Auto",
       low: "Low",
       medium: "Medium",
@@ -43,12 +49,13 @@ export default {
       quality: "Quality",
       size: "Size",
       align16: "Align to multiples of 16",
-      align16Hint: "Round dimensions up to the next multiple of 16 after input",
+      align16Hint:
+        "When you finish entering dimensions, width and height each round up to a multiple of 16.",
       resolution: "Resolution",
       aspectRatio: "Aspect ratio",
       transparent: "Transparent background",
       transparentHint:
-        "Ask the model for transparent pixels when that capability is available",
+        "Request an image with transparent areas; the selected model must support transparent output.",
       count: "Image count",
       images: "{{count}} images",
     },
@@ -101,9 +108,12 @@ export default {
     },
     model: {
       select: "Select model",
-      assign: "Assign a model for {{capability}} in the provider settings",
-      noMatch: "No matching {{capability}} models",
-      addFirst: "Add a provider and models in Settings first",
+      assign:
+        "Open the provider settings and choose an available model for {{capability}}.",
+      noMatch:
+        "The configured providers have no model available for {{capability}}.",
+      addFirst:
+        "No model is available yet. Check the providers and model lists in Settings.",
       capabilities: {
         image: "image generation",
         video: "video",
@@ -113,6 +123,7 @@ export default {
     },
   },
   generation: {
+    retry: "Retry",
     pending: [
       "Creating image",
       "Almost there",
@@ -128,23 +139,28 @@ export default {
   },
   modelPlugin: {
     pollTimeout:
-      "The plugin did not finish polling before the time limit. Review its script or retry later.",
-    executionFailed: "Model request script failed: {{message}}",
-    noImages: "The model request script did not return any images",
+      "The model script reached its polling deadline without a result. Check how it queries the task before retrying.",
+    executionFailed:
+      "The model request script stopped with this error: {{message}}",
+    noImages: "The script finished without a usable image in its result.",
     variables: {
-      prompt: "Complete prompt sent to the model, including the system instructions",
+      prompt:
+        "Complete prompt sent to the model, including the system instructions",
       images:
         "Decoded reference images as data URLs; may be populated for image editing or image-to-video",
       videos:
         "Reference video File objects connected to the task; append each with form.append. Empty when no video is attached.",
       audios:
         "Reference audio File objects connected to the task; append each with form.append. Empty when no audio is attached.",
-      messages: "Messages for the current text conversation; the first entry may contain system instructions",
+      messages:
+        "Messages for the current text conversation; the first entry may contain system instructions",
       params:
         "Available fields: image size, resolution, quality, count, background; video mode, seconds, size, resolution, ratio, generateAudio, watermark; audio voice, format, speed, instructions. Video mode is frames or reference; more than two images use reference mode.",
       model: "Selected model identifier without the provider prefix",
-      baseUrl: "The provider's configured API root, with no automatic /v1 suffix",
-      apiKey: "Provider key; raw requests must add it to an authorization header",
+      baseUrl:
+        "The provider's configured API root, with no automatic /v1 suffix",
+      apiKey:
+        "Provider key; raw requests must add it to an authorization header",
       systemPrompt: "System instructions from the provider settings",
       reasoningEffort:
         "Reasoning level for text models; when set to auto, the script decides whether to send it",
@@ -177,9 +193,9 @@ export default {
       rules:
         "- Use an async function with explicit parameters for injected values. Expand params into documented fields such as size, quality, count, and seconds.\n- Choose request({ method, url, headers, params, data, responseType }) for full header control; http.post / http.get add Bearer apiKey unless overridden.\n- Relative request URLs join baseUrl directly; relative http paths resolve beneath baseUrl/v1.\n- For asynchronous video APIs, create the job and use poll(request, extract, { intervalMs, timeoutMs }) to retrieve its result.\n- images contains data URLs. videos and audios contain File objects that can be added with form.append; either list is empty without a connected reference.\n- Let the browser set the multipart Content-Type boundary when using FormData.\n- Return a result from the function and invoke it at the end with return await functionName({ the same arguments }). Output the complete script only.",
       examplesTitle:
-        "Working examples (verify each endpoint and field against the provider docs)",
+        "Request script examples: check endpoints, parameters, and response fields before use",
       draftTitle:
-        "Script currently in the editor (revise it, or start fresh when blank)",
+        "Current editor content: extend this draft, or write a script if it is blank",
       anyModel: "(the currently selected model)",
     },
   },
@@ -189,65 +205,75 @@ export default {
     baseUrlRequired: "Configure the Base URL first",
     apiKeyRequired: "Configure the API key first",
     authenticationFailed:
-      "The provider rejected authentication. Verify the key, account plan, and access to this model.",
+      "The service did not accept authentication. Check the provider credentials, account allowance, and model access.",
     rateLimited:
-      "The provider is throttling requests or the account has no quota left. Wait before retrying.",
+      "The service limited this request. Check the account rate and quota limits before retrying.",
     notFound:
-      "No matching endpoint was found (404). Verify the provider URL and model identifier.",
+      "The service returned 404. Check the provider base URL, endpoint path, and model identifier.",
     badGateway:
-      "The upstream gateway returned 502. Retry after the provider service recovers.",
-    serviceBusy: "Service unavailable (503). Try again later.",
+      "The service gateway returned 502 without a result. Retry once the service recovers.",
+    serviceBusy:
+      "The service returned 503 and cannot accept the task right now. Submit it again later.",
     httpFailed:
       "The provider returned HTTP {{status}}. Check the endpoint address and credentials.",
-    htmlError: "The service returned an HTML error page ({{preview}})",
+    htmlError:
+      "The endpoint returned a web page instead of generation data: {{preview}}",
     imageTimeout:
-      "No image response arrived before the request deadline. Try again or select another provider.",
+      "No image arrived within the request deadline. Check the task status or choose a different provider.",
     audioModelRequired: "Configure an audio model first",
     audioGenerationFailed: "Audio generation failed",
-    scriptNoAudio: "The model request script did not return audio",
+    scriptNoAudio:
+      "The script finished, but its return value contains no readable audio.",
     geminiAudioUnsupported:
-      "Audio generation is unavailable through the Gemini request format; select an OpenAI-compatible provider.",
+      "Audio generation is not implemented for the Gemini request format here. Use an OpenAI-format provider that supports audio.",
     invalidImageSizeFormat:
-      "Unsupported image size. Use auto, 9:16, or 1024x1024.",
+      "The size could not be parsed. Enter auto, a ratio such as 9:16, or dimensions such as 1024x1024.",
     positiveImageRatio:
-      "The image ratio must use positive numbers, such as 9:16.",
+      "Both numbers in the aspect ratio must be greater than zero, for example 9:16.",
     imageRatioLimit:
-      "Choose dimensions whose width-to-height ratio stays at or below 3:1.",
+      "This image request allows an aspect ratio of up to 3:1. Adjust the dimensions.",
     positiveImageDimensions:
-      "Enter positive whole-number dimensions, for example 1024x1024.",
-    imageDimensionStep: "Image width and height must be multiples of 16.",
-    imageEdgeLimit: "The longest image edge cannot exceed 3840px.",
+      "Width and height must both be positive whole-number pixel values, such as 1024x1024.",
+    imageDimensionStep:
+      "Align both width and height to multiples of 16 pixels before submitting.",
+    imageEdgeLimit:
+      "This image request permits a maximum edge length of 3840px. Reduce the dimensions.",
     imagePixelLimit:
-      "The requested image must contain 655,360 to 8,294,400 pixels in total.",
+      "Set width times height within the range of 655,360–8,294,400 pixels.",
     unknownImageResponse:
       "The response used an unrecognized shape (fields: {{fields}}). Confirm this model's response format.",
     noImageReturned:
-      "No image was included in the response. Review the prompt and confirm the model supports this request.",
-    geminiRejected: "Gemini rejected the request: {{reason}}",
-    geminiNoImage: "The Gemini API did not return an image",
+      "The response has no image result. Check the service feedback, prompt review status, and supported model operations.",
+    geminiRejected: "Gemini returned this rejection reason: {{reason}}",
+    geminiNoImage: "No image content was found in the Gemini response.",
     maskModelUnsupported:
-      "Mask-based edits are unavailable for this model. Choose a provider that supports image editing.",
+      "The selected model cannot use this mask editing method. Choose a channel that supports image edits.",
     noContent: "No content returned",
     modelReadFailed: "Failed to load models",
-    videoTimeout: "{{provider}}video generation timed out. Try again later.",
-    pluginVideoExpired: "The plugin video task has expired. Generate it again.",
-    scriptNoVideo: "The model request script did not return a video",
-    noPlayableVideo: "The video API did not return a playable video",
-    noVideoTaskId: "The video API did not return a task ID",
+    videoTimeout:
+      "The wait for the {{provider}} video result timed out. Check the remote task status first.",
+    pluginVideoExpired:
+      "This plugin video task can no longer be queried. Start a new generation.",
+    scriptNoVideo:
+      "The script finished without video content in its return value.",
+    noPlayableVideo:
+      "The video response provides no playable media address or data.",
+    noVideoTaskId:
+      "The creation response has no video task identifier, so progress cannot be queried.",
     videoTaskCreateFailed: "Failed to create video task",
     videoGenerationFailed: "Video generation failed",
     videoTaskQueryFailed: "Failed to query video task",
     videoPromptRequired:
-      "Add a video description or connect an image, video, or audio reference",
+      "Enter a video brief or connect image, video, or audio material as a reference.",
     referenceImageReadFailed:
-      "This reference image could not be loaded. Re-upload it or select a different file.",
+      "The reference image could not be loaded for this request. Upload it again or replace it.",
     invalidReferenceVideo:
-      "Provide the reference video as a public URL, an asset ID, or a saved local file",
+      "Use a publicly reachable address, an asset ID, or a locally saved video file for the video reference.",
     invalidReferenceAudio:
-      "Provide the reference audio as a public URL, an asset ID, or a saved local file",
+      "Use a publicly reachable address, an asset ID, or a locally saved audio file for the audio reference.",
     videoModelRequired: "Configure a video model first",
     geminiVideoUnsupported:
-      "Video generation is unavailable through the Gemini request format; select an OpenAI-compatible provider.",
+      "Video generation is not implemented for the Gemini request format here. Use an OpenAI-format provider that supports video.",
     noVideoTask: "The API did not return a video task",
     videoDownloadFailed: "Failed to download video",
     localAssetReadFailed: "Failed to read local asset",
@@ -258,21 +284,21 @@ export default {
     total: "{{count}} prompts",
     category: "Category",
     tags: "Tags",
-    search: "Search titles, content, or tags",
-    searchTitle: "Search by title",
-    loadFailed: "Failed to load prompts",
-    sourceMissing: "Prompt source not found",
-    use: "Use this prompt",
-    empty: "No matching prompts found",
-    loading: "Loading...",
-    loadMore: "Scroll down to load more",
-    end: "You've reached the end",
+    search: "Filter by name, prompt text, or tag",
+    searchTitle: "Search prompt names only",
+    loadFailed: "The prompt list could not be loaded",
+    sourceMissing: "The source for this prompt is unavailable",
+    use: "Send to the workspace",
+    empty: "No results match those filters. Try another search.",
+    loading: "Reading prompts...",
+    loadMore: "Keep scrolling to fetch the next batch",
+    end: "All matching prompts are shown",
   },
   assets: {
-    title: "My Assets",
+    title: "Personal Library",
     description:
-      "Save frequently used text and images, then find them quickly by type, title, or tag.",
-    search: "Search titles, content, tags, or sources",
+      "Keep reusable copy, reference images, and clips together, then retrieve them by type or keyword.",
+    search: "Filter by name, text, tag, or origin",
     type: "Type",
     export: "Export assets",
     import: "Import assets",
@@ -286,7 +312,8 @@ export default {
     textCopied: "Text copied",
     noneToExport: "No assets to export",
     imported: "Imported {{count}} assets",
-    importFailed: "Import failed. Select a valid asset package.",
+    importFailed:
+      "The asset package could not be loaded. Check that its archive format is supported by this app.",
     deleted: "Asset deleted",
     packageName: "my-assets.zip",
     kinds: { text: "Text", image: "Image", video: "Video" },
@@ -299,13 +326,14 @@ export default {
       tags: "Tags",
       tagsPlaceholder: "Type a tag and press Enter",
       source: "Source",
-      sourcePlaceholder: "Added manually / Canvas / Prompt Library",
+      sourcePlaceholder:
+        "For example: Saved manually / Canvas project / Prompt source",
       note: "Note",
       optional: "Optional",
       textContent: "Text content",
       textRequired: "Enter text content",
       textPlaceholder:
-        "Save prompts, copy, reference descriptions, and other text assets",
+        "Store prompts, project notes, or written visual references",
       imageContent: "Image content",
     },
     selectImageFile: "Select image file",
@@ -318,7 +346,7 @@ export default {
     unknownSource: "Source not specified",
     details: "Asset details",
     deleteTitle: "Delete asset",
-    deleteConfirm: "Delete “{{name}}”? It will be removed from My Assets.",
+    deleteConfirm: "Remove “{{name}}” from the library? This cannot be undone.",
     copyText: "Copy text",
     downloadImage: "Download image",
     downloadVideo: "Download video",
@@ -327,7 +355,7 @@ export default {
   notFound: {
     title: "Page not found",
     description:
-      "There is no page at this address. It may have moved or been merged into another section.",
+      "Nothing is available at this address. The page may have moved into another part of the workspace.",
     home: "Back to home",
   },
   workbench: {
@@ -351,7 +379,8 @@ export default {
     selectAll: "Select all",
     noLogs: "No generation history",
     deleteLogs: "Delete generation history",
-    deleteLogsConfirm: "Delete the selected {{count}} generation records?",
+    deleteLogsConfirm:
+      "Remove the selected {{count}} entries from generation history?",
     successCount: "{{count}} succeeded",
     failCount: "{{count}} failed",
     itemCount: "{{count}} images",
@@ -363,22 +392,24 @@ export default {
   imageWorkbench: {
     title: "Image Studio",
     promptPlaceholder:
-      "Describe the subject, style, composition, lighting, and intended use",
+      "Describe the subject, framing, light, visual treatment, and where the image will be used",
     references: "Reference images",
     removeReference: "Remove reference image",
-    dropReferences: "Drop to add reference images",
-    noReferences: "No reference images. Drag images here to add them.",
-    clipboardEmpty: "No readable images found on the clipboard",
+    dropReferences: "Drop images to add them to this request",
+    noReferences: "No images attached yet. Drag reference images here.",
+    clipboardEmpty:
+      "No image data was found on the clipboard. Copy an image before pasting.",
     clipboardAdded: "Added {{count}} reference images",
     promptRequired: "Enter an image prompt",
     configIncomplete: "Image generation configuration is incomplete",
     invalidParams: "Invalid image generation parameters",
-    busy: "The Image Studio is already running a task",
-    generated: "Images generated",
+    busy: "An image request is already in progress",
+    generated: "Image results are ready",
     addedReference: "Added to reference images",
     resultTitle: "Generated image {{count}}",
     source: "Image Studio",
-    unsupportedAsset: "Image Studio only supports text and image assets",
+    unsupportedAsset:
+      "This workspace accepts text prompts and image references. Choose a text or image asset.",
     missingResult: "The API returned no image",
     empty: "No images generated yet",
     resultAlt: "Generated image {{count}}",
@@ -387,33 +418,35 @@ export default {
   videoWorkbench: {
     title: "Video Studio",
     promptPlaceholder:
-      "Describe camera movement, subject action, atmosphere, and visual style",
+      "Describe how the camera moves, what the subject does, and the scene's light and mood",
     references: "Reference images",
     videoReferences: "Reference videos",
     audioReferences: "Reference audio",
     removeImage: "Remove reference image",
     removeVideo: "Remove reference video",
     removeAudio: "Remove reference audio",
-    dropReferences: "Drop to upload reference assets",
-    noImages: "No reference images. Drag in up to 9 files.",
-    noVideos: "No reference videos. Drag in up to 3 files.",
+    dropReferences: "Drop files to add them to the reference list",
+    noImages: "No image references yet. Add up to 9 files.",
+    noVideos: "No video references yet. Add up to 3 files.",
     noAudio:
-      "No reference audio. Drag in up to 3 MP3/WAV files, each under 15 MB.",
+      "No audio references yet. Add up to 3 MP3/WAV files, up to 15 MB each.",
     unsupportedFiles:
-      "Unsupported reference assets were ignored. Use images, MP4/MOV video, or MP3/WAV audio.",
-    imageTooLarge: "Reference images over 30 MB were ignored",
-    videoTooLarge: "Reference videos over 200 MB were ignored",
-    audioTooLarge: "Reference audio over 15 MB was ignored",
+      "Some files were skipped. References can be images, MP4/MOV videos, or MP3/WAV audio.",
+    imageTooLarge: "A reference image exceeded 30 MB and was skipped",
+    videoTooLarge: "A reference video exceeded 200 MB and was skipped",
+    audioTooLarge: "A reference audio file exceeded 15 MB and was skipped",
     audioDurationInvalid:
-      "Reference audio outside the duration limits was ignored: 2–15 seconds each, 15 seconds total.",
-    clipboardEmpty: "No readable images found on the clipboard",
+      "Audio references must be 2–15 seconds each and 15 seconds or less in total.",
+    clipboardEmpty:
+      "The clipboard contains no readable image. Copy a reference image before adding it.",
     clipboardAdded: "Added {{count}} reference images",
     promptRequired: "Enter a video prompt",
     referenceError: "{{error}}. {{hint}}",
     invalidParams: "Invalid video generation parameters",
-    busy: "The Video Studio is already running a task",
-    generated: "Video generated",
-    timeout: "Video generation timed out. Try again later.",
+    busy: "A video request is already in progress",
+    generated: "The video result is ready",
+    timeout:
+      "The video service did not respond in time. Retry later or check its status.",
     resultTitle: "Generated video",
     source: "Video Studio",
     empty: "No video generated yet",
@@ -423,7 +456,8 @@ export default {
     library: "Canvas library",
     title: "Yingxu Studio",
     imported: "Imported {{count}} canvases",
-    importFailed: "Import failed. Select a valid canvas package.",
+    importFailed:
+      "The canvas package could not be read. Select a canvas archive supported by this app.",
     opening: "Opening canvas...",
     loading: "Loading canvases...",
     exportSelected: "Export selected",
@@ -433,7 +467,7 @@ export default {
     create: "New canvas",
     empty: "No canvases yet",
     emptyDescription:
-      "Create a canvas to save its nodes, connections, and appearance independently.",
+      "Start with a blank board, then connect references, prompts, and generated results into a complete flow.",
     collapsePanel: "Collapse panel",
     expandPanel: "Expand panel",
     home: "Home",
@@ -450,7 +484,10 @@ export default {
     miniMapOpen: "Open minimap",
     miniMapClose: "Close minimap",
     miniMapLabel: "Canvas minimap",
-    miniMapHint: "Drag to navigate or use arrow keys to adjust the view",
+    connectionsLabel: "Node relationships and generation paths",
+    connectionLabel: "Connect {{from}} to {{to}}",
+    miniMapHint:
+      "Drag the viewport box to jump around; use the arrow keys for small adjustments",
     viewControls: "Canvas view controls",
     resetView: "Reset view",
     zoom: "Zoom canvas",
@@ -458,7 +495,8 @@ export default {
     agentConnecting: "Codex {{activity}}",
     agentDisconnected: "Codex disconnected",
     connecting: "Connecting",
-    openAgent: "Open local Codex panel",
+    openAgent: "Expand the Agent conversation for this canvas",
+    agentPanel: { agentMessages: "Canvas Agent conversation history" },
     nodeTypes: {
       image: "Image",
       text: "Text",
@@ -540,7 +578,7 @@ export default {
       delete: "Delete",
       deleteTitle: "Delete canvases?",
       deleteDescription:
-        "This will delete {{count}} canvases along with their nodes and connections.",
+        "{{count}} canvas projects and all of their nodes and links will be removed permanently.",
     },
     export: {
       defaultProjectName: "Yingxu Studio",
@@ -551,26 +589,34 @@ export default {
       fromNode: "Generate from this node",
       close: "Close",
       text: "Generate text",
-      textDescription: "Scripts, ad copy, and brand content",
+      textDescription: "Turn your inputs into a script or written copy",
       image: "Generate image",
       video: "Generate video",
       audio: "Audio reference",
       config: "Configuration node",
-      configDescription: "Model, size, count, and input order",
+      configDescription: "Set the model and generation options for this branch",
       select: "Select a node",
     },
     node: {
       node: "Node",
       untitled: "Untitled node",
       renameHint: "Double-click to rename the node",
+      resizeTopLeft: "Resize node from top left",
+      resizeTopRight: "Resize node from top right",
+      resizeBottomLeft: "Resize node from bottom left",
+      resizeBottomRight: "Resize node from bottom right",
+      connectInput: "Connect input",
+      connectOutput: "Connect output",
       group: "Group",
       nodeCount: "{{count}} nodes",
       generating: "Generating",
       failed: "Generation failed",
+      generationFailed: "Generation failed",
       retry: "Retry",
       missingPlugin: "Plugin missing",
+      pluginMissing: "The plugin required by this node is not enabled",
       missingPluginDescription:
-        "The plugin for node type “{{type}}” is not installed or enabled",
+        "No active extension provides the “{{type}}” node. Install or enable the matching plugin.",
       generateImage: "Generate image from text",
       generate: "Generate",
       editText: "Double-click to edit text",
@@ -594,9 +640,11 @@ export default {
       lastTitle: "{{name}} last frame",
       currentTitle: "{{name}} current frame",
       captured: "Image node created",
-      failed: "Could not capture this frame. Try again.",
+      failed:
+        "This frame could not be extracted. Wait until the video is ready, then try again.",
     },
     sidePanel: {
+      title: "Canvas resource navigation",
       canvas: "Canvas",
       assets: "Assets",
       prompts: "Prompt Library",
@@ -617,7 +665,8 @@ export default {
       exportFailed: "Export failed. Try again.",
       addingAssets: "Adding assets…",
       addedAssets: "Added {{count}} assets",
-      mediaOnly: "Only image and video files are supported",
+      mediaOnly:
+        "This area accepts images and videos. Choose one of those media types.",
       addFailed: "Failed to add assets. Try again.",
       searchAssets: "Search assets",
       add: "Add",
@@ -652,25 +701,25 @@ export default {
     },
     imageTools: {
       copyPrompt: "Copy prompt",
-      copyPromptTitle: "Copy the prompt used to generate this image",
+      copyPromptTitle: "Copy the generation brief saved with this image",
       reversePrompt: "Reverse prompt",
       reversePromptTitle:
-        "Create text and configuration nodes to infer the prompt",
+        "Describe this image and connect the description to an editable generation setup",
       replace: "Replace image",
       locked: "Lock ratio",
       free: "Free ratio",
       lockTitle: "Switch to proportional scaling",
       freeTitle: "Switch to free resizing",
       mask: "Local edit",
-      maskTitle: "Paint a mask and edit the selected area",
+      maskTitle: "Mark the area to redraw, then describe the change",
       crop: "Crop",
-      cropTitle: "Crop into a new node",
+      cropTitle: "Save the cropped view while keeping the original image",
       split: "Split",
-      splitTitle: "Split the image by rows and columns",
+      splitTitle: "Separate every grid cell into its own image",
       upscale: "Upscale",
       upscaleTitle: "Increase image resolution",
       superResolve: "Super resolution",
-      superResolveTitle: "AI super resolution",
+      superResolveTitle: "Use a model to add detail at a higher resolution",
       angle: "Multi-angle",
       angleTitle: "Generate another angle",
       view: "View image",
@@ -679,7 +728,8 @@ export default {
       configure: "Configure quick tools",
       customize: "Customize toolbar",
       showLabels: "Show button labels",
-      description: "Choose the quick tools shown in the image-node toolbar.",
+      description:
+        "Keep frequent image actions beside each node. You can enable the other tools here at any time.",
       preview: "Node preview",
       imageNode: "Image node",
       quickTools: "Quick tools",
@@ -691,7 +741,8 @@ export default {
       removeTitle: "Remove node",
       retryTitle: "Generate again",
       queryVideoTask: "Get task status",
-      queryVideoTaskTitle: "Query video generation status by task ID",
+      queryVideoTaskTitle:
+        "Enter an existing task identifier to check video progress",
       videoTaskId: "Task ID",
       saveAsset: "Save asset",
       downloadAudio: "Download audio",
@@ -717,7 +768,7 @@ export default {
       imageGroup: "Image group",
       imageSize: "Image size",
       group: "Group",
-      groupTitle: "Wrap selected nodes in a group",
+      groupTitle: "Organize the selected content inside one group node",
       ungroup: "Ungroup",
       ungroupTitle: "Remove grouping from selected nodes",
     },
@@ -740,10 +791,11 @@ export default {
     projectPage: {
       stopTitle: "Stop generation?",
       stopDescription:
-        "The current request will be interrupted. Completed results will be kept.",
+        "Stop waiting for this generation. Results already returned to the canvas remain available.",
       stop: "Stop",
       continue: "Continue generating",
-      configConnection: "Configuration nodes cannot be connected to each other",
+      configConnection:
+        "Connect configuration nodes to content nodes; configuration nodes cannot link to each other.",
       notFound: "Current canvas not found",
       exporting: "Exporting current canvas…",
       exported: "Current canvas exported",
@@ -756,7 +808,8 @@ export default {
       canvasVideo: "Canvas video",
       noImageToSave: "No image to save",
       canvasImage: "Canvas image",
-      emptyReverse: "The image node is empty, so its prompt cannot be inferred",
+      emptyReverse:
+        "Add an image to this node before extracting its visual description.",
       reverseTitle: "Reverse prompt",
       reverseConfigTitle: "Reverse prompt configuration",
       splitTitle: "{{name}} {{row}}-{{column}}",
@@ -767,10 +820,11 @@ export default {
       partialFailed: "Some images failed to generate",
       partialTextFailed: "Some text alternatives failed to generate",
       allFailed: "All images failed to generate",
-      retryPromptMissing: "No prompt found for retry",
+      retryPromptMissing:
+        "This result has no saved prompt. Add a description before generating again.",
       referenceMissing:
-        "The reference image is missing, so retry cannot continue",
-      emptyTextImage: "The text node is empty, so an image cannot be generated",
+        "A reference image required by this run is no longer readable. Reconnect the image before retrying.",
+      emptyTextImage: "Write a generation brief in the text node first.",
       untitledCanvas: "Untitled canvas",
       superResolve: "AI super resolution",
       notImplemented: "Not implemented yet",
@@ -778,7 +832,7 @@ export default {
       clearTitle: "Clear canvas?",
       clear: "Clear",
       clearDescription:
-        "This will delete every node and connection on the current canvas.",
+        "Confirming removes all nodes and their connections from this canvas.",
       reversePreset:
         "Inspect the reference and write a ready-to-use image prompt. Describe the subject and composition first, then the visual style, lighting, palette, material qualities, lens treatment, and mood. Return the prompt alone, without a heading or commentary.",
       maskPrompt:
@@ -800,7 +854,7 @@ export default {
       cancel: "Cancel",
       angleTitle: "AI Multi-angle",
       angleDescription:
-        "The left side previews direction only; the result is regenerated from the original image",
+        "Use the direction preview to choose a viewpoint. The model generates the final image from the original reference.",
       horizontal: "Horizontal angle",
       pitch: "Pitch angle",
       distance: "Camera distance",
@@ -811,8 +865,10 @@ export default {
       upscaleTitle: "Upscale image",
       source: "Source",
       targetPixels: "Target pixels",
-      maxReached: "The image is already 4K and does not need upscaling",
-      targetReached: "The image already meets the target pixel count",
+      maxReached:
+        "The image already reaches the 4K target, so no upscaling will run.",
+      targetReached:
+        "The current image already has enough pixels for the selected target.",
       algorithm: "Upscaling algorithm",
       outputSize: "Output size",
       upscale: "Generate upscaled image",
@@ -846,7 +902,7 @@ export default {
       brushSize: "Brush size",
       editInstructions: "Edit instructions",
       maskPlaceholder:
-        "For example: change the selected area to metal while preserving the original lighting",
+        "For example: replace the marked surface with brushed metal and keep the scene lighting consistent",
       maskPromptRequired: "Enter edit instructions",
       maskRequired: "Paint the area to edit first",
       maskImageLoadFailed: "Could not load the image. Select it again.",
@@ -885,11 +941,13 @@ export default {
       uninstallTitle: "Uninstall this plugin?",
       uninstall: "Uninstall",
       newVersion: "A new version is available",
-      officialDescription: "Official plugins from this project's registry",
+      officialDescription:
+        "Choose extension nodes from the plugin catalog maintained for Yingxu.",
       refresh: "Refresh",
       loadFailed: "Failed to load: {{error}}",
       loadingOfficial: "Loading official plugins…",
       noOfficial: "No official plugins",
+      noLocal: "No local plugins imported yet",
       install: "Install",
       urlPlaceholder:
         "Enter a plugin JavaScript URL, for example https://.../plugin.js",
@@ -898,13 +956,13 @@ export default {
       local: "Local",
       thirdParty: "Third-party",
       warning:
-        "Plugin code runs directly on this page and can access local data, including your AI API key. Only install plugins from sources you trust.",
+        "Installed plugins run inside the page and can access page content and browser-local data. Review their source and purpose before enabling them.",
       aiConfigRequired:
-        "AI configuration is not ready. Configure a model and API key in Settings first.",
+        "No generation configuration is available. Select a ready provider and model first.",
       interactiveTitle:
-        "Interaction mode is active. Click to switch to Move mode and drag the node.",
+        "Node content controls are active. Switch to Move mode to drag the whole node.",
       movableTitle:
-        "Move mode is active. Click to switch to Interaction mode and operate the node content.",
+        "Node dragging is active. Switch to Interaction mode to use controls inside the node.",
       move: "Move",
       interact: "Interact",
     },
@@ -928,7 +986,8 @@ export default {
       empty: "No content",
       selecting: "Adding references",
       choose: "Select",
-      selectingHint: "Select references from canvas · ESC to return",
+      selectingHint:
+        "Click canvas material to use it as a reference; press ESC to return to text entry.",
       frames: {
         first: "First frame",
         last: "Last frame",
@@ -950,7 +1009,7 @@ export default {
     composer: {
       title: "Compose prompt",
       description:
-        "Use @ to reference connected assets; references are renumbered before sending",
+        "After connecting material, use @ to insert references. Their numbering updates from the current connections when submitted.",
       placeholder:
         "Enter a prompt and use @ to reference connected images, text, or groups",
       imagePreview: "Referenced image preview",
@@ -963,6 +1022,7 @@ export default {
       },
     },
     controls: {
+      title: "Canvas controls",
       ratio: "Ratio",
       duplicate: "Duplicate",
       delete: "Delete",
@@ -973,7 +1033,7 @@ export default {
     },
     generation: {
       interrupted:
-        "Generation was interrupted by a page refresh. Generate again.",
+        "Refreshing the page ended this generation wait. Check existing results before starting another run.",
       videoFrameUnsupported:
         "This video model does not support first and last frame mode. Choose a compatible built-in Muse video model or use general reference mode.",
       front: "front view",
@@ -1062,7 +1122,7 @@ export default {
       missingFields: "The plugin is missing id or nodes",
       downloadFailed: "Download failed (HTTP {{status}})",
       registryFailed:
-        "Failed to load the official plugin registry (HTTP {{status}})",
+        "The plugin catalog could not be loaded. The service returned HTTP {{status}}.",
     },
     shortcut: {
       dragCanvas: "Drag canvas",
@@ -1075,7 +1135,7 @@ export default {
       boxSelect: "Select multiple nodes",
       addSelection: "Add nodes to selection",
       selectAll: "Select all nodes",
-      copyPaste: "Copy/paste nodes or paste clipboard text/images",
+      copyPaste: "Copy selected nodes; paste nodes, clipboard text, or images",
       copyPasteNodes: "Copy/paste nodes",
       delete: "Delete selection",
       group: "Group selected nodes",
@@ -1102,6 +1162,9 @@ export default {
     openAgent: "Open Agent",
     closeAgent: "Close Agent",
     plugins: "Node plugins",
+    help: "Help",
+    creationSettings: "Creation settings",
+    about: "About Yingxu",
     docs: "Documentation",
     switchLanguage: "Switch to {{language}}",
     shortcuts: "Keyboard shortcuts",
@@ -1116,7 +1179,7 @@ export default {
     openCanvas: "Open canvas",
     showcaseTitle: "Keep every great result",
     showcaseDescription:
-      "Save reliable prompts, visual references, and generated images so your next creation starts from proven ideas.",
+      "Build a reusable collection of prompts, visual direction, and finished images to carry useful ideas into future projects.",
     viewPrompts: "View prompt library",
   },
   version: {
@@ -1144,8 +1207,10 @@ export default {
   config: {
     title: "Settings & Preferences",
     invalidFile: "The settings file format is invalid",
-    description: "Providers, model selection, sync, and local storage",
-    modalDescription: "Providers, default models, sync, and local storage",
+    description:
+      "Manage model connections, creation defaults, data sync, and browser storage.",
+    modalDescription:
+      "Adjust model services, generation preferences, and project data storage.",
     tabs: {
       channels: "Providers",
       localProxy: "Local proxy",
@@ -1156,31 +1221,31 @@ export default {
     proxy: {
       title: "Local proxy",
       description:
-        "Route model discovery, image/video/text/audio generation, and WebDAV traffic through a proxy on this machine when browser CORS blocks direct requests.",
+        "Forward model discovery, media generation, and WebDAV sync through a service on this machine when the browser cannot reach the target directly.",
       startHint:
-        "A local forwarding service is not bundled. Start a compatible proxy separately when needed, then enter its address below.",
+        "Start a compatible local forwarding service yourself, then enter its address here. This app does not launch proxy processes.",
       address: "Proxy address",
       addressDescription:
-        "Enter the local proxy root URL and use Test connection to verify it.",
+        "Enter the proxy service's root URL, then test that it can be reached.",
       channelHint:
-        "Keep the real endpoint in Providers and WebDAV — never the proxy address. Turning the switch off restores direct requests.",
+        "Provider and WebDAV settings still need their actual service URLs. Put the proxy URL here; switching it off sends requests directly from the browser.",
       test: "Test connection",
       available: "Local proxy is reachable ({{proxy}})",
       missingUrl: "Enter the local proxy address first.",
       unreachable:
-        "Local proxy is unreachable. Make sure the command is running and the address is correct.",
+        "The local proxy did not respond. Confirm that its service is running and the address above is correct.",
     },
     localStorage: {
       title: "IndexedDB storage usage",
       description:
-        "View Yingxu data saved in this browser and storage usage by data type.",
+        "Review what Yingxu has stored in this browser and inspect usage by content category.",
       indexedDbUsage: "IndexedDB usage",
       siteUsage: "Total site usage",
       quota: "Available quota",
-      contentEstimate: "Estimated from stored content",
-      siteUsageHint: "Includes IndexedDB and other site data",
-      quotaHint: "Allocated dynamically by the browser",
-      quotaUnavailable: "Quota estimation is unavailable in this browser",
+      contentEstimate: "Estimate from application data",
+      siteUsageHint: "Counts IndexedDB and other data saved for this site",
+      quotaHint: "The browser adjusts available space for this device",
+      quotaUnavailable: "This browser does not expose a storage estimate",
       quotaProgress: "Site quota usage",
       mainDatabase: "Yingxu canvas data",
       records: "{{count}} records",
@@ -1201,12 +1266,14 @@ export default {
       add: "Add source",
       deleteTitle: "Delete “{{name}}”?",
       deleteDescription:
-        "The source configuration will be removed. Items already saved to My Assets are unaffected.",
+        "Removing this source will not delete prompts already saved to your library.",
       refreshed: "Updated {{count}} prompts from “{{name}}”",
-      refreshFailedCached: "Update failed; the previous cache was kept",
+      refreshFailedCached:
+        "No new content was retrieved. The previous cached content remains available.",
       refreshPartial:
-        "Update complete: {{success}} succeeded and {{failed}} failed. Failed sources kept their previous cache.",
-      refreshAllSuccess: "Updated {{sources}} sources with {{total}} prompts",
+        "Source refresh finished: {{success}} succeeded and {{failed}} failed. Failed sources will keep their previous cache.",
+      refreshAllSuccess:
+        "Checked {{sources}} sources and collected {{total}} prompts",
       refreshFailed: "Update failed",
       builtIn: "Built-in",
       itemCount: "{{count}} prompts",
@@ -1224,7 +1291,7 @@ export default {
       lastFetched: "Last fetched {{time}}",
       neverScheduled: "No scheduled fetch yet",
       scheduleDescription:
-        "When enabled, all active sources are fetched on this interval while the page is open.",
+        "While this page stays open, enabled sources are refreshed at the selected interval.",
       intervals: {
         disabled: "Disabled",
         minutes30: "Every 30 minutes",
@@ -1259,31 +1326,32 @@ export default {
         requestFailed: "Request failed ({{status}})",
         urlRequired: "JSON URL is required",
         fetchFailed: "Failed to fetch “{{name}}”: {{error}}",
-        noPrompts: "No valid prompts were parsed from “{{name}}”",
+        noPrompts:
+          "The source “{{name}}” did not provide recognizable prompt entries.",
         invalidRoot:
-          "Invalid “{{name}}” format: the root value must be an array",
+          "The source “{{name}}” has an unsupported structure. Its top-level JSON value must be an array.",
       },
     },
     fileSecurity:
-      "The JSON file contains API keys and WebDAV credentials. Keep it secure.",
+      "Exports contain preferences and source settings, with provider API keys and WebDAV passwords removed. Importing keeps the credentials configured in this deployment.",
     import: "Import settings",
     export: "Export settings",
     imported: "Settings and preferences imported",
     importedDirectConfig: "Local direct connection settings imported",
     importedChannelCreated:
-      "Added provider “{{name}}” without changing existing providers",
+      "Provider “{{name}}” was created. Other provider settings are unchanged.",
     importedChannelUpdated:
-      "Updated connection settings for provider “{{name}}”",
+      "Provider “{{name}}” now uses the imported connection details.",
     importedChannelBaseUrlRequired:
-      "The import link has no Base URL. No providers were changed.",
+      "The link has no provider Base URL, so the import was not applied.",
     importedChannelBaseUrlInvalid:
-      "The import link has an invalid Base URL. No providers were changed.",
+      "The provider Base URL in the link is unusable, so the import was not applied.",
     importFailed: "Failed to read the settings file",
     saved: "Settings saved",
-    savedContinue: "Settings saved. Continue with your previous request.",
+    savedContinue: "Settings are saved. Return to your task to continue.",
     channels: {
       description:
-        "Choose a protocol for each provider, fetch its models, assign capabilities, and optionally customize request scripts.",
+        "Choose a service protocol and load its model list, then assign each model a task. Custom scripts are available for special endpoints.",
       add: "Add provider",
       unnamed: "Unnamed provider",
       numberedName: "Provider {{count}}",
@@ -1298,7 +1366,7 @@ export default {
       interface: "Interface",
       language: "Display language",
       languageDescription:
-        "Change the language used by the interface and components.",
+        "Choose the language shown in menus, notices, and creation controls.",
       defaultModels: "Default models",
       defaultImageModel: "Default image model",
       defaultVideoModel: "Default video model",
@@ -1309,24 +1377,26 @@ export default {
       videoResolution: "Default video resolution",
       canvasImageCount: "Default canvas image count",
       canvasImageCountDescription:
-        "Used by new canvas image and configuration nodes. Individual nodes can override it.",
-      regenerateBehavior: "When generating on a node that already has content",
-      regenerateBehaviorOverwrite: "Regenerate in place (overwrite the node)",
+        "New image nodes use this count by default; each node can still set its own value.",
+      regenerateBehavior: "Where to save a new generation result",
+      regenerateBehaviorOverwrite:
+        "Update the current node with the new result",
       regenerateBehaviorOverwriteDescription:
-        "Replace the node's content and settings in place without creating a new node. Copy the node first to keep the old result.",
-      regenerateBehaviorNewNode: "Create a new node (original behavior)",
+        "Write the new result and parameters into the existing node. Duplicate it first if you need to keep the previous version.",
+      regenerateBehaviorNewNode:
+        "Keep the current node and create a result branch",
       regenerateBehaviorNewNodeDescription:
-        "Keep the current node and create a new one for the result. Good for variants or branches.",
+        "Leave the current content intact and place the new result in another node for comparison or further branching.",
       autoFocusOnSelect: "Auto-center on select",
       audioVoice: "Default audio voice",
       audioFormat: "Default audio format",
       audioSpeed: "Default audio speed",
       audioInstructions: "Default audio instructions",
       audioInstructionsPlaceholder:
-        "For example: natural, warm, and suitable for narration.",
+        "Try: Explain in a warm, natural voice and pause briefly before key points.",
       systemPrompt: "System prompt",
       systemPromptPlaceholder:
-        "For example: You are a visual director specializing in cinematic, photorealistic imagery.",
+        "Try: Clarify the creative goal, then describe the scene, movement, and camera choices precisely.",
     },
     channelEditor: {
       title: "Edit provider",
@@ -1335,11 +1405,12 @@ export default {
       baseUrl: "API endpoint",
       models: "Provider models",
       modelDescription:
-        "{{count}} selected; assign a capability to each model and optionally customize its request script.",
+        "{{count}} models are selected. Set each model's purpose and add a dedicated script when an endpoint needs one.",
       selectModels: "Select models",
       scriptReady: "Script set",
       script: "Request script",
-      empty: "Select models to fetch or manually add models.",
+      empty:
+        "Load the service's model list or enter model identifiers manually.",
       capabilities: {
         image: "Image",
         video: "Video",
@@ -1359,36 +1430,36 @@ export default {
       add: "Add model",
       fetch: "Fetch model list",
       description:
-        "Add model names here when the provider has no OpenAI-compatible /models listing.",
+        "If the service cannot provide a compatible /models listing, enter the model identifiers here.",
       fetchedTab: "Fetched models ({{count}})",
       existingTab: "Selected models ({{count}})",
       visibleSelected: "{{selected}} / {{total}} selected in this list",
       selectVisible: "Select this list",
       clearVisible: "Clear this list",
       fetchedEmpty:
-        "Fetch models from the provider or add a model name manually.",
+        "Request a model list from the service or type a model identifier to add it.",
       existingEmpty: "No models selected.",
     },
     scriptEditor: {
       title: "{{capability}} request script",
       description:
-        "Review the script constraints, copy the request context for your chosen AI, and save its result in the editor. The built-in request is used when this field is empty.",
+        "Use the input and return contract below to prepare a request script, then paste it into the editor and save. Leave the field blank to use the built-in adapter.",
       stepRule: "Read the rules",
       stepRuleHint:
-        "Define an async function with parameters for injected values such as prompt, images, and params. Expand params into fields like size, quality, and count. Make the request and return its result, then invoke the function at the end.",
+        "Write an async function that receives the inputs it needs, such as prompt, images, and params. Expand options into clear fields, make the request, return its result, and invoke the function at the end.",
       stepAi: "Let another AI write it",
       stepAiCopy:
-        "Copy the variables, return requirements, and writing rules from this page.",
+        "Copy the script brief with its input fields, expected result structure, and calling contract.",
       stepAiAsk:
-        "Paste the brief into your preferred AI chat and include the API documentation for the service you plan to call.",
+        "Give the brief to your coding assistant along with the API documentation for the target service.",
       stepAiPaste:
-        "Paste the returned script into the editor on the right and save it.",
+        "Review the returned script, then put it in the editor and save.",
       stepAiIncludes:
         "The copied context contains the selected model, inputs, response shape, and script constraints. API keys are excluded.",
-      stepEdit: "Paste and save",
+      stepEdit: "Paste, review, and save",
       editorTitle: "Script editor",
       editorHint:
-        "Paste the script from another AI here, or start from a template below.",
+        "Edit the request script here. You can begin with a template and adapt it to the service documentation.",
       editorEmpty: "Using the default request",
       editorFilled: "Custom script entered",
       startFromTemplate: "Start from a template",
@@ -1396,25 +1467,26 @@ export default {
       restoreDefault: "Restore default request",
       returnRequirements: "Return requirements",
       variables: "Available variables",
-      variablesHint: "Click a variable to insert it into the editor.",
+      variablesHint:
+        "Select a variable to insert its name at the editor cursor.",
       variablesHintVideo:
-        "Video models can use videos and audios as reference video and audio files.",
+        "Video scripts can read connected reference video and audio files from videos and audios.",
       insert: "Click to insert",
       placeholder:
         "// Paste a script written by another AI. Leave empty to use the default request.",
       copyBrief: "Copy script brief",
-      briefCopied: "Script brief copied. Paste it into your AI.",
+      briefCopied: "Script brief copied. Send it to your coding assistant.",
     },
     webdav: {
       title: "WebDAV sync",
       description:
-        "Back up canvases, assets, generation history, and local media to WebDAV. AI API keys are never included. Traffic uses the local proxy when enabled; otherwise the browser connects directly.",
+        "Sync canvases, your library, generation history, and local media with WebDAV. Model API keys are excluded; network routing follows the proxy setting on this page.",
       lastSynced: "Last synced {{time}}",
       neverSynced: "Not synced yet",
       url: "WebDAV URL",
       directory: "Remote directory",
       directoryDescription:
-        "Business directories are created here, each containing {{manifest}} and files/",
+        "Separate folders are created here for each data type. Each has a {{manifest}} index and a files/ directory.",
       username: "Username",
       password: "Password / app password",
       test: "Test connection",
@@ -1453,24 +1525,29 @@ export default {
       },
       errors: {
         testFailed: "WebDAV connection test failed",
-        downloadFailed: "Failed to read the WebDAV sync file",
-        downloadTimeout: "Timed out while reading the WebDAV sync file",
-        emptyUpload: "The upload file is empty; upload canceled",
-        uploadFailed: "Failed to upload the WebDAV sync file",
-        directoryFailed: "Failed to create the remote WebDAV directory",
+        downloadFailed:
+          "The remote sync file could not be read. Check the WebDAV file path and permissions.",
+        downloadTimeout:
+          "The remote sync file took too long to arrive. Check that the WebDAV service is reachable.",
+        emptyUpload:
+          "The sync package has no content. An empty file will not be uploaded.",
+        uploadFailed:
+          "The sync file could not be written to WebDAV. Check remote write permissions.",
+        directoryFailed:
+          "The WebDAV storage directory could not be prepared. Check its path and directory creation permissions.",
         requestTimeout:
-          "The WebDAV request timed out. Check the network or remote service.",
+          "The sync request exceeded its deadline. Check the connection and WebDAV service response.",
         connectionFailed:
-          "Could not connect to WebDAV. Check the address, HTTPS certificate, CORS, and network.",
+          "The WebDAV service could not be reached. Check its address, certificate, cross-origin policy, and network access.",
         urlRequired: "Enter a WebDAV URL first",
         authenticationFailed:
-          "WebDAV authentication failed. Check the username, password, or app password.",
+          "WebDAV rejected the sign-in details. Verify the account password or app-specific password.",
         pathMissing:
-          "The WebDAV path does not exist. Check the address and remote directory.",
+          "The server could not find the sync directory. Check the WebDAV base URL and directory setting.",
         responseFailed: "{{fallback}}: {{status}}{{detail}}",
         syncFailed: "Sync failed",
         invalidManifest:
-          "The {{domain}} sync manifest does not belong to this app",
+          "The {{domain}} manifest has a different app identifier. Import was stopped.",
       },
     },
     protocols: {},
@@ -1484,8 +1561,10 @@ export default {
     },
     state: {
       ready: "Ready",
-      connectionRequired: "Enter the Local URL and Connect token",
-      invalidUrl: "The Local URL is invalid",
+      connectionRequired:
+        "Enter both the local service URL and Connect token before connecting.",
+      invalidUrl:
+        "The Local URL could not be recognized. Enter the complete local service address.",
       storageUnavailable:
         "Browser storage is unavailable; this connection lasts for this session only",
       offline: "Offline",
@@ -1504,23 +1583,30 @@ export default {
       assetList: "Asset list",
       assetAdd: "Add asset",
       unknownTool: "Unknown tool: {{name}}",
-      canvasLoading: "The canvas is still loading. Try again shortly.",
-      canvasHint: "Use site_navigate to open /canvas/{id}",
-      assetsLoading: "Assets are still loading. Try again shortly.",
-      assetTitleRequired: "Provide the asset title",
-      textContentRequired: "content is required when kind=text",
-      imageUrlRequired: "imageUrl is required when kind=image",
+      canvasLoading:
+        "Canvas data is not ready. Call this tool again after loading finishes.",
+      canvasHint:
+        "Open the target /canvas/{id} route with site_navigate before working on that canvas.",
+      assetsLoading:
+        "The asset catalog is loading. Retry once the catalog is ready.",
+      assetTitleRequired:
+        "A new asset needs a title field so it can be found in the library.",
+      textContentRequired:
+        "When creating a kind=text asset, supply its text in content.",
+      imageUrlRequired:
+        "When creating a kind=image asset, supply an image address or dataURL in imageUrl.",
       imageReadFailed:
-        "Could not read the image. Use a data URL or a cross-origin accessible image URL.",
-      assetKindUnsupported: "assets_add supports only kind=text or kind=image",
+        "The image address could not be read. Supply a dataURL or an image URL that permits cross-origin access.",
+      assetKindUnsupported:
+        "assets_add accepts text and image assets, using kind=text and kind=image.",
       imageGenerationStarted:
-        "Opened Image Studio and started generation. Use generation_get_status to query the task.",
+        "Image generation was submitted in Image Studio. Use generation_get_status to read its progress.",
       imageConfigApplied:
-        "Opened Image Studio and applied the parameters without starting generation.",
+        "Image Studio has loaded these parameters. Generation must be started separately.",
       videoGenerationStarted:
-        "Opened Video Studio and started generation. Use generation_get_status to query the task.",
+        "Video generation was submitted in Video Studio. Use generation_get_status to read its progress.",
       videoConfigApplied:
-        "Opened Video Studio and applied the parameters without starting generation.",
+        "Video Studio has loaded these parameters. Generation must be started separately.",
     },
     history: {
       workspace: "Workspace",
@@ -1534,58 +1620,68 @@ export default {
       selectThread: "Select {{name}}",
       untitled: "Untitled conversation",
       current: "Current",
-      noWorkspaceThreads: "No conversations in this workspace yet",
-      connectHint: "Connect the local Agent to view conversation history",
+      noWorkspaceThreads:
+        "This workspace has no saved Agent conversations yet.",
+      connectHint: "Connect the local Agent to load saved conversations here.",
     },
     skills: {
       selectLocal: "Select local Skill",
       search: "Search Skills",
       loading: "Loading Skills…",
-      noMatch: "No matching enabled Skills",
-      none: "No Skills available",
+      noMatch: "No enabled skill matches the current search.",
+      none: "The current connection has no callable skills available.",
       select: "Select Skill",
-      connectHint: "Connect the Agent to use Skills",
+      connectHint: "Connect the Agent before selecting an installed skill.",
     },
     skillManager: {
       codexBusy:
-        "Codex is running. Finish the current task before extracting a Skill.",
-      noConversation: "This conversation has no completed content to extract",
-      noCanvas: "There is no canvas on this page to extract",
+        "Wait for the current Codex task to finish before turning its process into a Skill.",
+      noConversation:
+        "This conversation has no completed results to turn into a skill yet.",
+      noCanvas:
+        "Open the canvas you want to capture before creating a skill from its node workflow.",
       connecting:
-        "This page is still connecting to the Agent. Try again shortly.",
+        "The Agent connection is not ready yet. Try this action after it connects.",
       syncFailed:
-        "Failed to sync the current canvas. Check the Agent connection and try again.",
-      noDraft: "No Skill draft was generated",
+        "The canvas could not be synced to the Agent. Check the connection before retrying.",
+      noDraft:
+        "This run returned no skill draft. Review the result before retrying.",
       draftCreated:
-        "Draft generated. Review it on the Skills tab before creating it.",
-      draftFailed: "Failed to generate Skill draft",
-      contentMissing: "Skill content was not returned",
+        "The skill draft is ready. Review its content on the Skills tab before saving it.",
+      draftFailed:
+        "A skill draft could not be prepared. Check the conversation or canvas content.",
+      contentMissing: "The skill body was not returned by this read.",
       readFailed: "Failed to read Skill",
-      defaultPromptMention: "The default prompt must include ${{name}}",
+      defaultPromptMention:
+        "Keep the exact skill invocation ${{name}} in the default prompt.",
       created: "Skill created",
       updated: "Skill updated",
       saveFailed: "Failed to save Skill",
       deleteTitle: "Delete {{name}}",
       deleteDescription:
-        "The local files cannot be recovered after deletion. Continue?",
+        "This removes the local skill files. The app cannot restore them automatically; confirm before continuing.",
       delete: "Delete",
       deleted: "Skill deleted",
       deleteFailed: "Failed to delete Skill",
       statusFailed: "Failed to update Skill status",
       fromConversation: "Generate draft from this conversation",
-      availableAfterRun: "Available when Codex finishes running",
+      availableAfterRun:
+        "You can prepare the skill once the current run finishes.",
       conversationDescription:
-        "Extract reusable workflows from this conversation",
-      noCompletedContent: "This conversation has no completed content",
+        "Turn the steps completed in this conversation into a workflow you can run again.",
+      noCompletedContent:
+        "Complete a conversation task before extracting its steps.",
       startConversation: "Start a conversation first",
       fromCanvas: "Generate draft from this canvas",
       canvasDescription:
-        "Extract nodes and generation workflows from this page",
-      canvasUnavailable: "There is no available canvas on this page",
+        "Capture the current canvas connections and generation steps in a skill draft.",
+      canvasUnavailable:
+        "No canvas is loaded on this page. Open a project first.",
       blankCreate: "Create from scratch",
       blankDescription: "Start with an empty form",
       localSkills: "Local Skills",
-      localDescription: "Installed locally and run directly by Codex",
+      localDescription:
+        "Skill files are stored locally and executed by the connected Codex service.",
       reload: "Reload",
       reloadSkill: "Reload Skills",
       createSkill: "Create Skill",
@@ -1599,7 +1695,7 @@ export default {
       },
       loadErrors: "{{count}} Skills could not be loaded",
       externalReadonly:
-        "External Skills can only be used or enabled and disabled",
+        "Externally managed skills can be invoked or toggled here, but their contents cannot be edited.",
       noDescription: "No description",
       enabled: "Enabled",
       disabled: "Disabled",
@@ -1607,50 +1703,53 @@ export default {
       use: "Use",
       editNamed: "Edit {{name}}",
       deleteNamed: "Delete {{name}}",
-      connectToView: "Connect the Agent to view Skills",
+      connectToView: "Connect the Agent to load the skill list.",
       noMatch: "No matching Skills",
-      none: "No local Skills yet",
-      connectDescription: "Installed local Skills will load after connection",
-      tryAnotherFilter: "Try another keyword or source",
-      createOrInstall: "Create one, or install one locally and refresh",
+      none: "This workspace has no local skills yet.",
+      connectDescription:
+        "After connection, installed local skills are read and listed here.",
+      tryAnotherFilter: "Change the search term or source to see other skills.",
+      createOrInstall:
+        "Create a skill here, or install it locally and refresh the list.",
       saveChanges: "Save changes",
-      saveLocation: "Save to the local Agent workspace",
+      saveLocation: "Write the skill files into the local Agent workspace.",
       basicInfo: "Basic information",
       identifier: "Skill identifier",
       identifierExtra:
-        "Used as the folder name and for $skill-name invocation.",
+        "This identifier determines the saved folder and the $skill-name invocation.",
       identifierRequired: "Enter a Skill identifier",
       identifierMax: "The Skill identifier cannot exceed 64 characters",
       identifierPattern:
-        "Use lowercase letters, numbers, and hyphens only; hyphens cannot repeat or appear at either end",
+        "Use lowercase letters and digits separated by single hyphens; do not start or end with a hyphen.",
       identifierPlaceholder: "For example, product-grid",
       displayName: "Display name",
       displayNameMax: "The display name cannot exceed 64 characters",
       displayNamePlaceholder: "For example, Product grid generator",
       whenToUse: "When to use",
       whenToUseExtra:
-        "Describe the Skill's capabilities and use cases so Codex can decide when to invoke it.",
+        "Describe the inputs, suitable tasks, and capabilities so Codex can select the appropriate workflow.",
       whenToUseRequired: "Describe when to use this Skill",
       whenToUseMax: "The use-case description cannot exceed 1,024 characters",
       noAngleBrackets: "The use-case description cannot contain angle brackets",
       whenToUsePlaceholder:
-        "For example: Use when planning and generating a set of product images from product information",
+        "For example: Use this Skill to plan a consistent product image set from a product brief",
       instructions: "Instructions",
       instructionsExtra:
-        "Describe the steps, constraints, and output requirements in execution order.",
+        "Order the instructions by execution, including input checks, actions, and deliverables.",
       instructionsRequired: "Enter the instructions",
       instructionsPlaceholder:
         "Describe execution steps, required checks, and the final output",
       advanced: "Advanced settings",
       shortDescription: "Card summary",
-      shortDescriptionExtra: "Use 25–64 characters for easy scanning.",
+      shortDescriptionExtra:
+        "Use 25–64 characters for a card summary that states the skill purpose in one sentence.",
       shortDescriptionMin:
         "The card summary must contain at least 25 characters",
       shortDescriptionMax: "The card summary cannot exceed 64 characters",
       shortDescriptionPlaceholder: "Optional; shown in the list",
       defaultPrompt: "Default prompt",
       defaultPromptExtra:
-        "Must include the exact $skill-name, such as $product-grid.",
+        "The prefilled text must contain the full $skill-name invocation, such as $product-grid.",
       defaultPromptMax: "The default prompt cannot exceed 1,024 characters",
       defaultPromptPlaceholder:
         "Optional; prefilled when the Skill is selected",
@@ -1679,21 +1778,23 @@ export default {
       permission: {
         request: "Ask for approval",
         requestDescription:
-          "Always ask before editing outside the workspace or accessing the network",
+          "Require confirmation each time before network access or changes outside the workspace.",
         automatic: "Automatic review",
         automaticDescription:
-          "Codex reviews risky actions and asks only when needed",
+          "Let Codex assess action risk and request confirmation when additional authorization is needed.",
         full: "Full access",
         fullShort: "Full access",
-        fullDescription: "Unrestricted access to the network and local files",
+        fullDescription:
+          "Allow network and local file access without a sandbox boundary.",
       },
       tools: {
         label: "Tool confirmation: {{mode}}",
         manual: "Manual",
-        manualDescription: "Ask before the Agent writes to the canvas",
+        manualDescription:
+          "Canvas-writing tool operations run after confirmation.",
         automatic: "Automatic",
         automaticDescription:
-          "Let the Agent perform canvas writes automatically",
+          "Allow the Agent to run canvas-writing tools directly.",
         select: "Select tool confirmation mode. Current: {{mode}}",
       },
       mentions: {
@@ -1701,15 +1802,35 @@ export default {
         selectResource: "Reference canvas assets",
         loadingSkills: "Loading Skills…",
         noSkills: "No enabled Skills match",
-        noResources: "No matching canvas assets",
+        noResources: "No canvas reference material matches this search.",
         previewUnavailable: "This asset cannot be previewed",
         referenceLabel: "Referenced {{kind}}: {{title}}",
-        resourceMissing: "Canvas asset “{{title}}” no longer exists",
-        imageReadFailed: "Could not read canvas image “{{title}}”",
+        resourceMissing:
+          "The referenced item “{{title}}” was removed from the canvas. Select another item.",
+        imageReadFailed:
+          "The reference image “{{title}}” could not be loaded. Check or replace the node media.",
         kind: { image: "Image", video: "Video", audio: "Audio", text: "Text" },
       },
     },
     panel: {
+      title: "Agent",
+      setup: "Setup",
+      endpoint: "Local URL",
+      token: "Connect token",
+      savePreferences: "Save connection settings",
+      preferencesSaved: "Settings saved; Agent is not connected",
+      setupDescription:
+        "Configure a local Agent endpoint. Saving these values does not connect the Agent.",
+      transportUnavailable:
+        "This canvas has no Agent message transport, so sending is unavailable.",
+      emptyChat: "No Agent messages yet",
+      emptyHistory: "No conversation history",
+      emptyLogs: "No runtime logs",
+      user: "You",
+      assistant: "Agent",
+      system: "System",
+      tool: "Tool",
+      error: "Error",
       connectionSettings: "Connection settings · {{status}}",
       connectionSettingsLabel:
         "Connection settings. Current status: {{status}}",
@@ -1722,9 +1843,9 @@ export default {
       resize: "Resize right panel",
       content: "Agent content",
       mcpInitializing:
-        "MCP is initializing. You can send messages when it is ready.",
+        "Tool services are being prepared. You can send a message once they are ready.",
       initFailed:
-        "Codex conversation initialization failed. Start or resume a conversation.",
+        "The conversation did not start successfully. Create a new Codex conversation or select an existing one.",
       placeholder:
         "Ask Codex, type / for Skills, or @ to reference canvas assets",
     },
@@ -1737,8 +1858,10 @@ export default {
     },
     logs: {
       copied: "Logs copied",
-      selectedManual: "Logs selected; copy them manually",
-      copyFailed: "Copy failed. Switch to raw JSON and copy manually.",
+      selectedManual:
+        "The log text is selected. Use your copy shortcut to save it.",
+      copyFailed:
+        "The clipboard write failed. Open the raw JSON view and copy the text manually.",
       title: "Runtime logs",
       diagnostics: "Diagnostics",
       rawJson: "Raw JSON",
@@ -1773,16 +1896,16 @@ export default {
       copyCode: "Copy code",
       copyLink: "Copy link",
       externalWarning:
-        "You are about to open an external link. Make sure you trust it.",
+        "The address below will open externally. Check the destination before continuing.",
       openExternal: "Open external link?",
       continueOpen: "Open",
       revealed: "Revealed in file manager",
       openLocalFailed: "Could not open the local file",
       openLocal: "Open local file?",
       localDescription:
-        "This path will be revealed in your local file manager and will not be opened in the browser.",
+        "Confirming reveals this file or folder in the local file manager.",
       externalDescription:
-        "You are about to open an external link. Make sure you trust it.",
+        "Check that the site below is your intended destination before opening the external link.",
       pathCopied: "Path copied",
       linkCopied: "Link copied",
       copyPath: "Copy path",
@@ -1808,7 +1931,7 @@ export default {
       completed: "Completed",
       command: "Command",
       slowResponse:
-        "The response is taking longer, but the task is still running. You can keep waiting or use the stop button beside the input to end this turn.",
+        "This run is still active and has not returned a final result. Keep waiting, or use the Stop button beside the input to end the run.",
       waitingSeconds: "Waited {{seconds}} seconds",
       waitingMinutes: "Waited {{minutes}}m {{seconds}}s",
       files: "Files",
@@ -1893,10 +2016,10 @@ export default {
       completed: "Completed",
       modelBusy: "Model temporarily busy",
       modelBusyDescription:
-        "The selected model is receiving too many requests. Try again later or switch models.",
+        "The selected model has no available capacity right now. Retry later or choose another model.",
       taskFailed: "Task failed",
       taskFailedDescription:
-        "Codex could not complete this task. Try again later.",
+        "This Codex run did not complete. Review its execution details before deciding whether to retry.",
     },
     eventExtra: {
       toolNamed: "Call tool: {{name}}",
@@ -1946,7 +2069,7 @@ export default {
       assetCount: "{{count}} assets",
       assetAdded: "Added to My Assets",
       generationStatus:
-        "{{total}} tasks: {{queued}} queued, {{running}} running, {{succeeded}} succeeded, {{failed}} failed",
+        "Generation jobs ({{total}}): {{queued}} waiting · {{running}} active · {{succeeded}} complete · {{failed}} failed",
       workbenchExecuted: "Executed in the workbench",
       workbenchConfigRead: "Workbench configuration read",
       canvasRead: "Current canvas read",
@@ -1963,9 +2086,12 @@ export default {
       executeTool: "Run {{tool}}",
       thinking: "Thinking...",
       operationRunning: "{{operation}} is running...",
-      organizingCanvas: "Canvas read; Codex is organizing the result...",
-      operationCompleted: "{{operation}} completed; Codex is continuing...",
-      attachmentPrompt: "Please process the uploaded image attachments.",
+      organizingCanvas:
+        "Nodes and connections have been read; the canvas result is being organized…",
+      operationCompleted:
+        "{{operation}} has finished; the Agent is working on the next steps…",
+      attachmentPrompt:
+        "Read the image attachments in this turn and use them for the current task.",
       routes: {
         home: "Home",
         canvas: "Canvas",
@@ -1979,27 +2105,36 @@ export default {
     },
     runtime: {
       mcpStarting: "Starting MCP: {{name}}",
-      mcpConnecting: "Connecting tools and loading the available tool list",
+      mcpConnecting:
+        "Connecting to tool services, then loading the operations available for this run.",
       mcpReadyNamed: "MCP ready: {{name}}",
-      toolsReady: "Tool list loaded. You can start chatting.",
+      toolsReady:
+        "Tools for this run are loaded. You can send your task brief.",
       mcpFailedNamed: "MCP failed to start: {{name}}",
       mcpCanceledNamed: "MCP startup canceled: {{name}}",
-      toolInitFailed: "The tool service could not finish initializing",
+      toolInitFailed:
+        "Tool service preparation failed. Check the connection details.",
       mcpServicesStarting: "Starting MCP services",
-      toolServicesPending: "{{count}} tool services are still initializing",
-      checkingToolServices: "Checking tool service status",
-      conversationInitializing: "Initializing the Codex conversation",
+      toolServicesPending:
+        "Waiting for {{count}} tool services to finish preparation.",
+      checkingToolServices:
+        "Checking the running state of connected tool services.",
+      conversationInitializing: "Restoring the Codex conversation state.",
       conversationCreating:
-        "Creating the conversation and starting canvas tools",
-      someMcpFailed: "Some MCP services failed to initialize",
+        "Creating a conversation and connecting the canvas tools for this run.",
+      someMcpFailed:
+        "Some tool services are not ready. Review the connection details.",
       remainingToolsReady:
-        "The remaining tools are ready. You can start chatting.",
-      conversationInitFailed: "Codex conversation initialization failed",
-      conversationCreateFailed: "Could not create the Codex conversation",
+        "Available tools are ready, so this conversation can continue.",
+      conversationInitFailed:
+        "The Codex conversation could not be restored to a usable state.",
+      conversationCreateFailed:
+        "A new Codex conversation could not be created. Check the local service status.",
       mcpServicesReady: "{{count}} MCP services initialized",
       toolInitCanceled: "Tool service initialization was canceled",
       mcpStatusComplete: "MCP status check completed",
-      mcpListRead: "Loaded the complete tool service list returned by Codex",
+      mcpListRead:
+        "The tool service catalog reported by Codex has been received.",
       historyReadFailed: "Failed to read history",
       conversationSyncFailed: "Failed to sync conversation",
       agentOutdated:
@@ -2016,26 +2151,26 @@ export default {
       approvalCanceled: "Permission canceled",
       log: "Log",
       connectionLostDescription:
-        "The local Agent connection failed or was interrupted",
+        "The local Agent connection was interrupted or could not be established. Check whether the service is running.",
       connectionFailedDescription:
-        "Connection failed. Check the address and token.",
+        "The local service did not accept the connection. Check its address and connection token.",
       connectionLost: "Connection lost",
       connectionFailed: "Connection failed",
       modelListFailed: "Failed to load model list",
       imageTooLarge: "Image too large",
       imagePayloadTooLarge:
-        "Image attachments exceed 30 MB. Remove some before sending.",
+        "Image data for this turn exceeds 30 MB. Remove some attachments before sending again.",
       imagesSent: "Sent {{count}} images",
       canvasReferencesSent: "Referenced {{count}} canvas assets",
       someCanvasReferencesMissing:
-        "Some referenced canvas assets no longer exist",
+        "Some canvas references are no longer available. Check the material selected for this turn.",
       canvasReferencesMissing:
-        "The referenced canvas assets no longer exist. Select them again.",
+        "The material referenced in this turn was removed from the canvas. Add the references again.",
       readingCanvasImages: "Reading canvas images",
       canvasImageReadFailed: "Failed to read canvas images",
       tooManyImages: "Too many images",
       imageCountLimit:
-        "Uploaded and referenced canvas images are limited to {{count}} in total.",
+        "Uploaded images and canvas image references in this turn must total no more than {{count}}.",
       sending: "Sending",
       defaultModel: "Default model",
       defaultEffort: "Default effort",
@@ -2053,28 +2188,33 @@ export default {
       stopTask: "Stop task",
       taskStopped: "Task stopped",
       stopFailed: "Failed to stop",
-      imageLimit: "Image attachments are limited to about 30 MB.",
+      imageLimit:
+        "The combined image attachment data for this turn is limited to about 30 MB.",
       imageReadFailed: "Failed to read image",
-      pendingCanvasTool: "Another canvas tool call is awaiting confirmation",
+      pendingCanvasTool:
+        "A canvas-writing action is waiting for confirmation. Resolve that request first.",
       awaitingConfirmation: "Awaiting confirmation",
       toolCompleted: "{{tool}} completed",
       toolExecutionFailed: "Tool execution failed",
       openCanvasFirst:
-        "The canvas is not open. Use site_navigate to open it first.",
+        "Use site_navigate to enter the target canvas before running node operations.",
       canvasOperationFailed: "Canvas operation failed",
-      canvasToolCanceled: "The user canceled the canvas tool call",
+      canvasToolCanceled: "The user canceled this canvas tool operation.",
       submittingApproval: "Submitting permission decision",
-      waitingCodexApproval: "Waiting for Codex to confirm permission",
+      waitingCodexApproval:
+        "Waiting for the Codex permission request to be resolved.",
       approvalFailed: "Permission approval failed",
       enableFullAccess: "Enable full access",
       fullAccessDescription:
-        "Codex will run without sandbox restrictions and can access the internet and any local files. Use this only when you trust the current task.",
+        "When enabled, Codex can access the network and read or write local files without a sandbox boundary. Confirm that this access is appropriate for the current task.",
       enableFullAccessAction: "Enable full access",
       offline: "Offline",
-      addressRequired: "Enter the local Agent address",
+      addressRequired:
+        "Provide the local Agent service address before connecting.",
       agentNotFound:
         "No local Agent was found. Use the desktop plugin or start the local Agent manually.",
-      invalidAddress: "The local Agent address is invalid",
+      invalidAddress:
+        "The service address could not be parsed. Enter the complete local Agent URL.",
       connecting: "Connecting",
       creatingConversation: "Creating conversation",
       newConversation: "New conversation",
@@ -2084,15 +2224,20 @@ export default {
       recordsDeleted: "Deleted {{count}} records",
       deleteConversationFailed: "Failed to delete conversation",
       deleteConversations: "Delete {{count}} conversations",
-      deleteConversationsDescription: "This cannot be undone. Continue?",
+      deleteConversationsDescription:
+        "Confirming removes the selected conversation records. The app provides no restore action.",
       importGeneratedImages: "Import generated images",
-      addedToSourceCanvas: "Added to the source canvas",
+      addedToSourceCanvas:
+        "The image was added to the canvas where this run began.",
       imageGenerated: "Image generated",
-      noImageAttachments: "No image attachments to add",
-      invalidAttachmentNode: "Invalid image attachment node parameters",
+      noImageAttachments:
+        "This turn has no image attachments that can be added to the canvas.",
+      invalidAttachmentNode:
+        "The image attachment node data is incomplete and cannot be added to the canvas.",
       attachmentReadFailed: "Failed to read image attachment",
       referenceImage: "Reference image",
-      generatedImageReadFailed: "Failed to read the image generated by Codex",
+      generatedImageReadFailed:
+        "The image returned by Codex could not be read. Check whether the generated file is still accessible.",
       generatedImageName: "Generated image {{index}}",
     },
   },

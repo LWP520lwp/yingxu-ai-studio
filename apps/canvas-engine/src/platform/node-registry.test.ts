@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-    getNodeDefinition,
-    getNodePluginId,
-    getNodeSpec,
-    isBuiltinNodeType,
-    isRegisteredNodeType,
-    listNodeDefinitions,
-    registerNodeDefinitions,
-    unregisterPluginNodes,
-    useNodeRegistryVersion,
-} from "@/lib/canvas/node-registry";
+    getAtlasNodeDefinition as getNodeDefinition,
+    getAtlasNodeOwner as getNodePluginId,
+    getAtlasNodeSpec as getNodeSpec,
+    isAtlasBuiltinNodeType as isBuiltinNodeType,
+    isAtlasNodeTypeRegistered as isRegisteredNodeType,
+    listAtlasNodeDefinitions as listNodeDefinitions,
+    registerAtlasNodeDefinitions as registerNodeDefinitions,
+    unregisterAtlasPluginNodes as unregisterPluginNodes,
+    useAtlasNodeRegistryVersion as useNodeRegistryVersion,
+} from "@/atlas-engine/model/node-registry";
 import type { CanvasNodeDefinition } from "@/types/canvas-plugin";
 
 vi.mock("@/i18n", () => ({ default: { t: (key: string) => key } }));

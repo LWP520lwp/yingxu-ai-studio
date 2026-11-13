@@ -37,13 +37,13 @@ import {
   toInsertAssetPayload,
   type AssetPickerKindFilter,
   type InsertAssetPayload,
-} from "@/lib/canvas/asset-picker";
+} from "@/atlas-engine/ui/asset-picker";
 import {
   deriveCanvasNodePanelModel,
   toggleCanvasNodeSelection,
   toggleVisibleCanvasNodeSelection,
-} from "@/lib/canvas/canvas-side-panel-model";
-import { getNodeDefinition } from "@/lib/canvas/node-registry";
+} from "@/atlas-engine/ui/canvas-side-panel-model";
+import { getAtlasNodeDefinition as getNodeDefinition } from "@/atlas-engine/model/node-registry";
 import { cn } from "@/lib/utils";
 import { PromptDetailDialog } from "@/pages/prompts/components/prompt-detail-dialog";
 import { fetchSourcePrompts, type Prompt } from "@/services/api/prompts";
@@ -283,8 +283,8 @@ function NodeBrowser({
     setExporting(true);
     const hide = message.loading(t("canvas.sidePanel.exporting"), 0);
     try {
-      const { exportCanvasNodes } = await import("@/lib/canvas/canvas-export");
-      await exportCanvasNodes(
+      const { exportAtlasNodes } = await import("@/atlas-engine/workflows/project-export");
+      await exportAtlasNodes(
         chosen,
         t("canvas.sidePanel.exportName", { count: chosen.length }),
       );

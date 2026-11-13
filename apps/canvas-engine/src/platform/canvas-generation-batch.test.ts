@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runCanvasGenerationBatch } from "@/lib/canvas/canvas-generation-batch";
+import { runAtlasGenerationBatch } from "@/atlas-engine/workflows/generation-batch";
 
-describe("runCanvasGenerationBatch", () => {
+describe("Atlas generation batch", () => {
   it("runs independent outputs concurrently and retains partial successes", async () => {
     const started: number[] = [];
     const fail = new Error("provider failed");
     const onFailure = vi.fn();
-    const resultsPromise = runCanvasGenerationBatch(
+    const resultsPromise = runAtlasGenerationBatch(
       [1, 2, 3],
       async (item) => {
         started.push(item);
@@ -34,7 +34,7 @@ describe("runCanvasGenerationBatch", () => {
   it("classifies aborts separately and continues other outputs", async () => {
     const abort = new DOMException("Aborted", "AbortError");
     const onFailure = vi.fn();
-    const results = await runCanvasGenerationBatch(
+    const results = await runAtlasGenerationBatch(
       ["cancel", "error", "ok"],
       async (item) => {
         if (item === "cancel") throw abort;

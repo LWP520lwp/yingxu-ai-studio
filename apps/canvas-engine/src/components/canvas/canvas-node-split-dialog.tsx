@@ -23,12 +23,12 @@ import {
   splitEditorCounts,
   type SplitAxis,
   type SplitEditorSelection,
-} from "@/lib/canvas/canvas-split-editor";
-import type { ImageSplitParams } from "@/lib/canvas/canvas-image-data";
+} from "@/atlas-engine/workflows/image-splitting-editor";
+import type { AtlasImageSplit } from "@/atlas-engine/workflows/image-processing";
 import { useImageEditorViewport } from "@/components/canvas/use-image-editor-viewport";
 import { ImageEditorViewportControls } from "@/components/canvas/image-editor-viewport-controls";
 
-export type CanvasImageSplitParams = ImageSplitParams;
+export type CanvasImageSplitParams = AtlasImageSplit;
 
 const maxGridSize = 12;
 type ActiveLine = SplitEditorSelection;

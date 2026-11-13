@@ -1,51 +1,65 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createCanvasEventDispatch } from "@/lib/canvas/canvas-event-dispatch";
+import {
+  emitAtlasPluginEvent,
+  onAtlasPluginEvent,
+} from "@/atlas-engine/plugins/events";
 
-describe("canvas event dispatch", () => {
+let nextTopicId = 0;
+const topic = () => `atlas-event-test:${++nextTopicId}`;
+
+describe("Atlas plugin events", () => {
   it("takes a stable listener snapshot and skips listeners removed mid-dispatch", () => {
-    const bus = createCanvasEventDispatch(vi.fn());
+    const event = topic();
     const calls: string[] = [];
     let stopSecond: () => void = () => undefined;
     const first = () => {
       calls.push("first");
       stopSecond();
-      bus.on("change", () => calls.push("late"));
+      onAtlasPluginEvent(event, () => calls.push("late"));
     };
-    bus.on("change", first);
-    stopSecond = bus.on("change", () => calls.push("second"));
+    const stopFirst = onAtlasPluginEvent(event, first);
+    stopSecond = onAtlasPluginEvent(event, () => calls.push("second"));
 
-    bus.emit("change");
+    emitAtlasPluginEvent(event);
     expect(calls).toEqual(["first"]);
 
     calls.length = 0;
-    bus.emit("change");
+    emitAtlasPluginEvent(event);
     expect(calls).toEqual(["first", "late"]);
+    stopFirst();
   });
 
   it("isolates listener failures and continues dispatch", () => {
-    const report = vi.fn();
-    const bus = createCanvasEventDispatch(report);
+    const event = topic();
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
     const received = vi.fn();
-    bus.on("update", () => {
+    const stopFailing = onAtlasPluginEvent(event, () => {
       throw new Error("listener failed");
     });
-    bus.on("update", received);
+    const stopReceived = onAtlasPluginEvent(event, received);
 
-    bus.emit("update", { id: 4 });
+    emitAtlasPluginEvent(event, { id: 4 });
 
-    expect(report).toHaveBeenCalledWith("update", expect.any(Error));
+    expect(report).toHaveBeenCalledWith(
+      expect.stringContaining(event),
+      expect.any(Error),
+    );
     expect(received).toHaveBeenCalledWith({ id: 4 });
+    stopFailing();
+    stopReceived();
+    report.mockRestore();
   });
 
   it("makes unsubscribe idempotent and isolates events", () => {
-    const bus = createCanvasEventDispatch(vi.fn());
+    const firstEvent = topic();
+    const secondEvent = topic();
     const received = vi.fn();
-    const unsubscribe = bus.on("a", received);
+    const unsubscribe = onAtlasPluginEvent(firstEvent, received);
     unsubscribe();
     unsubscribe();
-    bus.emit("a");
-    bus.emit("b");
+    emitAtlasPluginEvent(firstEvent);
+    emitAtlasPluginEvent(secondEvent);
     expect(received).not.toHaveBeenCalled();
   });
 });

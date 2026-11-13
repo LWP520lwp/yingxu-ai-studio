@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  clampImageEditorZoom,
-  fitImageToEditorViewport,
-  imageEditorPanScroll,
-  imageEditorLayout,
-  normalizeImageEditorSize,
-  scrollForZoomAnchor,
-  zoomAnchorAtPoint,
-} from "@/lib/canvas/image-editor-viewport-geometry";
+  clampAtlasEditorZoom as clampImageEditorZoom,
+  fitAtlasImageToViewport as fitImageToEditorViewport,
+  atlasImageEditorPanScroll as imageEditorPanScroll,
+  atlasEditorLayout as imageEditorLayout,
+  normalizeAtlasEditorSize as normalizeImageEditorSize,
+  atlasScrollForZoomAnchor as scrollForZoomAnchor,
+  atlasZoomAnchorAtPoint as zoomAnchorAtPoint,
+} from "@/atlas-engine/surface/image-editing-geometry";
 
 describe("image editor viewport geometry", () => {
   it("fits valid images without upscaling and contains invalid dimensions", () => {

@@ -9,8 +9,8 @@ import {
   placeResourceMentionMenu,
   searchResourceMentions,
   splitResourceMentionText,
-} from "@/lib/canvas/resource-mentions";
-import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+} from "@/atlas-engine/agent/prompt-input";
+import type { CanvasResourceReference } from "@/atlas-engine/model/resource-references";
 
 const references: CanvasResourceReference[] = [
   {
@@ -91,7 +91,9 @@ describe("canvas resource mentions", () => {
   it("reuses the compiled highlighter across consecutive input updates", () => {
     const splitText = createResourceMentionTextSplitter(["@a", "@a+b"]);
 
-    expect(splitText("@a+b then @a").filter((part) => part.highlighted)).toEqual([
+    expect(
+      splitText("@a+b then @a").filter((part) => part.highlighted),
+    ).toEqual([
       { text: "@a+b", highlighted: true },
       { text: "@a", highlighted: true },
     ]);
@@ -130,9 +132,7 @@ describe("canvas resource mentions", () => {
       ]),
     ).toEqual({ value: "scene ", caret: 6 });
     expect(
-      deleteAdjacentResourceMention("text @tag-extra", 5, "forward", [
-        "@tag",
-      ]),
+      deleteAdjacentResourceMention("text @tag-extra", 5, "forward", ["@tag"]),
     ).toBeNull();
     expect(
       deleteAdjacentResourceMention("text@tag", 8, "backward", ["@tag"]),

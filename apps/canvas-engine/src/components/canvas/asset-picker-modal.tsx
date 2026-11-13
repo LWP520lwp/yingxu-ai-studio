@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useReducer, useSyncExternalStore } from "react";
 import { Empty, Input, Modal, Pagination } from "antd";
 import { Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
   ASSET_PICKER_PAGE_SIZE,
-  clampAssetPickerPage,
-  filterPickerAssets,
-  getAssetPickerPage,
   toInsertAssetPayload,
   type AssetPickerKindFilter,
   type InsertAssetPayload,
-} from "@/lib/canvas/asset-picker";
+} from "@/atlas-engine/ui/asset-picker";
+import {
+  createAssetPickerQuery,
+  deriveAssetPickerPage,
+  transitionAssetPickerQuery,
+} from "@/atlas-engine/ui/asset-picker-session";
 import {
   getImagePreviewRevision,
   subscribeImagePreviews,
@@ -109,27 +111,22 @@ function MyAssetsTab({
   const { t } = useTranslation();
   useSyncExternalStore(subscribeImagePreviews, getImagePreviewRevision);
   const assets = useAssetStore((state) => state.assets);
-  const [keyword, setKeyword] = useState("");
-  const [kindFilter, setKindFilter] = useState(defaultKind);
-  const [page, setPage] = useState(1);
-
-  const filtered = useMemo(
-    () => filterPickerAssets(assets, kindFilter, keyword),
-    [assets, keyword, kindFilter],
+  const [query, dispatch] = useReducer(
+    transitionAssetPickerQuery,
+    defaultKind,
+    createAssetPickerQuery,
   );
-  const currentPage = clampAssetPickerPage(page, filtered.length);
-  const visible = useMemo(
-    () => getAssetPickerPage(filtered, currentPage),
-    [filtered, currentPage],
+  const { matches, items, page } = useMemo(
+    () => deriveAssetPickerPage(assets, query),
+    [assets, query],
   );
 
   useEffect(() => {
-    setPage((value) => clampAssetPickerPage(value, filtered.length));
-  }, [filtered.length]);
+    dispatch({ type: "reconcile-results", resultCount: matches.length });
+  }, [matches.length]);
 
   useEffect(() => {
-    setKindFilter(defaultKind);
-    setPage(1);
+    dispatch({ type: "restore-kind", kind: defaultKind });
   }, [defaultKind]);
 
   const handleInsert = (asset: Asset) => {
@@ -145,12 +142,11 @@ function MyAssetsTab({
           prefix={<Search className="size-3.5 text-stone-400" />}
           placeholder={t("canvas.assetPicker.search")}
           aria-label={t("canvas.assetPicker.search")}
-          value={keyword}
+          value={query.text}
           allowClear
-          onChange={(e) => {
-            setPage(1);
-            setKeyword(e.target.value);
-          }}
+          onChange={(event) =>
+            dispatch({ type: "search", text: event.target.value })
+          }
         />
         <div
           className="flex w-full flex-wrap gap-1 rounded-md bg-stone-100 p-1 sm:w-auto dark:bg-stone-800"
@@ -161,12 +157,9 @@ function MyAssetsTab({
             <button
               key={option}
               type="button"
-              aria-pressed={kindFilter === option}
-              className={`min-h-8 flex-1 rounded px-2 text-xs transition sm:flex-none ${kindFilter === option ? "bg-white font-medium text-stone-900 shadow-sm dark:bg-stone-700 dark:text-white" : "text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-white"}`}
-              onClick={() => {
-                setPage(1);
-                setKindFilter(option);
-              }}
+              aria-pressed={query.kind === option}
+              className={`min-h-8 flex-1 rounded px-2 text-xs transition sm:flex-none ${query.kind === option ? "bg-white font-medium text-stone-900 shadow-sm dark:bg-stone-700 dark:text-white" : "text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-white"}`}
+              onClick={() => dispatch({ type: "filter-kind", kind: option })}
             >
               {option === "all" ? t("common.all") : t(`assets.kinds.${option}`)}
             </button>
@@ -174,9 +167,9 @@ function MyAssetsTab({
         </div>
       </div>
 
-      {visible.length ? (
+      {items.length ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {visible.map((asset) => (
+          {items.map((asset) => (
             <PickerCard
               key={asset.id}
               title={asset.title}
@@ -194,14 +187,16 @@ function MyAssetsTab({
         />
       )}
 
-      {filtered.length > ASSET_PICKER_PAGE_SIZE && (
+      {matches.length > ASSET_PICKER_PAGE_SIZE && (
         <div className="flex justify-center">
           <Pagination
             size="small"
-            current={currentPage}
+            current={page}
             pageSize={ASSET_PICKER_PAGE_SIZE}
-            total={filtered.length}
-            onChange={setPage}
+            total={matches.length}
+            onChange={(nextPage) =>
+              dispatch({ type: "change-page", page: nextPage })
+            }
             showSizeChanger={false}
           />
         </div>

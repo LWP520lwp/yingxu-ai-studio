@@ -5,7 +5,7 @@ import {
   measureCanvasPanelOverlay,
   sameCanvasPanelPlacement,
   type CanvasPanelOverlayPlacement,
-} from "@/lib/canvas/canvas-panel-overlay";
+} from "@/atlas-engine/ui/panel-overlay";
 
 type CanvasConfigPanelOverlayProps = {
   nodeId: string;

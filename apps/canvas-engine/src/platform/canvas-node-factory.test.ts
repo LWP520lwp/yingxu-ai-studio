@@ -9,7 +9,7 @@ import {
   imageMetadata,
   referenceUrl,
   videoMetadata,
-} from "@/lib/canvas/canvas-node-factory";
+} from "@/atlas-engine/model/node-factory";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { defaultConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";

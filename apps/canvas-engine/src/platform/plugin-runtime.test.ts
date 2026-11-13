@@ -2,12 +2,12 @@ import React from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  createPluginRuntime,
-  createPluginStyleInjector,
-  getPluginRuntime,
-  resolvePluginRuntimeVersion,
+  makeAtlasPluginRuntime as createPluginRuntime,
+  createPluginStyleWriter as createPluginStyleInjector,
+  getAtlasPluginRuntime as getPluginRuntime,
+  appVersionOrDevelopment as resolvePluginRuntimeVersion,
   type PluginStyleElement,
-} from "@/lib/canvas/plugin-runtime";
+} from "@/atlas-engine/plugins/runtime";
 
 function createStyleHost() {
   const elements: PluginStyleElement[] = [];

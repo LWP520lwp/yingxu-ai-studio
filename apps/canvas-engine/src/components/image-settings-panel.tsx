@@ -1,5 +1,5 @@
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
-import { ConfigProvider, InputNumber, Radio, Switch } from "antd";
+import { ConfigProvider, InputNumber, Switch } from "antd";
 import { ArrowLeftRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -104,20 +104,17 @@ export function ImageSettingsPanel({
         ) : null}
 
         <SettingBlock title={t("settingsPanels.image.quality")} theme={theme}>
-          <Radio.Group
+          <ImageChoiceGrid
+            label={t("settingsPanels.image.quality")}
             value={config.quality || "auto"}
-            optionType="button"
-            buttonStyle="solid"
-            className="grid w-full grid-cols-3"
-            aria-label={t("settingsPanels.image.quality")}
-            onChange={(event) => onConfigChange("quality", event.target.value)}
-          >
-            {qualityChoices.map((value) => (
-              <Radio.Button key={value} value={value} className="text-center">
-                {t(`settingsPanels.common.${value}`)}
-              </Radio.Button>
-            ))}
-          </Radio.Group>
+            columns={3}
+            theme={theme}
+            options={qualityChoices.map((value) => ({
+              value,
+              label: t(`settingsPanels.common.${value}`),
+            }))}
+            onSelect={(value) => onConfigChange("quality", value)}
+          />
         </SettingBlock>
 
         <SettingBlock
@@ -164,56 +161,47 @@ export function ImageSettingsPanel({
           title={t("settingsPanels.image.resolution")}
           theme={theme}
         >
-          <Radio.Group
+          <ImageChoiceGrid
+            label={t("settingsPanels.image.resolution")}
             value={scale}
-            optionType="button"
-            buttonStyle="solid"
-            className="grid w-full grid-cols-4"
-            aria-label={t("settingsPanels.image.resolution")}
-            onChange={(event) =>
-              onConfigChange("size", selectImageScale(size, event.target.value))
+            columns={4}
+            theme={theme}
+            options={mediaScaleOptions.map((value) => ({
+              value,
+              label: value === "auto" ? t("settingsPanels.common.auto") : value,
+            }))}
+            onSelect={(value) =>
+              onConfigChange("size", selectImageScale(size, value))
             }
-          >
-            {mediaScaleOptions.map((value) => (
-              <Radio.Button key={value} value={value} className="text-center">
-                {value === "auto" ? t("settingsPanels.common.auto") : value}
-              </Radio.Button>
-            ))}
-          </Radio.Group>
+          />
         </SettingBlock>
 
         <SettingBlock
           title={t("settingsPanels.image.aspectRatio")}
           theme={theme}
         >
-          <Radio.Group
+          <ImageChoiceGrid
+            label={t("settingsPanels.image.aspectRatio")}
             value={ratio}
-            optionType="button"
-            buttonStyle="solid"
-            className="grid w-full grid-cols-4"
-            aria-label={t("settingsPanels.image.aspectRatio")}
-            onChange={(event) =>
-              onConfigChange("size", selectImageRatio(size, event.target.value))
+            columns={4}
+            optionHeight={68}
+            theme={theme}
+            options={mediaRatioOptions.map((option) => ({
+              ...option,
+              label: option.value === "auto"
+                ? t("settingsPanels.common.auto")
+                : option.value,
+            }))}
+            renderOption={(option) => (
+              <span className="flex h-full flex-col items-center justify-center gap-1">
+                <RatioMark width={option.width ?? 0} height={option.height ?? 0} />
+                <span>{option.label}</span>
+              </span>
+            )}
+            onSelect={(value) =>
+              onConfigChange("size", selectImageRatio(size, value))
             }
-          >
-            {mediaRatioOptions.map((option) => (
-              <Radio.Button
-                key={option.value}
-                value={option.value}
-                title={option.value}
-                className="!h-[68px] !px-1 text-center"
-              >
-                <span className="flex h-full flex-col items-center justify-center gap-1">
-                  <RatioMark width={option.width} height={option.height} />
-                  <span>
-                    {option.value === "auto"
-                      ? t("settingsPanels.common.auto")
-                      : option.value}
-                  </span>
-                </span>
-              </Radio.Button>
-            ))}
-          </Radio.Group>
+          />
         </SettingBlock>
 
         <div className="flex items-center justify-between gap-3">
@@ -346,6 +334,65 @@ function SettingBlock({
       </div>
       {children}
     </section>
+  );
+}
+
+type ImageChoiceOption = {
+  value: string;
+  label: string;
+  width?: number;
+  height?: number;
+};
+
+function ImageChoiceGrid({
+  label,
+  value,
+  columns,
+  theme,
+  options,
+  optionHeight = 36,
+  renderOption,
+  onSelect,
+}: {
+  label: string;
+  value: string;
+  columns: number;
+  theme: CanvasTheme;
+  options: readonly ImageChoiceOption[];
+  optionHeight?: number;
+  renderOption?: (option: ImageChoiceOption) => ReactNode;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="grid w-full gap-1"
+      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={selected}
+            title={option.value}
+            className="min-w-0 rounded-md border px-1.5 text-center text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{
+              minHeight: optionHeight,
+              background: selected ? theme.node.panel : "transparent",
+              borderColor: selected ? theme.node.activeStroke : theme.node.stroke,
+              color: theme.node.text,
+            }}
+            onMouseDown={stopPanelMouseDown}
+            onClick={() => onSelect(option.value)}
+          >
+            {renderOption ? renderOption(option) : option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

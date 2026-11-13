@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createPluginOperationGate } from "@/lib/canvas/plugin-operation-gate";
+import { createPluginOperationClock } from "@/atlas-engine/plugins/operation-gate";
 
 describe("plugin operation gate", () => {
   it("lets the latest request for a plugin win even when it resolves first", () => {
-    const gate = createPluginOperationGate();
+    const gate = createPluginOperationClock();
     const oldInstall = gate.begin();
     const newInstall = gate.begin();
 
@@ -14,7 +14,7 @@ describe("plugin operation gate", () => {
   });
 
   it("cancels an in-flight install after disable or uninstall", () => {
-    const gate = createPluginOperationGate();
+    const gate = createPluginOperationClock();
     const install = gate.begin();
     gate.beginFor("studio:node");
 
@@ -22,7 +22,7 @@ describe("plugin operation gate", () => {
   });
 
   it("keeps operations for different plugins independent", () => {
-    const gate = createPluginOperationGate();
+    const gate = createPluginOperationClock();
     const first = gate.begin();
     gate.beginFor("other:node");
 

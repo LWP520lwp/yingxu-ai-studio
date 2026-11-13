@@ -9,7 +9,7 @@ import {
   relatedCanvasElements,
   selectVisibleConnections,
   selectVisibleNodes,
-} from "@/lib/canvas/canvas-view-model";
+} from "@/atlas-engine/surface/spatial-index";
 import {
   CanvasNodeType,
   type CanvasConnection,

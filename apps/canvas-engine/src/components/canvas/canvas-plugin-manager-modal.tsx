@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ReactNode,
@@ -33,20 +34,28 @@ import {
   isPluginSourceUrl,
   officialVersionLabel,
   pluginErrorMessage,
-} from "@/lib/canvas/plugin-manager-model";
+} from "@/atlas-engine/plugins/manager-model";
 import {
   installPluginFromUrl,
   setPluginEnabled,
   uninstallPlugin,
   updatePlugin,
-} from "@/lib/canvas/plugin-loader";
+} from "@/atlas-engine/plugins/loader";
 import {
-  fetchOfficialPlugins,
-  hasUpgrade,
+  fetchOfficialPluginCatalog as fetchOfficialPlugins,
+  hasPluginUpgrade as hasUpgrade,
   type OfficialPluginEntry,
-} from "@/lib/canvas/plugin-registry";
+} from "@/atlas-engine/plugins/official-registry";
+import {
+  initialPluginCatalogSession,
+  reducePluginCatalogSession,
+} from "@/atlas-engine/plugins/catalog-session";
+import { createPluginMutationSession } from "@/atlas-engine/plugins/mutation-session";
 import { useThemeStore } from "@/stores/use-theme-store";
-import { usePluginStore, type InstalledPlugin } from "@/stores/canvas/use-plugin-store";
+import {
+  usePluginStore,
+  type InstalledPlugin,
+} from "@/stores/canvas/use-plugin-store";
 
 type Props = { open: boolean; onClose: () => void };
 type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
@@ -61,6 +70,15 @@ export function CanvasPluginManagerModal({ open, onClose }: Props) {
   const [sourceUrl, setSourceUrl] = useState("");
   const [busyPlugin, setBusyPlugin] = useState<string | null>(null);
   const [importBusy, setImportBusy] = useState(false);
+  const [mutations] = useState(createPluginMutationSession);
+  const visible = useRef(open);
+  visible.current = open;
+  useEffect(() => {
+    visible.current = open;
+    return () => {
+      visible.current = false;
+    };
+  }, [open]);
 
   const perform = useCallback(
     async (
@@ -68,69 +86,103 @@ export function CanvasPluginManagerModal({ open, onClose }: Props) {
       work: () => Promise<unknown> | unknown,
       successMessage: string,
     ) => {
+      const ticket = mutations.begin();
+      if (!ticket) return;
       setBusyPlugin(plugin.id);
       try {
         await work();
-        message.success(successMessage);
+        if (visible.current) message.success(successMessage);
       } catch (error) {
-        message.error(pluginErrorMessage(error));
+        if (visible.current) message.error(pluginErrorMessage(error));
       } finally {
-        setBusyPlugin(null);
+        if (mutations.finish(ticket)) setBusyPlugin(null);
       }
     },
-    [message],
+    [message, mutations],
   );
 
   const installOfficial = useCallback(
     async (entry: OfficialPluginEntry) => {
+      const ticket = mutations.begin();
+      if (!ticket) return;
       setBusyPlugin(entry.id);
       try {
-        const installed = await installPluginFromUrl(entry.url, { official: true });
-        message.success(t("canvas.plugins.installed", { name: installed.name }));
+        const installed = await installPluginFromUrl(entry.url, {
+          official: true,
+        });
+        if (visible.current)
+          message.success(
+            t("canvas.plugins.installed", { name: installed.name }),
+          );
       } catch (error) {
-        message.error(t("canvas.plugins.installFailed", { error: pluginErrorMessage(error) }));
+        if (visible.current)
+          message.error(
+            t("canvas.plugins.installFailed", {
+              error: pluginErrorMessage(error),
+            }),
+          );
       } finally {
-        setBusyPlugin(null);
+        if (mutations.finish(ticket)) setBusyPlugin(null);
       }
     },
-    [message, t],
+    [message, mutations, t],
   );
 
   const importFromUrl = useCallback(async () => {
     const url = sourceUrl.trim();
     if (!isPluginSourceUrl(url) || importBusy) return;
+    const ticket = mutations.begin();
+    if (!ticket) return;
     setImportBusy(true);
     try {
       const installed = await installPluginFromUrl(url);
-      message.success(t("canvas.plugins.installedPlugin", { name: installed.name }));
-      setSourceUrl("");
+      if (visible.current)
+        message.success(
+          t("canvas.plugins.installedPlugin", { name: installed.name }),
+        );
+      setSourceUrl((current) => (current.trim() === url ? "" : current));
     } catch (error) {
-      message.error(t("canvas.plugins.installFailed", { error: pluginErrorMessage(error) }));
+      if (visible.current)
+        message.error(
+          t("canvas.plugins.installFailed", {
+            error: pluginErrorMessage(error),
+          }),
+        );
     } finally {
-      setImportBusy(false);
+      if (mutations.finish(ticket)) setImportBusy(false);
     }
-  }, [importBusy, message, sourceUrl, t]);
+  }, [importBusy, message, mutations, sourceUrl, t]);
 
-  const renderInstalledControls = (plugin: InstalledPlugin, canUpgrade = false) => (
+  const renderInstalledControls = (
+    plugin: InstalledPlugin,
+    canUpgrade = false,
+  ) => (
     <PluginControls
       plugin={plugin}
       canUpgrade={canUpgrade}
       busyPlugin={busyPlugin}
-      onToggle={(enabled) => void perform(
-        plugin,
-        () => setPluginEnabled(plugin, enabled),
-        t(enabled ? "canvas.plugins.enabled" : "canvas.plugins.disabled"),
-      )}
-      onUpdate={() => void perform(
-        plugin,
-        () => updatePlugin(plugin),
-        t("canvas.plugins.updated"),
-      )}
-      onRemove={() => perform(
-        plugin,
-        () => uninstallPlugin(plugin.id),
-        t("canvas.plugins.uninstall"),
-      )}
+      lockedByImport={importBusy}
+      onToggle={(enabled) =>
+        void perform(
+          plugin,
+          () => setPluginEnabled(plugin, enabled),
+          t(enabled ? "canvas.plugins.enabled" : "canvas.plugins.disabled"),
+        )
+      }
+      onUpdate={() =>
+        void perform(
+          plugin,
+          () => updatePlugin(plugin),
+          t("canvas.plugins.updated"),
+        )
+      }
+      onRemove={() =>
+        perform(
+          plugin,
+          () => uninstallPlugin(plugin.id),
+          t("canvas.plugins.uninstall"),
+        )
+      }
       t={t}
     />
   );
@@ -154,6 +206,7 @@ export function CanvasPluginManagerModal({ open, onClose }: Props) {
       loaded={officialCatalog.loaded}
       error={officialCatalog.error}
       busyPlugin={busyPlugin}
+      lockedByImport={importBusy}
       theme={theme}
       onRefresh={officialCatalog.refresh}
       onInstall={(entry) => void installOfficial(entry)}
@@ -191,7 +244,9 @@ export function CanvasPluginManagerModal({ open, onClose }: Props) {
           type="primary"
           icon={<ExternalLink className="size-4" aria-hidden="true" />}
           loading={importBusy}
-          disabled={!isPluginSourceUrl(sourceUrl) || importBusy}
+          disabled={
+            !isPluginSourceUrl(sourceUrl) || importBusy || busyPlugin !== null
+          }
         >
           {t("canvas.plugins.install")}
         </Button>
@@ -205,11 +260,25 @@ export function CanvasPluginManagerModal({ open, onClose }: Props) {
   );
 
   const tabs = [
-    { key: "official", label: t("canvas.plugins.official"), children: officialPanel },
+    {
+      key: "official",
+      label: t("canvas.plugins.official"),
+      children: officialPanel,
+    },
     ...(groups.local.length
-      ? [{ key: "local", label: t("canvas.plugins.local"), children: localPanel }]
+      ? [
+          {
+            key: "local",
+            label: t("canvas.plugins.local"),
+            children: localPanel,
+          },
+        ]
       : []),
-    { key: "third", label: t("canvas.plugins.thirdParty"), children: externalPanel },
+    {
+      key: "third",
+      label: t("canvas.plugins.thirdParty"),
+      children: externalPanel,
+    },
   ];
 
   return (
@@ -232,7 +301,10 @@ export function CanvasPluginManagerModal({ open, onClose }: Props) {
           }}
           role="note"
         >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
+          <AlertTriangle
+            className="mt-0.5 size-4 shrink-0 text-amber-500"
+            aria-hidden="true"
+          />
           <span>{t("canvas.plugins.warning")}</span>
         </aside>
         <Tabs defaultActiveKey="official" items={tabs} destroyOnHidden />
@@ -242,49 +314,65 @@ export function CanvasPluginManagerModal({ open, onClose }: Props) {
 }
 
 function useOfficialCatalog(open: boolean) {
-  const [entries, setEntries] = useState<OfficialPluginEntry[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const revision = useRef(0);
+  const [session, dispatch] = useReducer(
+    reducePluginCatalogSession,
+    initialPluginCatalogSession,
+  );
   const activeRequest = useRef<AbortController | null>(null);
+  const revision = useRef(0);
 
   const refresh = useCallback(async () => {
     activeRequest.current?.abort();
     const controller = new AbortController();
     activeRequest.current = controller;
     const requestRevision = ++revision.current;
-    setLoading(true);
-    setError(null);
+    dispatch({ type: "refresh", revision: requestRevision });
     try {
-      const nextEntries = await fetchOfficialPlugins(undefined, controller.signal);
-      if (controller.signal.aborted || requestRevision !== revision.current) return;
-      setEntries(nextEntries);
-      setLoaded(true);
+      const nextEntries = await fetchOfficialPlugins(
+        undefined,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      dispatch({
+        type: "loaded",
+        revision: requestRevision,
+        entries: nextEntries,
+      });
     } catch (reason) {
-      if (controller.signal.aborted || requestRevision !== revision.current) return;
-      setError(pluginErrorMessage(reason));
+      if (controller.signal.aborted) return;
+      dispatch({
+        type: "failed",
+        revision: requestRevision,
+        error: pluginErrorMessage(reason),
+      });
     } finally {
       if (activeRequest.current === controller) {
         activeRequest.current = null;
-        setLoading(false);
       }
     }
   }, []);
 
   useEffect(() => {
-    if (open && !loaded && !loading && !error) void refresh();
-  }, [error, loaded, loading, open, refresh]);
+    if (open && session.phase === "idle") void refresh();
+  }, [open, refresh, session.phase]);
 
   useEffect(() => {
     if (open) return;
-    revision.current += 1;
     activeRequest.current?.abort();
     activeRequest.current = null;
-    setLoading(false);
+    revision.current += 1;
+    dispatch({ type: "closed" });
   }, [open]);
 
-  return { entries, loading, loaded, error, refresh };
+  useEffect(() => () => activeRequest.current?.abort(), []);
+
+  return {
+    entries: session.entries,
+    loading: session.phase === "loading",
+    loaded: session.phase === "ready",
+    error: session.error,
+    refresh,
+  };
 }
 
 function OfficialCatalogPanel({
@@ -293,6 +381,7 @@ function OfficialCatalogPanel({
   loading,
   error,
   busyPlugin,
+  lockedByImport,
   theme,
   onRefresh,
   onInstall,
@@ -305,10 +394,14 @@ function OfficialCatalogPanel({
   loaded: boolean;
   error: string | null;
   busyPlugin: string | null;
+  lockedByImport: boolean;
   theme: CanvasTheme;
   onRefresh: () => void;
   onInstall: (entry: OfficialPluginEntry) => void;
-  renderInstalledControls: (plugin: InstalledPlugin, canUpgrade?: boolean) => ReactNode;
+  renderInstalledControls: (
+    plugin: InstalledPlugin,
+    canUpgrade?: boolean,
+  ) => ReactNode;
   t: ReturnType<typeof useTranslation>["t"];
 }) {
   return (
@@ -320,7 +413,12 @@ function OfficialCatalogPanel({
         <Button
           type="text"
           size="small"
-          icon={<RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} aria-hidden="true" />}
+          icon={
+            <RefreshCw
+              className={`size-4 ${loading ? "animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+          }
           loading={loading}
           disabled={loading}
           onClick={onRefresh}
@@ -336,7 +434,9 @@ function OfficialCatalogPanel({
           role="alert"
         >
           <span>{t("canvas.plugins.loadFailed", { error })}</span>
-          <Button size="small" onClick={onRefresh}>{t("canvas.plugins.refresh")}</Button>
+          <Button size="small" onClick={onRefresh}>
+            {t("canvas.plugins.refresh")}
+          </Button>
         </div>
       ) : loading && entries.length === 0 ? (
         <div className="grid min-h-40 place-items-center">
@@ -345,10 +445,15 @@ function OfficialCatalogPanel({
       ) : entries.length === 0 ? (
         <Empty description={t("canvas.plugins.noOfficial")} />
       ) : (
-        <div className="thin-scrollbar max-h-[52vh] space-y-2 overflow-auto pr-1" role="list">
+        <div
+          className="thin-scrollbar max-h-[52vh] space-y-2 overflow-auto pr-1"
+          role="list"
+        >
           {entries.map((entry) => {
             const installed = installedById.get(entry.id);
-            const canUpgrade = Boolean(installed && hasUpgrade(installed.version, entry.version));
+            const canUpgrade = Boolean(
+              installed && hasUpgrade(installed.version, entry.version),
+            );
             return (
               <PluginEntry
                 key={entry.id}
@@ -357,20 +462,25 @@ function OfficialCatalogPanel({
                 description={entry.description}
                 icon={entry.icon}
                 theme={theme}
-                controls={installed ? (
-                  renderInstalledControls(installed, canUpgrade)
-                ) : (
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<Download className="size-4" aria-hidden="true" />}
-                    loading={busyPlugin === entry.id}
-                    disabled={busyPlugin !== null && busyPlugin !== entry.id}
-                    onClick={() => onInstall(entry)}
-                  >
-                    {t("canvas.plugins.install")}
-                  </Button>
-                )}
+                controls={
+                  installed ? (
+                    renderInstalledControls(installed, canUpgrade)
+                  ) : (
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<Download className="size-4" aria-hidden="true" />}
+                      loading={busyPlugin === entry.id}
+                      disabled={
+                        lockedByImport ||
+                        (busyPlugin !== null && busyPlugin !== entry.id)
+                      }
+                      onClick={() => onInstall(entry)}
+                    >
+                      {t("canvas.plugins.install")}
+                    </Button>
+                  )
+                }
               />
             );
           })}
@@ -391,7 +501,10 @@ function InstalledPluginList({
 }) {
   if (plugins.length === 0) return <Empty description={emptyMessage} />;
   return (
-    <div className="thin-scrollbar max-h-[52vh] space-y-2 overflow-auto pr-1" role="list">
+    <div
+      className="thin-scrollbar max-h-[52vh] space-y-2 overflow-auto pr-1"
+      role="list"
+    >
       {plugins.map(render)}
     </div>
   );
@@ -401,6 +514,7 @@ function PluginControls({
   plugin,
   canUpgrade,
   busyPlugin,
+  lockedByImport,
   onToggle,
   onUpdate,
   onRemove,
@@ -409,20 +523,27 @@ function PluginControls({
   plugin: InstalledPlugin;
   canUpgrade: boolean;
   busyPlugin: string | null;
+  lockedByImport: boolean;
   onToggle: (enabled: boolean) => void;
   onUpdate: () => void;
   onRemove: () => Promise<unknown>;
   t: ReturnType<typeof useTranslation>["t"];
 }) {
-  const locked = busyPlugin !== null && busyPlugin !== plugin.id;
+  const locked =
+    lockedByImport || (busyPlugin !== null && busyPlugin !== plugin.id);
   return (
-    <div className="flex shrink-0 items-center gap-1" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="flex shrink-0 items-center gap-1"
+      onClick={(event) => event.stopPropagation()}
+    >
       <Switch
         size="small"
         checked={plugin.enabled}
         loading={busyPlugin === plugin.id}
         disabled={locked}
-        aria-label={t(plugin.enabled ? "canvas.plugins.disabled" : "canvas.plugins.enabled")}
+        aria-label={t(
+          plugin.enabled ? "canvas.plugins.disabled" : "canvas.plugins.enabled",
+        )}
         onChange={onToggle}
       />
       {!plugin.local ? (
@@ -433,8 +554,16 @@ function PluginControls({
             icon={<RefreshCw className="size-4" aria-hidden="true" />}
             loading={busyPlugin === plugin.id}
             disabled={locked}
-            title={t(canUpgrade ? "canvas.plugins.upgradeAvailable" : "canvas.plugins.updateFromSource")}
-            aria-label={t(canUpgrade ? "canvas.plugins.upgradeAvailable" : "canvas.plugins.updateFromSource")}
+            title={t(
+              canUpgrade
+                ? "canvas.plugins.upgradeAvailable"
+                : "canvas.plugins.updateFromSource",
+            )}
+            aria-label={t(
+              canUpgrade
+                ? "canvas.plugins.upgradeAvailable"
+                : "canvas.plugins.updateFromSource",
+            )}
             onClick={onUpdate}
           />
           <Popconfirm
@@ -450,7 +579,7 @@ function PluginControls({
               icon={<Trash2 className="size-4" aria-hidden="true" />}
               title={t("canvas.plugins.uninstall")}
               aria-label={t("canvas.plugins.uninstall")}
-              disabled={busyPlugin !== null}
+              disabled={lockedByImport || busyPlugin !== null}
             />
           </Popconfirm>
         </>
@@ -487,17 +616,27 @@ function PluginEntry({
         <PluginMark icon={icon} />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2 text-sm font-medium" style={{ color: theme.node.text }}>
+        <div
+          className="flex min-w-0 items-center gap-2 text-sm font-medium"
+          style={{ color: theme.node.text }}
+        >
           <span className="truncate">{name}</span>
           <span
             className="shrink-0 rounded px-1.5 py-0.5 text-[10px]"
-            style={{ background: theme.toolbar.activeBg, color: theme.node.muted }}
+            style={{
+              background: theme.toolbar.activeBg,
+              color: theme.node.muted,
+            }}
           >
             v{version}
           </span>
         </div>
         {description ? (
-          <p className="m-0 mt-0.5 truncate text-xs" style={{ color: theme.node.muted }} title={description}>
+          <p
+            className="m-0 mt-0.5 truncate text-xs"
+            style={{ color: theme.node.muted }}
+            title={description}
+          >
             {description}
           </p>
         ) : null}
@@ -510,7 +649,14 @@ function PluginEntry({
 function PluginMark({ icon }: { icon?: string }) {
   if (!icon) return <Puzzle className="size-4" aria-hidden="true" />;
   if (/^(https?:\/\/|data:image\/)/i.test(icon)) {
-    return <img src={icon} alt="" className="size-full object-cover" loading="lazy" />;
+    return (
+      <img
+        src={icon}
+        alt=""
+        className="size-full object-cover"
+        loading="lazy"
+      />
+    );
   }
   return <span aria-hidden="true">{icon}</span>;
 }

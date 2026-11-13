@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  resolveVideoFrameTime,
-  VIDEO_FRAME_EVENT_TIMEOUT_MS,
-  waitForVideoEvent,
-} from "@/lib/canvas/canvas-video-frame";
+  resolveAtlasVideoFrameTime as resolveVideoFrameTime,
+  ATLAS_VIDEO_FRAME_EVENT_TIMEOUT_MS as VIDEO_FRAME_EVENT_TIMEOUT_MS,
+  waitForAtlasVideoEvent as waitForVideoEvent,
+} from "@/atlas-engine/workflows/video-frame";
 
 describe("video frame time resolution", () => {
   it("chooses the start, last decodable frame, and current frame", () => {

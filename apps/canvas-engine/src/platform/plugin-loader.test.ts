@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   activatePlugin,
-  createPluginLoader,
+  createAtlasPluginLoader,
   deactivatePlugin,
   replaceActivePlugin,
-} from "@/lib/canvas/plugin-loader";
+} from "@/atlas-engine/plugins/loader";
 import type { CanvasPlugin } from "@/types/canvas-plugin";
 import type { InstalledPlugin } from "@/stores/canvas/use-plugin-store";
 
@@ -15,14 +15,14 @@ const { registerNodeDefinitions, unregisterPluginNodes, injectCSS } =
     unregisterPluginNodes: vi.fn(),
     injectCSS: vi.fn(() => vi.fn()),
   }));
-const testLoaders: Array<ReturnType<typeof createPluginLoader>> = [];
+const testLoaders: Array<ReturnType<typeof createAtlasPluginLoader>> = [];
 
-vi.mock("@/lib/canvas/node-registry", () => ({
-  registerNodeDefinitions,
-  unregisterPluginNodes,
+vi.mock("@/atlas-engine/model/node-registry", () => ({
+  registerAtlasNodeDefinitions: registerNodeDefinitions,
+  unregisterAtlasPluginNodes: unregisterPluginNodes,
 }));
-vi.mock("@/lib/canvas/plugin-runtime", () => ({
-  getPluginRuntime: () => ({ injectCSS }),
+vi.mock("@/atlas-engine/plugins/runtime", () => ({
+  getAtlasPluginRuntime: () => ({ injectCSS }),
 }));
 vi.mock("@/stores/canvas/use-plugin-store", () => ({
   usePluginStore: { getState: () => ({}) },
@@ -218,7 +218,10 @@ function loaderFixture(initial: InstalledPlugin[] = []) {
     getOrigin: () => "https://studio.test",
     getDevSources: vi.fn<() => string | undefined>(() => undefined),
   };
-  const loader = createPluginLoader(dependencies);
+  const loader = createAtlasPluginLoader({
+    ...dependencies,
+    getDevelopmentSources: dependencies.getDevSources,
+  });
   testLoaders.push(loader);
   return { loader, dependencies, definitions, store };
 }

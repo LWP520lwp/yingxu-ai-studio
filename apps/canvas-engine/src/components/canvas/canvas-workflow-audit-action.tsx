@@ -8,7 +8,7 @@ import {
   repairCanvasConnections,
   summarizeCanvasWorkflow,
   type CanvasWorkflowIssue,
-} from "@/lib/canvas/canvas-workflow-audit";
+} from "@/atlas-engine/workflows/workflow-audit";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";

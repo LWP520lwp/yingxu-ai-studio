@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { positionAudioSettingsPopover } from "@/lib/canvas/audio-settings-popover";
+import { positionAudioSettingsPopover } from "@/atlas-engine/ui/audio-settings-popover";
 
 describe("audio settings popover placement", () => {
   it("aligns to the requested side and clamps horizontally", () => {

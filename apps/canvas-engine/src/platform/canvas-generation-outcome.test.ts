@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { summarizeCanvasGenerationBatch } from "@/lib/canvas/canvas-generation-outcome";
+import { summarizeAtlasGenerationBatch as summarizeCanvasGenerationBatch } from "@/atlas-engine/workflows/generation-batch";
 
 describe("summarizeCanvasGenerationBatch", () => {
   it("distinguishes full success, partial success, and full failure", () => {

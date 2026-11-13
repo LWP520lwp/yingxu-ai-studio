@@ -19,7 +19,7 @@ import i18n from "@/i18n";
 import type {
   ImageNodeActionToolId,
   ImageQuickToolId,
-} from "@/lib/canvas/image-quick-tools";
+} from "@/atlas-engine/ui/image-quick-tools";
 import type { CanvasNodeData } from "@/types/canvas";
 
 export {
@@ -31,7 +31,7 @@ export {
   type ImageNodeActionToolId,
   type ImageQuickToolId,
   type ImageQuickToolsConfig,
-} from "@/lib/canvas/image-quick-tools";
+} from "@/atlas-engine/ui/image-quick-tools";
 
 export type ImageToolHandlers = {
   onUpload: (node: CanvasNodeData) => void;

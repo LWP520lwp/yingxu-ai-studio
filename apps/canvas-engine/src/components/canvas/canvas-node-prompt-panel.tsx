@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { Maximize2 } from "lucide-react";
 import { Button, Modal, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
@@ -30,10 +30,24 @@ import {
   type CanvasNodeData,
   type CanvasNodeMetadata,
 } from "@/types/canvas";
-import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import type { CanvasResourceReference } from "@/atlas-engine/model/resource-references";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
 
 export type CanvasNodeGenerationMode = CanvasGenerationMode;
+
+type PromptDraft = { nodeId: string; value: string };
+type PromptDraftEvent =
+  | { type: "edit"; value: string }
+  | { type: "select-node"; nodeId: string; savedValue: string };
+
+export function reduceCanvasPromptDraft(
+  draft: PromptDraft,
+  event: PromptDraftEvent,
+): PromptDraft {
+  if (event.type === "edit") return { ...draft, value: event.value };
+  if (draft.nodeId === event.nodeId) return draft;
+  return { nodeId: event.nodeId, value: event.savedValue };
+}
 
 type CanvasNodePromptPanelProps = {
   node: CanvasNodeData;
@@ -190,18 +204,22 @@ export function CanvasNodePromptPanel({
 }
 
 function usePromptDraft(node: CanvasNodeData) {
-  const initialValue =
+  const savedValue =
     node.metadata?.composerContent ?? node.metadata?.prompt ?? "";
-  const [prompt, setPrompt] = useState(initialValue);
+  const [draft, dispatch] = useReducer(reduceCanvasPromptDraft, {
+    nodeId: node.id,
+    value: savedValue,
+  });
 
   useEffect(() => {
-    setPrompt(node.metadata?.composerContent ?? node.metadata?.prompt ?? "");
+    dispatch({ type: "select-node", nodeId: node.id, savedValue });
     // A generation result can update prompt metadata without changing the draft.
     // Only switching nodes should hydrate this editor from the saved prompt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id]);
 
-  return [prompt, setPrompt] as const;
+  const setPrompt = (value: string) => dispatch({ type: "edit", value });
+  return [draft.value, setPrompt] as const;
 }
 
 type PromptSurfaceProps = {
@@ -385,7 +403,15 @@ function GenerationButton({
   onStop: () => void;
   onGenerate: () => void;
 }) {
-  return <GenerationControl running={isRunning} ready={hasPrompt} variant="composer" run={onGenerate} stop={onStop} />;
+  return (
+    <GenerationControl
+      running={isRunning}
+      ready={hasPrompt}
+      variant="composer"
+      run={onGenerate}
+      stop={onStop}
+    />
+  );
 }
 
 type ExpandedPromptEditorProps = Omit<

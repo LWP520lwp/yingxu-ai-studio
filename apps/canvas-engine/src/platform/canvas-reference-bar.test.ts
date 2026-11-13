@@ -5,7 +5,7 @@ import {
   createReferenceItems,
   expandReferenceSources,
   referenceSourcesToDisconnect,
-} from "@/lib/canvas/canvas-reference-bar";
+} from "@/atlas-engine/ui/canvas-reference-bar";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 function node(

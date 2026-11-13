@@ -5,19 +5,17 @@ import { useTranslation } from "react-i18next";
 
 import { useImageEditorSource } from "./image-editor-surface";
 import {
-  DEFAULT_IMAGE_UPSCALE_PARAMS,
-  IMAGE_UPSCALE_ALGORITHMS,
-  IMAGE_UPSCALE_TARGETS,
-  deriveImageUpscaleState,
-  initialUpscaleTarget,
-  isImageUpscaleAlgorithm,
-  isUpscaleTargetReached,
-} from "@/lib/canvas/canvas-image-upscale";
-import {
-  MAX_UPSCALE_LONG_EDGE,
-  type ImageUpscaleAlgorithm,
-  type ImageUpscaleParams,
-} from "@/lib/canvas/canvas-image-data";
+  ATLAS_DEFAULT_UPSCALE_OPTIONS as DEFAULT_IMAGE_UPSCALE_PARAMS,
+  ATLAS_UPSCALE_ALGORITHMS as IMAGE_UPSCALE_ALGORITHMS,
+  ATLAS_UPSCALE_TARGETS as IMAGE_UPSCALE_TARGETS,
+  deriveAtlasUpscaleState as deriveImageUpscaleState,
+  initialAtlasUpscaleTarget as initialUpscaleTarget,
+  isAtlasUpscaleAlgorithm as isImageUpscaleAlgorithm,
+  isAtlasUpscaleTargetReached as isUpscaleTargetReached,
+  ATLAS_MAX_UPSCALE_EDGE as MAX_UPSCALE_LONG_EDGE,
+  type AtlasUpscaleAlgorithm as ImageUpscaleAlgorithm,
+  type AtlasUpscaleOptions as ImageUpscaleParams,
+} from "@/atlas-engine/workflows/image-processing";
 
 export type CanvasImageUpscaleParams = ImageUpscaleParams;
 

@@ -11,7 +11,7 @@ vi.mock("@/services/file-storage", () => ({ getMediaBlob: async (key: string) =>
     return new Blob([key], { type: "video/quicktime" });
 } }));
 
-import { exportCanvasNodes, exportCanvasProjects } from "@/lib/canvas/canvas-export";
+import { exportAtlasNodes, exportAtlasProjects } from "@/atlas-engine/workflows/project-export";
 
 const project: CanvasProject = {
     id: "../project:one", title: "备份", createdAt: "2026-11-11", updatedAt: "2026-11-11",
@@ -27,7 +27,7 @@ afterEach(() => { downloads.saveAs.mockReset(); vi.unstubAllGlobals(); });
 
 describe("canvas archive exporter", () => {
     it("writes the owned versioned manifest and safe asset paths", async () => {
-        await exportCanvasProjects([project], "备份");
+        await exportAtlasProjects([project], "备份");
         const [archive, fileName] = downloads.saveAs.mock.calls[0] as [Blob, string];
         const files = await readZip(archive);
         const manifest = JSON.parse(await files.get("projects.json")!.text());
@@ -38,7 +38,7 @@ describe("canvas archive exporter", () => {
     });
 
     it("assigns duplicate node filenames in source order despite storage timing", async () => {
-        await exportCanvasNodes([videoNode("first", "video:first"), videoNode("second", "video:second")]);
+        await exportAtlasNodes([videoNode("first", "video:first"), videoNode("second", "video:second")]);
         const [archive] = downloads.saveAs.mock.calls[0] as [Blob, string];
         const files = await readZip(archive);
         expect([...files.keys()].sort()).toEqual(["同名片段-1.mov", "同名片段.mov"]);

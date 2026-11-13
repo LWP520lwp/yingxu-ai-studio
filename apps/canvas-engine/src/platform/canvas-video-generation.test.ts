@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  completeCanvasVideoGeneration,
-  type CanvasVideoGenerationConfig,
-  type CanvasVideoGenerationPorts,
-} from "@/lib/canvas/canvas-video-generation";
+  completeAtlasVideoGeneration,
+  type AtlasVideoGenerationConfig,
+  type AtlasVideoGenerationPorts,
+} from "@/atlas-engine/workflows/video-generation";
 import { defaultConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
-const config: CanvasVideoGenerationConfig = {
+const config: AtlasVideoGenerationConfig = {
   ...defaultConfig,
   model: "video-model",
   videoSeconds: "5",
@@ -30,7 +30,7 @@ function node(): CanvasNodeData {
   };
 }
 
-function ports(): CanvasVideoGenerationPorts {
+function ports(): AtlasVideoGenerationPorts {
   return {
     createTask: vi.fn(async () => ({
       id: "task-1",
@@ -61,12 +61,12 @@ function ports(): CanvasVideoGenerationPorts {
   };
 }
 
-describe("completeCanvasVideoGeneration", () => {
+describe("completeAtlasVideoGeneration", () => {
   it("stores the remote task before waiting, then persists the final video", async () => {
     const operations = ports();
     const controller = new AbortController();
 
-    await completeCanvasVideoGeneration({
+    await completeAtlasVideoGeneration({
       ports: operations,
       nodeId: "video-1",
       config,
@@ -99,7 +99,7 @@ describe("completeCanvasVideoGeneration", () => {
     );
 
     await expect(
-      completeCanvasVideoGeneration({
+      completeAtlasVideoGeneration({
         ports: operations,
         nodeId: "video-1",
         config,
@@ -122,7 +122,7 @@ describe("completeCanvasVideoGeneration", () => {
       return { url: "/late.mp4", mimeType: "video/mp4" };
     });
     await expect(
-      completeCanvasVideoGeneration({
+      completeAtlasVideoGeneration({
         ports: operations,
         nodeId: "video-1",
         config,

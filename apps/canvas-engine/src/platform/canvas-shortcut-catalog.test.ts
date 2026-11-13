@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canvasShortcutCatalog } from "@/lib/canvas/canvas-shortcut-catalog";
+import { canvasShortcutCatalog } from "@/atlas-engine/ui/shortcut-catalog";
 
 describe("canvas shortcut catalog", () => {
   it("keeps each visible shortcut uniquely keyed and localized", () => {

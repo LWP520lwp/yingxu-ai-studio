@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Button, Modal } from "antd";
 import { Camera, RotateCcw, WandSparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { boundedAngle } from "@/lib/canvas/canvas-image-geometry";
-import type { ImageAngleTransform } from "@/lib/canvas/canvas-image-data";
+import { atlasBoundedAngle as boundedAngle } from "@/atlas-engine/surface/image-editing-geometry";
+import type { AtlasImageAngle as ImageAngleTransform } from "@/atlas-engine/workflows/image-processing";
 
 export type CanvasImageAngleParams = ImageAngleTransform;
 

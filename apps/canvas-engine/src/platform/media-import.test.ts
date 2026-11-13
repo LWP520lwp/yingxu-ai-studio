@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  applyMediaReplacement,
-  planMediaImport,
-} from "@/product-engine/media-import";
+  applyAtlasMediaReplacement as applyMediaReplacement,
+  planAtlasMediaImport as planMediaImport,
+} from "@/atlas-engine/workflows/media-operations";
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 

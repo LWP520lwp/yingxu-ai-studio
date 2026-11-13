@@ -13,15 +13,18 @@ import { Image } from "antd";
 import i18n from "@/i18n";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { isImeComposing, isPlainEnterKey } from "@/lib/keyboard-event";
-import { parsePromptInputTokens } from "@/lib/canvas/canvas-prompt-input";
-import { CanvasPromptEditorController, type PromptMentionContext } from "@/lib/canvas/canvas-prompt-editor";
 import {
   findPromptReferences,
   getPromptChipKeyAction,
   indexPromptReferences,
   movePromptChoice,
-} from "@/lib/canvas/prompt-chip-session";
-import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+  parsePromptInputTokens,
+} from "@/atlas-engine/agent/prompt-input";
+import {
+  AtlasPromptEditorController,
+  type PromptMentionContext,
+} from "@/atlas-engine/agent/prompt-editor";
+import type { CanvasResourceReference } from "@/atlas-engine/model/resource-references";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasPromptReferencePicker } from "./canvas-prompt-reference-picker";
 
@@ -47,7 +50,7 @@ export function CanvasPromptChipInput({
   const theme = canvasThemes[useThemeStore((state) => state.theme)];
   const editorId = `prompt-editor-${useId().replace(/:/g, "")}`;
   const inputRef = useRef<HTMLDivElement>(null);
-  const behavior = useRef<CanvasPromptEditorController | null>(null);
+  const behavior = useRef<AtlasPromptEditorController | null>(null);
   const composing = useRef(false);
   const lastPublishedValue = useRef(value);
   const [activeMention, setActiveMention] = useState<PromptMentionContext | null>(null);
@@ -74,7 +77,7 @@ export function CanvasPromptChipInput({
       onImagePreview: setImagePreview,
     };
     if (!behavior.current || behavior.current.element !== element) {
-      behavior.current = new CanvasPromptEditorController(element, editorContext);
+      behavior.current = new AtlasPromptEditorController(element, editorContext);
     } else {
       behavior.current.updateContext(editorContext);
     }

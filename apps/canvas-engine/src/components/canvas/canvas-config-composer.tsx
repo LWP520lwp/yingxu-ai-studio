@@ -5,14 +5,14 @@ import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { CONFIG_REFERENCE_PATTERN } from "@/lib/canvas/canvas-config-composer";
+import { CONFIG_REFERENCE_PATTERN } from "@/atlas-engine/agent/config-composer";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import type { NodeGenerationInput } from "./canvas-node-generation";
 import { CanvasNodeReferenceBar } from "./canvas-node-reference-bar";
 import { CanvasPromptChipInput } from "./canvas-prompt-chip-input";
 import type { CanvasNodeData } from "@/types/canvas";
-import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import type { CanvasResourceReference } from "@/atlas-engine/model/resource-references";
 
 type CanvasConfigComposerProps = {
   nodeId: string;

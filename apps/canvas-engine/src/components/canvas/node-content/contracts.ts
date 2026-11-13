@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import type { CanvasResourceReference } from "@/atlas-engine/model/resource-references";
 import type { CanvasNodeData, CanvasNodeType } from "@/types/canvas";
 import type { CanvasNodeContext } from "@/types/canvas-plugin";
 

@@ -17,17 +17,17 @@ import {
 } from "lucide-react";
 
 import {
-  COMPOSITION_NODE_TYPE,
-  clipDurationMs,
-  compositionVideos,
-  createComposition,
-  exportCompositionPackage,
-  formatCompositionTime,
-  moveCompositionClip,
-  normalizeClip,
-  type CanvasComposition,
-  type CompositionClip,
-} from "@/lib/canvas/canvas-composition";
+  ATLAS_COMPOSITION_NODE_TYPE,
+  atlasClipDurationMs,
+  atlasCompositionVideos,
+  createAtlasComposition,
+  exportAtlasCompositionPackage,
+  formatAtlasCompositionTime,
+  moveAtlasCompositionClip,
+  normalizeAtlasClip,
+  type AtlasComposition,
+  type AtlasCompositionClip,
+} from "@/atlas-engine/workflows/video-composition";
 import { resolveMediaUrl } from "@/services/file-storage";
 import type { CanvasNodeData } from "@/types/canvas";
 import type {
@@ -44,7 +44,7 @@ function CompositionPlayer({
   onDuration,
   requestedClip,
 }: {
-  composition: CanvasComposition;
+  composition: AtlasComposition;
   onDuration?: (id: string, durationMs: number) => void;
   requestedClip?: RequestedClip;
 }) {
@@ -62,7 +62,7 @@ function CompositionPlayer({
   const clip = composition.clips[index];
   const durationCallback = useRef(onDuration);
   durationCallback.current = onDuration;
-  const selectedDuration = clip ? clipDurationMs(clip) : 0;
+  const selectedDuration = clip ? atlasClipDurationMs(clip) : 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -90,7 +90,7 @@ function CompositionPlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !clip) return;
-    video.volume = normalizeClip(clip).volume;
+    video.volume = normalizeAtlasClip(clip).volume;
     video.muted = muted;
     const currentMs = video.currentTime * 1000;
     if (
@@ -191,7 +191,7 @@ function CompositionPlayer({
             onLoadedMetadata={(event) => {
               const video = event.currentTarget;
               switching.current = false;
-              video.volume = normalizeClip(clip).volume;
+              video.volume = normalizeAtlasClip(clip).volume;
               video.muted = muted;
               const sourceEnd = Number.isFinite(video.duration)
                 ? Math.round(video.duration * 1000)
@@ -308,7 +308,7 @@ function CompositionPlayer({
         </div>
         <label className="composition-seek-control">
           <span className="composition-seek-time">
-            {formatCompositionTime(elapsed)}
+            {formatAtlasCompositionTime(elapsed)}
           </span>
           <input
             type="range"
@@ -320,7 +320,7 @@ function CompositionPlayer({
             onChange={(event) => seek(Number(event.target.value))}
           />
           <span className="composition-seek-time">
-            {formatCompositionTime(selectedDuration)}
+            {formatAtlasCompositionTime(selectedDuration)}
           </span>
         </label>
         <div className="composition-playing-title" title={clip.title}>
@@ -339,9 +339,9 @@ function TrimControls({
   index,
   onChange,
 }: {
-  clip: CompositionClip;
+  clip: AtlasCompositionClip;
   index: number;
-  onChange: (patch: Partial<CompositionClip>) => void;
+  onChange: (patch: Partial<AtlasCompositionClip>) => void;
 }) {
   const sourceDuration = clip.durationMs;
   const outMs = clip.endMs ?? sourceDuration;
@@ -384,7 +384,7 @@ function TrimControls({
                 onChange({ startMs: Number(event.target.value) })
               }
             />
-            <output>{formatCompositionTime(clip.startMs)}</output>
+            <output>{formatAtlasCompositionTime(clip.startMs)}</output>
           </label>
           <label>
             出点
@@ -400,7 +400,7 @@ function TrimControls({
                 onChange({ endMs: value >= sourceDuration ? null : value });
               }}
             />
-            <output>{formatCompositionTime(outMs || sourceDuration)}</output>
+            <output>{formatAtlasCompositionTime(outMs || sourceDuration)}</output>
           </label>
         </div>
       ) : null}
@@ -454,7 +454,7 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
   const [exporting, setExporting] = useState(false);
   const [requestedClip, setRequestedClip] = useState<RequestedClip>();
   const requestSequence = useRef(0);
-  const composition: CanvasComposition = ctx.node.metadata?.composition ?? {
+  const composition: AtlasComposition = ctx.node.metadata?.composition ?? {
     version: 1,
     clips: [],
   };
@@ -478,13 +478,13 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
     };
   }, [compositionKey]);
 
-  const update = (next: CanvasComposition) =>
+  const update = (next: AtlasComposition) =>
     ctx.updateMetadata({ composition: next });
-  const updateClip = (id: string, patch: Partial<CompositionClip>) =>
+  const updateClip = (id: string, patch: Partial<AtlasCompositionClip>) =>
     update({
       ...composition,
       clips: composition.clips.map((clip) =>
-        clip.id === id ? normalizeClip({ ...clip, ...patch }) : clip,
+        clip.id === id ? normalizeAtlasClip({ ...clip, ...patch }) : clip,
       ),
     });
   const recordDuration = (id: string, durationMs: number) => {
@@ -492,7 +492,7 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
     if (clip && clip.durationMs !== durationMs) updateClip(id, { durationMs });
   };
 
-  const sourceVideos = compositionVideos(ctx.getNodes());
+  const sourceVideos = atlasCompositionVideos(ctx.getNodes());
   const usedSourceIds = new Set(
     composition.clips.map((clip) => clip.sourceNodeId),
   );
@@ -503,7 +503,7 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
   const addVideo = (sourceId: string) => {
     const node = addableVideos.find((item) => item.id === sourceId);
     if (!node) return;
-    const [clip] = createComposition([node]).clips;
+    const [clip] = createAtlasComposition([node]).clips;
     if (!clip) return;
     update({ ...composition, clips: [...composition.clips, clip] });
     setRequestedClip({ id: clip.id, request: ++requestSequence.current });
@@ -536,7 +536,7 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
     exportController.current = controller;
     setExporting(true);
     try {
-      const blob = await exportCompositionPackage(
+      const blob = await exportAtlasCompositionPackage(
         composition,
         controller.signal,
       );
@@ -574,7 +574,7 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
   };
 
   const duration = composition.clips.reduce(
-    (sum, clip) => sum + clipDurationMs(clip),
+    (sum, clip) => sum + atlasClipDurationMs(clip),
     0,
   );
   const durationKnown = composition.clips.every(
@@ -594,7 +594,7 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
         <span>视频编排</span>
         <span className="composition-summary" aria-live="polite">
           {composition.clips.length} 段<span aria-hidden="true"> · </span>
-          {durationKnown ? formatCompositionTime(duration) : "时长待读取"}
+          {durationKnown ? formatAtlasCompositionTime(duration) : "时长待读取"}
         </span>
       </header>
 
@@ -724,7 +724,7 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
                           label={`上移第 ${index + 1} 段`}
                           disabled={index === 0}
                           onClick={() =>
-                            update(moveCompositionClip(composition, index, -1))
+                            update(moveAtlasCompositionClip(composition, index, -1))
                           }
                         >
                           <ArrowUp aria-hidden="true" />
@@ -733,7 +733,7 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
                           label={`下移第 ${index + 1} 段`}
                           disabled={index + 1 === composition.clips.length}
                           onClick={() =>
-                            update(moveCompositionClip(composition, index, 1))
+                            update(moveAtlasCompositionClip(composition, index, 1))
                           }
                         >
                           <ArrowDown aria-hidden="true" />
@@ -777,7 +777,7 @@ function CompositionNode({ ctx }: { ctx: CanvasNodeContext }) {
                       选段时长
                       <strong>
                         {clip.durationMs || clip.endMs !== null
-                          ? formatCompositionTime(clipDurationMs(clip))
+                          ? formatAtlasCompositionTime(atlasClipDurationMs(clip))
                           : "播放该片段后读取"}
                       </strong>
                     </div>
@@ -863,7 +863,7 @@ function IconAction({
 }
 
 export const COMPOSITION_NODE_DEFINITION: CanvasNodeDefinition = {
-  type: COMPOSITION_NODE_TYPE,
+  type: ATLAS_COMPOSITION_NODE_TYPE,
   title: "视频合成预览",
   icon: <Film className="size-4" />,
   defaultSize: { width: 480, height: 340 },

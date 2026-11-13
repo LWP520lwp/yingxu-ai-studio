@@ -22,9 +22,9 @@ import {
   createReferenceItems,
   expandReferenceSources,
   referenceSourcesToDisconnect,
-} from "@/lib/canvas/canvas-reference-bar";
+} from "@/atlas-engine/ui/canvas-reference-bar";
 import { canvasThemes } from "@/lib/canvas-theme";
-import { getNodeDefinition } from "@/lib/canvas/node-registry";
+import { getAtlasNodeDefinition as getNodeDefinition } from "@/atlas-engine/model/node-registry";
 import {
   getImagePreviewRevision,
   previewUrlFor,

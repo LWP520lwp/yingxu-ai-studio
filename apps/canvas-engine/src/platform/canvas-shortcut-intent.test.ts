@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveCanvasShortcutIntent } from "@/product-engine/canvas-shortcut-intent";
+import { resolveAtlasShortcut as resolveCanvasShortcutIntent } from "@/atlas-engine/workflows/async-flow";
 
 const defaults = {
   key: "x",

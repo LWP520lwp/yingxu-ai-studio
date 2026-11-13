@@ -6,7 +6,7 @@ import {
   normalizeImageQuickToolIds,
   readImageQuickToolsConfig,
   setImageQuickToolVisibility,
-} from "@/lib/canvas/image-quick-tools";
+} from "@/atlas-engine/ui/image-quick-tools";
 
 describe("image quick-tool preferences", () => {
   it("filters unknown values, removes duplicates and returns display order", () => {

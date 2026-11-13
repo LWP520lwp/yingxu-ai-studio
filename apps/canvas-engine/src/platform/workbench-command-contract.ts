@@ -1,4 +1,4 @@
-import type { WorkbenchDocument, WorkbenchDocumentCommand } from "@/lib/canvas/workbench-document";
+import type { WorkbenchDocument, WorkbenchDocumentCommand } from "@/atlas-engine/document/workbench-document";
 
 /** Commands understood by the host application. UI components only depend on this contract. */
 export type WorkbenchCommand =

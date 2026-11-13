@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCanvasNodeCommand } from "@/lib/canvas/canvas-node-commands";
+import { applyAtlasNodeCommand as applyCanvasNodeCommand } from "@/atlas-engine/interaction/node-layout";
 import {
   CanvasNodeType,
   type CanvasNodeData,

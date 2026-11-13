@@ -8,7 +8,7 @@ import {
   selectBoardNode,
   updateBoardNodeDrag,
   updateCanvasSelection,
-} from "@/product-engine/board-interactions";
+} from "@/atlas-engine/interaction/canvas-board-adapter";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 function makeNode(

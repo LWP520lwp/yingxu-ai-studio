@@ -7,7 +7,7 @@ import {
   getAssetPickerPage,
   getAssetPickerPageCount,
   toInsertAssetPayload,
-} from "@/lib/canvas/asset-picker";
+} from "@/atlas-engine/ui/asset-picker";
 import type { Asset } from "@/stores/use-asset-store";
 
 const asset = (

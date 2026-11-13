@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitCanvasPanel } from "@/lib/canvas/canvas-panel-placement";
+import { fitCanvasPanel } from "@/atlas-engine/ui/panel-placement";
 
 describe("configuration composer within the visible canvas", () => {
   it("keeps the ordinary centered placement below a node when it fits", () => {

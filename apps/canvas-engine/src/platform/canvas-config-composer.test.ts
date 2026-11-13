@@ -6,7 +6,7 @@ import {
   moveComposerSelection,
   parseComposerTokens,
   reduceComposerMention,
-} from "@/lib/canvas/canvas-config-composer";
+} from "@/atlas-engine/agent/config-composer";
 
 const inputs = [
   { nodeId: "txt-1", type: "text", title: "开场旁白", text: "鲸鱼迁徙与海洋" },

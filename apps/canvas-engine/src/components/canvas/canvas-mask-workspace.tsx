@@ -23,29 +23,30 @@ import { useTranslation } from "react-i18next";
 import { readImageMeta } from "@/lib/image-utils";
 import { useImageEditorViewport } from "@/components/canvas/use-image-editor-viewport";
 import {
-  commitMaskStroke,
-  redoMaskStroke,
-  undoMaskStroke,
-  type MaskStrokeHistory,
-} from "@/lib/canvas/mask-stroke-history";
+  ATLAS_MASK_HISTORY_LIMIT,
+  commitAtlasMaskStroke,
+  redoAtlasMaskStroke,
+  undoAtlasMaskStroke,
+  type AtlasMaskStrokeHistory,
+} from "@/atlas-engine/workflows/mask-strokes";
 import {
-  MASK_OVERLAY_ALPHA,
-  MASK_OVERLAY_COLOR,
-  clampMaskBrushSize,
-  clearMaskCanvas,
-  composeMaskOverlay,
-  hasMaskPixels,
-  mapMaskCanvasPoint,
-  renderMaskSegment,
-  renderMaskStroke,
-  replayMaskLayers,
-} from "@/lib/canvas/mask-editor-engine";
+  ATLAS_MASK_OVERLAY,
+  ATLAS_MASK_OVERLAY_OPACITY,
+  clampAtlasMaskBrushSize,
+  clearAtlasMaskCanvas,
+  composeAtlasMaskOverlay,
+  hasAtlasMaskPixels,
+  mapAtlasMaskPoint,
+  renderAtlasMaskSegment,
+  renderAtlasMaskStroke,
+  replayAtlasMaskLayers,
+} from "@/atlas-engine/workflows/mask-raster";
 import {
-  appendMaskPointerSessionPoint,
-  beginMaskPointerSession,
-  finishMaskPointerSession,
-  type MaskPointerSession,
-} from "@/lib/canvas/mask-pointer-session";
+  appendAtlasMaskPointerPoint,
+  beginAtlasMaskPointer,
+  finishAtlasMaskPointer,
+  type AtlasMaskPointerSession,
+} from "@/atlas-engine/workflows/mask-pointer";
 
 export type CanvasImageMaskEditPayload = {
   prompt: string;
@@ -76,8 +77,8 @@ export function CanvasNodeMaskEditDialog({
   const baseMaskRef = useRef<HTMLCanvasElement>(null);
   const baseOverlayRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-  const sessionRef = useRef<MaskPointerSession | null>(null);
-  const historyRef = useRef<MaskStrokeHistory>({ history: [], redo: [] });
+  const sessionRef = useRef<AtlasMaskPointerSession | null>(null);
+  const historyRef = useRef<AtlasMaskStrokeHistory>({ history: [], redo: [] });
   const loadVersionRef = useRef(0);
   const [imageSize, setImageSize] = useState<ImageSize | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -113,7 +114,7 @@ export function CanvasNodeMaskEditDialog({
       baseMaskRef.current,
       baseOverlayRef.current,
     ])
-      clearMaskCanvas(canvas);
+      clearAtlasMaskCanvas(canvas);
     void readImageMeta(dataUrl)
       .then((size) => {
         if (loadVersionRef.current === version) setImageSize(size);
@@ -135,11 +136,11 @@ export function CanvasNodeMaskEditDialog({
       baseMaskRef.current,
       baseOverlayRef.current,
     ])
-      clearMaskCanvas(canvas);
+      clearAtlasMaskCanvas(canvas);
   }, [imageSize]);
 
   const drawSegment = (
-    stroke: MaskPointerSession["stroke"],
+    stroke: AtlasMaskPointerSession["stroke"],
     from: { x: number; y: number },
     to: { x: number; y: number },
   ) => {
@@ -148,15 +149,15 @@ export function CanvasNodeMaskEditDialog({
     });
     const overlayContext = liveCanvasRef.current?.getContext("2d");
     if (!maskContext || !overlayContext) return;
-    renderMaskSegment(maskContext, stroke, from, to, { color: "#000" });
-    renderMaskSegment(overlayContext, stroke, from, to, {
-      color: MASK_OVERLAY_COLOR,
+    renderAtlasMaskSegment(maskContext, stroke, from, to, { color: "#000" });
+    renderAtlasMaskSegment(overlayContext, stroke, from, to, {
+      color: ATLAS_MASK_OVERLAY,
     });
   };
 
   const readPoint = (canvas: HTMLCanvasElement, x: number, y: number) => {
     const rect = canvas.getBoundingClientRect();
-    return mapMaskCanvasPoint(x, y, rect, canvas);
+    return mapAtlasMaskPoint(x, y, rect, canvas);
   };
 
   const startStroke = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -165,7 +166,7 @@ export function CanvasNodeMaskEditDialog({
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     const point = readPoint(event.currentTarget, event.clientX, event.clientY);
-    const session = beginMaskPointerSession(
+    const session = beginAtlasMaskPointer(
       event.pointerId,
       mode,
       brushSize,
@@ -183,12 +184,12 @@ export function CanvasNodeMaskEditDialog({
     event.preventDefault();
     const point = readPoint(event.currentTarget, event.clientX, event.clientY);
     const from = session.stroke.points.at(-1) || point;
-    if (appendMaskPointerSessionPoint(session, event.pointerId, point))
+    if (appendAtlasMaskPointerPoint(session, event.pointerId, point))
       drawSegment(session.stroke, from, point);
   };
 
-  const replay = (history: MaskStrokeHistory) =>
-    replayMaskLayers(
+  const replay = (history: AtlasMaskStrokeHistory) =>
+    replayAtlasMaskLayers(
       history.history,
       baseMaskRef.current,
       baseOverlayRef.current,
@@ -204,7 +205,7 @@ export function CanvasNodeMaskEditDialog({
       ? readPoint(event.currentTarget, event.clientX, event.clientY)
       : undefined;
     const priorPoint = session.stroke.points.at(-1);
-    const result = finishMaskPointerSession(
+    const result = finishAtlasMaskPointer(
       session,
       event.pointerId,
       ended ? "up" : "cancel",
@@ -223,19 +224,19 @@ export function CanvasNodeMaskEditDialog({
       (point.x !== priorPoint.x || point.y !== priorPoint.y)
     )
       drawSegment(result.stroke, priorPoint, point);
-    const next = commitMaskStroke(historyRef.current, result.stroke);
+    const next = commitAtlasMaskStroke(historyRef.current, result.stroke);
     historyRef.current = { history: next.history, redo: next.redo };
     for (const stroke of next.evictedStrokes) {
-      renderMaskStroke(
+      renderAtlasMaskStroke(
         baseMaskRef.current?.getContext("2d", { willReadFrequently: true }) ||
           null,
         stroke,
         { color: "#000" },
       );
-      renderMaskStroke(
+      renderAtlasMaskStroke(
         baseOverlayRef.current?.getContext("2d") || null,
         stroke,
-        { color: MASK_OVERLAY_COLOR },
+        { color: ATLAS_MASK_OVERLAY },
       );
     }
     setHistorySize(next.history.length);
@@ -245,10 +246,10 @@ export function CanvasNodeMaskEditDialog({
 
   const undo = useCallback(() => {
     if (sessionRef.current || !historyRef.current.history.length) return;
-    historyRef.current = undoMaskStroke(historyRef.current);
+    historyRef.current = undoAtlasMaskStroke(historyRef.current);
     setHistorySize(historyRef.current.history.length);
     setRedoSize(historyRef.current.redo.length);
-    replayMaskLayers(
+    replayAtlasMaskLayers(
       historyRef.current.history,
       baseMaskRef.current,
       baseOverlayRef.current,
@@ -262,30 +263,29 @@ export function CanvasNodeMaskEditDialog({
     if (sessionRef.current || !historyRef.current.redo.length) return;
     const before = historyRef.current;
     const stroke = before.redo.at(-1);
-    historyRef.current = redoMaskStroke(before);
-    if (stroke && historyRef.current.history.length >= 100) {
-      const evicted =
-        before.history.length + 1 - historyRef.current.history.length;
+    historyRef.current = redoAtlasMaskStroke(before);
+    if (stroke && historyRef.current.history.length >= ATLAS_MASK_HISTORY_LIMIT) {
+      const evicted = before.history.length + 1 - historyRef.current.history.length;
       if (evicted > 0) {
         for (const oldStroke of [...before.history, stroke].slice(0, evicted)) {
-          renderMaskStroke(
+          renderAtlasMaskStroke(
             baseMaskRef.current?.getContext("2d", {
               willReadFrequently: true,
             }) || null,
             oldStroke,
             { color: "#000" },
           );
-          renderMaskStroke(
+          renderAtlasMaskStroke(
             baseOverlayRef.current?.getContext("2d") || null,
             oldStroke,
-            { color: MASK_OVERLAY_COLOR },
+            { color: ATLAS_MASK_OVERLAY },
           );
         }
       }
     }
     setHistorySize(historyRef.current.history.length);
     setRedoSize(historyRef.current.redo.length);
-    replayMaskLayers(
+    replayAtlasMaskLayers(
       historyRef.current.history,
       baseMaskRef.current,
       baseOverlayRef.current,
@@ -304,7 +304,7 @@ export function CanvasNodeMaskEditDialog({
       baseMaskRef.current,
       baseOverlayRef.current,
     ])
-      clearMaskCanvas(canvas);
+      clearAtlasMaskCanvas(canvas);
     setHistorySize(0);
     setRedoSize(0);
     setHistoryFull(false);
@@ -338,10 +338,10 @@ export function CanvasNodeMaskEditDialog({
     const image = imageRef.current;
     if (!text) return setError(t("canvas.editors.maskPromptRequired"));
     if (!mask || !image || !image.complete) return;
-    if (!hasMaskPixels(mask)) return setError(t("canvas.editors.maskRequired"));
+    if (!hasAtlasMaskPixels(mask)) return setError(t("canvas.editors.maskRequired"));
     onConfirm({
       prompt: text,
-      maskDataUrl: composeMaskOverlay(image, mask),
+      maskDataUrl: composeAtlasMaskOverlay(image, mask),
       generate,
     });
   };
@@ -413,7 +413,7 @@ export function CanvasNodeMaskEditDialog({
                       width={imageSize.width}
                       height={imageSize.height}
                       className="absolute inset-0 size-full cursor-none touch-none"
-                      style={{ opacity: MASK_OVERLAY_ALPHA }}
+                      style={{ opacity: ATLAS_MASK_OVERLAY_OPACITY }}
                       onPointerDown={startStroke}
                       onPointerMove={moveStroke}
                       onPointerUp={stopStroke}
@@ -532,7 +532,7 @@ export function CanvasNodeMaskEditDialog({
               max={160}
               step={2}
               value={brushSize}
-              onChange={(value) => setBrushSize(clampMaskBrushSize(value))}
+              onChange={(value) => setBrushSize(clampAtlasMaskBrushSize(value))}
             />
             {historyFull ? (
               <div className="text-xs text-amber-600 dark:text-amber-400">

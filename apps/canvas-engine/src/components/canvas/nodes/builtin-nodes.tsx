@@ -7,8 +7,8 @@ import {
   Video,
 } from "lucide-react";
 
-import { buildBuiltinNodeDefinitions } from "@/lib/canvas/builtin-node-definitions";
-import { registerNodeDefinitions } from "@/lib/canvas/node-registry";
+import { buildBuiltinNodeDefinitions } from "@/atlas-engine/model/builtin-node-definitions";
+import { registerAtlasNodeDefinitions as registerNodeDefinitions } from "@/atlas-engine/model/node-registry";
 import { CanvasNodeType } from "@/types/canvas";
 import { COMPOSITION_NODE_DEFINITION } from "./composition-node";
 

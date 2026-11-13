@@ -9,9 +9,9 @@ import {
   isPluginSourceUrl,
   officialVersionLabel,
   pluginErrorMessage,
-} from "@/lib/canvas/plugin-manager-model";
+} from "@/atlas-engine/plugins/manager-model";
 import type { InstalledPlugin } from "@/stores/canvas/use-plugin-store";
-import type { OfficialPluginEntry } from "@/lib/canvas/plugin-registry";
+import type { OfficialPluginEntry } from "@/atlas-engine/plugins/official-registry";
 
 function plugin(
   id: string,

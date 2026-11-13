@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useReducer,
   useState,
   type ReactNode,
 } from "react";
@@ -27,7 +28,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { getNodeDefinition } from "@/lib/canvas/node-registry";
+import { getAtlasNodeDefinition as getNodeDefinition } from "@/atlas-engine/model/node-registry";
 import { formatBytes, getDataUrlByteSize } from "@/lib/image-utils";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -92,6 +93,45 @@ type CanvasNodeHoverToolbarProps = {
 
 type Action = CanvasNodeToolbarItem;
 type Preferences = { ids: ImageQuickToolId[]; showLabels: boolean };
+
+type ToolbarSession = {
+  settingsOpen: boolean;
+  skillOpen: boolean;
+  skillId: string;
+  preparing: boolean;
+};
+
+type ToolbarSessionEvent =
+  | { type: "reset" }
+  | { type: "settings"; open: boolean }
+  | { type: "skill-menu"; open: boolean }
+  | { type: "skill"; id: string }
+  | { type: "preparing"; active: boolean };
+
+const emptyToolbarSession: ToolbarSession = {
+  settingsOpen: false,
+  skillOpen: false,
+  skillId: "",
+  preparing: false,
+};
+
+export function reduceCanvasNodeToolbarSession(
+  state: ToolbarSession,
+  event: ToolbarSessionEvent,
+): ToolbarSession {
+  switch (event.type) {
+    case "reset":
+      return emptyToolbarSession;
+    case "settings":
+      return { ...state, settingsOpen: event.open };
+    case "skill-menu":
+      return { ...state, skillOpen: event.open };
+    case "skill":
+      return { ...state, skillId: event.id };
+    case "preparing":
+      return { ...state, preparing: event.active };
+  }
+}
 
 function readPreferences(): Preferences {
   try {
@@ -162,18 +202,16 @@ export function CanvasNodeHoverToolbar(props: CanvasNodeHoverToolbarProps) {
   const [height, setHeight] = useState(96);
   const [preferences, setPreferences] = useState(readPreferences);
   const [draft, setDraft] = useState<Preferences>(preferences);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [skillOpen, setSkillOpen] = useState(false);
-  const [skillId, setSkillId] = useState("");
-  const [preparing, setPreparing] = useState(false);
+  const [session, dispatchSession] = useReducer(
+    reduceCanvasNodeToolbarSession,
+    emptyToolbarSession,
+  );
+  const { settingsOpen, skillOpen, skillId, preparing } = session;
   const operation = useRef<AbortController | null>(null);
   const recipes = useVideoRecipes(node, projectId);
 
   useEffect(() => {
-    setSettingsOpen(false);
-    setSkillOpen(false);
-    setSkillId("");
-    setPreparing(false);
+    dispatchSession({ type: "reset" });
     return () => {
       operation.current?.abort();
       operation.current = null;
@@ -344,7 +382,7 @@ export function CanvasNodeHoverToolbar(props: CanvasNodeHoverToolbarProps) {
     if (operation.current) return;
     const controller = new AbortController();
     operation.current = controller;
-    setPreparing(true);
+    dispatchSession({ type: "preparing", active: true });
     onKeep(target.id);
     try {
       await props.onPrepareVideo(
@@ -358,13 +396,14 @@ export function CanvasNodeHoverToolbar(props: CanvasNodeHoverToolbarProps) {
     } finally {
       if (operation.current === controller) {
         operation.current = null;
-        if (!controller.signal.aborted) setPreparing(false);
+        if (!controller.signal.aborted)
+          dispatchSession({ type: "preparing", active: false });
       }
     }
   };
   const savePreferences = () => {
     setPreferences(draft);
-    setSettingsOpen(false);
+    dispatchSession({ type: "settings", open: false });
     try {
       localStorage.setItem(
         IMAGE_QUICK_TOOLS_STORAGE_KEY,
@@ -431,7 +470,7 @@ export function CanvasNodeHoverToolbar(props: CanvasNodeHoverToolbarProps) {
                     ids: [...preferences.ids],
                     showLabels: preferences.showLabels,
                   });
-                  setSettingsOpen(true);
+                  dispatchSession({ type: "settings", open: true });
                   onKeep(target.id);
                 },
               }}
@@ -457,9 +496,9 @@ export function CanvasNodeHoverToolbar(props: CanvasNodeHoverToolbarProps) {
                   label: skill.name + (skill.installed ? "" : " · 未安装"),
                 })),
               ]}
-              onChange={setSkillId}
+              onChange={(id) => dispatchSession({ type: "skill", id })}
               onOpenChange={(open) => {
-                setSkillOpen(open);
+                dispatchSession({ type: "skill-menu", open });
                 if (open) onKeep(target.id);
               }}
               getPopupContainer={(trigger) =>
@@ -515,7 +554,7 @@ export function CanvasNodeHoverToolbar(props: CanvasNodeHoverToolbarProps) {
             }))
           }
           onCancel={() => {
-            setSettingsOpen(false);
+            dispatchSession({ type: "settings", open: false });
             onLeave();
           }}
           onSave={savePreferences}

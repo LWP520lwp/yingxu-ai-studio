@@ -4,11 +4,11 @@ import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { defaultConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import {
-  applyCanvasImageBatchFailure,
-  applyCanvasImageBatchSuccess,
-  applyCanvasImageOutputPlan,
-  planCanvasImageOutput,
-} from "@/product-engine/generation-output-plan";
+  applyAtlasImageFailure as applyCanvasImageBatchFailure,
+  applyAtlasImageSuccess as applyCanvasImageBatchSuccess,
+  applyAtlasImageOutputPlan as applyCanvasImageOutputPlan,
+  planAtlasImageOutput as planCanvasImageOutput,
+} from "@/atlas-engine/workflows/generation-output";
 import type { ReferenceImage } from "@/types/image";
 
 const imageNode = (overrides: Partial<CanvasNodeData> = {}): CanvasNodeData => ({

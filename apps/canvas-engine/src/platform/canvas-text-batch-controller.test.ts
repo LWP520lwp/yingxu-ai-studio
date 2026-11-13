@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { generateCanvasTextBatch } from "@/lib/canvas/canvas-text-batch-controller";
+import { generateAtlasTextBatch } from "@/atlas-engine/workflows/text-generation";
 import type { AiConfig } from "@/stores/use-config-store";
 
 const config = { model: "text-model" } as AiConfig;
 
-describe("generateCanvasTextBatch", () => {
+describe("generateAtlasTextBatch", () => {
   it("streams each item independently and retains successful siblings", async () => {
     const request = vi.fn(async (_config, messages, onDelta, options) => {
       const prompt = String(messages[0]?.content);
@@ -16,7 +16,7 @@ describe("generateCanvasTextBatch", () => {
     const onStream = vi.fn();
     const onSuccess = vi.fn();
     const onFailure = vi.fn((_id, error) => String(error));
-    const results = await generateCanvasTextBatch({
+    const results = await generateAtlasTextBatch({
       textIds: ["one", "two"],
       config,
       messages: [{ role: "user", content: "first" }],
@@ -46,7 +46,7 @@ describe("generateCanvasTextBatch", () => {
       throw abort;
     });
     const onFailure = vi.fn((_id, error) => String(error));
-    const results = await generateCanvasTextBatch({
+    const results = await generateAtlasTextBatch({
       textIds: ["one"],
       config,
       messages: [{ role: "user", content: "prompt" }],
@@ -66,7 +66,7 @@ describe("generateCanvasTextBatch", () => {
     const onStream = vi.fn();
     const onSuccess = vi.fn();
     const onFailure = vi.fn(() => "failed");
-    const results = await generateCanvasTextBatch({
+    const results = await generateAtlasTextBatch({
       textIds: ["one"],
       config,
       messages: [],

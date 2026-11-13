@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { generateCanvasImageBatch } from "@/lib/canvas/canvas-image-batch-controller";
+import { generateAtlasImageBatch } from "@/atlas-engine/workflows/image-generation";
 import type { AiConfig } from "@/stores/use-config-store";
 
 const config = { count: "4" } as AiConfig;
 
-describe("generateCanvasImageBatch", () => {
+describe("generateAtlasImageBatch", () => {
   it("uses edit for reference images and persists each successful result", async () => {
     const edit = vi.fn(async () => [
       { id: "generated", dataUrl: "data:image/png;base64,AA==" },
@@ -24,7 +24,7 @@ describe("generateCanvasImageBatch", () => {
       { id: "ref-1", name: "ref.png", type: "image/png", dataUrl: "data" },
     ];
 
-    const results = await generateCanvasImageBatch({
+    const results = await generateAtlasImageBatch({
       imageIds: ["img-1", "img-2"],
       config,
       prompt: "keep the same composition",
@@ -66,7 +66,7 @@ describe("generateCanvasImageBatch", () => {
     const onFailure = vi.fn();
     const onImage = vi.fn();
 
-    const results = await generateCanvasImageBatch({
+    const results = await generateAtlasImageBatch({
       imageIds: ["first", "second", "third"],
       config,
       prompt: "generate outputs",

@@ -19,9 +19,9 @@ import { useTranslation } from "react-i18next";
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import {
-  listNodeDefinitions,
-  useNodeRegistryVersion,
-} from "@/lib/canvas/node-registry";
+  listAtlasNodeDefinitions as listNodeDefinitions,
+  useAtlasNodeRegistryVersion as useNodeRegistryVersion,
+} from "@/atlas-engine/model/node-registry";
 import { getNodeSpec } from "@/constant/canvas";
 import {
   CanvasNodeType,

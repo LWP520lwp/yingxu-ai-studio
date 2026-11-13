@@ -1,38 +1,60 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { buildNodeContext } from "@/lib/canvas/plugin-node-context";
+import { createAtlasNodeContext } from "@/atlas-engine/plugins/node-context";
 import type { CanvasPluginHost } from "@/types/canvas-plugin";
 import type { CanvasNodeData } from "@/types/canvas";
 
-vi.mock("@/lib/canvas/canvas-event-bus", () => ({
-  createPluginStorage: vi.fn(() => ({ get: vi.fn(), set: vi.fn(), remove: vi.fn() })),
-  emitCanvasEvent: vi.fn(),
-  onCanvasEvent: vi.fn(() => vi.fn()),
+vi.mock("@/atlas-engine/plugins/events", () => ({
+  createAtlasPluginStorage: vi.fn(() => ({
+    get: vi.fn(),
+    set: vi.fn(),
+    remove: vi.fn(),
+  })),
+  emitAtlasPluginEvent: vi.fn(),
+  onAtlasPluginEvent: vi.fn(() => vi.fn()),
 }));
-vi.mock("@/lib/canvas/node-registry", () => ({ getNodePluginId: vi.fn(() => "test-plugin") }));
+vi.mock("@/atlas-engine/model/node-registry", () => ({
+  getAtlasNodeOwner: vi.fn(() => "test-plugin"),
+}));
 
 const node = (id: string, type = "test-plugin:card"): CanvasNodeData => ({
-  id, type, title: id, position: { x: 0, y: 0 }, width: 100, height: 80,
+  id,
+  type,
+  title: id,
+  position: { x: 0, y: 0 },
+  width: 100,
+  height: 80,
 });
-const host = (getNode: CanvasPluginHost["getNode"]) => ({
-  getNode, getNodes: vi.fn(() => []), getConnections: vi.fn(() => []),
-  getUpstream: vi.fn(() => []), getDownstream: vi.fn(() => []), updateNode: vi.fn(), updateMetadata: vi.fn(),
-  applyOps: vi.fn(), ai: {}, openPanel: vi.fn(), closePanel: vi.fn(),
-}) as unknown as CanvasPluginHost;
+const host = (getNode: CanvasPluginHost["getNode"]) =>
+  ({
+    getNode,
+    getNodes: vi.fn(() => []),
+    getConnections: vi.fn(() => []),
+    getUpstream: vi.fn(() => []),
+    getDownstream: vi.fn(() => []),
+    updateNode: vi.fn(),
+    updateMetadata: vi.fn(),
+    applyOps: vi.fn(),
+    ai: {},
+    openPanel: vi.fn(),
+    closePanel: vi.fn(),
+  }) as unknown as CanvasPluginHost;
 
 describe("plugin node context binding", () => {
   it("binds updates and panel actions to the node id that created the context", () => {
     const first = node("first");
     const second = node("second");
-    const api = host((id) => id === "first" ? first : second);
-    const context = buildNodeContext(api, first, {} as never, 1);
+    const api = host((id) => (id === "first" ? first : second));
+    const context = createAtlasNodeContext(api, first, {} as never, 1);
 
     context.updateNode({ title: "Updated" });
     context.updateMetadata({ content: "updated" });
     context.openPanel();
     context.closePanel();
     expect(api.updateNode).toHaveBeenCalledWith("first", { title: "Updated" });
-    expect(api.updateMetadata).toHaveBeenCalledWith("first", { content: "updated" });
+    expect(api.updateMetadata).toHaveBeenCalledWith("first", {
+      content: "updated",
+    });
     expect(api.openPanel).toHaveBeenCalledWith("first");
     expect(api.closePanel).toHaveBeenCalledWith("first");
   });
@@ -41,7 +63,7 @@ describe("plugin node context binding", () => {
     const original = node("stable-id", "test-plugin:card");
     let current: CanvasNodeData = original;
     const api = host(() => current);
-    const context = buildNodeContext(api, original, {} as never, 1);
+    const context = createAtlasNodeContext(api, original, {} as never, 1);
     current = node("stable-id", "text");
 
     context.updateNode({ title: "Wrong node" });
