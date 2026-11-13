@@ -3,6 +3,8 @@ import i18n from "@/i18n";
 import { getAtlasNodeDefinition } from "@/atlas-engine/model/node-registry";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { imageToDataUrl } from "@/services/image-storage";
+import { throwIfAborted } from "@/services/media-storage-runtime";
+import type { ReferenceImage } from "@/types/image";
 import {
   CanvasNodeType,
   type CanvasConnection,
@@ -29,18 +31,13 @@ type Resource = Readonly<{
   text?: string;
 }>;
 
-type MediaReferenceImage = {
-  id: string;
-  name: string;
-  type: string;
+type MediaReferenceImage = ReferenceImage & {
   size: number;
   width: number;
   height: number;
   url: string;
-  dataUrl: string;
 };
 
-const noNodes: readonly CanvasNodeData[] = [];
 const noConnections: readonly CanvasConnection[] = [];
 
 function mediaFor(node: CanvasNodeData): Resource | undefined {
@@ -108,10 +105,11 @@ export class CanvasResourceIndex {
     private readonly sourceConnections: readonly CanvasConnection[],
   ) {
     sourceNodes.forEach((node, order) => {
-      if (!this.nodesById.has(node.id)) {
-        this.nodesById.set(node.id, node);
-        this.nodeOrder.set(node.id, order);
-      }
+      // All indexes must agree on the same record when an old import has
+      // duplicate IDs; a later duplicate must not replace only its resource.
+      if (this.nodesById.has(node.id)) return;
+      this.nodesById.set(node.id, node);
+      this.nodeOrder.set(node.id, order);
       const parentId = node.metadata?.groupId;
       if (parentId) addToIndex(this.membersByGroup, parentId, node);
       const resource = mediaFor(node);
@@ -229,9 +227,10 @@ export class CanvasResourceIndex {
     for (const configId of configIds) {
       if (this.nodesById.get(configId)?.type !== CanvasNodeType.Config)
         continue;
-      return uniqueNodes(
-        this.connectedResources(configId).filter((node) => node.id !== nodeId),
+      const inputs = this.connectedResources(configId).filter(
+        (node) => node.id !== nodeId,
       );
+      if (inputs.length) return inputs;
     }
     return [];
   }
@@ -302,61 +301,102 @@ export function buildCanvasResourceReferences(nodes: CanvasNodeData[]) {
 }
 
 export async function resolveCanvasReferenceImages(
-  references: CanvasResourceReference[],
-  nodes: CanvasNodeData[],
+  references: readonly CanvasResourceReference[],
+  nodes: readonly CanvasNodeData[],
+  options: { signal?: AbortSignal } = {},
 ): Promise<MediaReferenceImage[]> {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
-  const imageReferences = references.filter(
-    (reference) => reference.kind === "image",
-  );
-  return Promise.all(
-    imageReferences.map(async (reference) => {
-      const node = byId.get(reference.nodeId);
-      if (!node) {
-        throw new Error(
-          i18n.t("agent.composer.mentions.resourceMissing", {
-            title: reference.title,
-          }),
+  throwIfAborted(options.signal);
+  const byId = new Map<string, CanvasNodeData>();
+  for (const node of nodes) if (!byId.has(node.id)) byId.set(node.id, node);
+  const images = references.filter(({ kind }) => kind === "image");
+  // Validate the whole selection before starting any disk/network work.
+  const jobs = images.map((reference) => {
+    const node = byId.get(reference.nodeId);
+    if (!node)
+      throw new Error(
+        i18n.t("agent.composer.mentions.resourceMissing", {
+          title: reference.title,
+        }),
+      );
+    return { reference, node };
+  });
+  const results: MediaReferenceImage[] = new Array(jobs.length);
+  let cursor = 0;
+  let failed = false;
+  const load = async () => {
+    while (!failed && cursor < jobs.length) {
+      throwIfAborted(options.signal);
+      const slot = cursor++;
+      const { reference, node } = jobs[slot];
+      try {
+        results[slot] = await loadReferenceImage(
+          reference,
+          node,
+          options.signal,
         );
+      } catch (error) {
+        failed = true;
+        throw error;
       }
+    }
+  };
+  // A large selection should not decode every full-resolution image at once.
+  await Promise.all(Array.from({ length: Math.min(4, jobs.length) }, load));
+  throwIfAborted(options.signal);
+  return results;
+}
 
-      const metadata = node.metadata;
-      const dataUrl = await imageToDataUrl({
-        storageKey: metadata?.storageKey,
-        url: reference.previewUrl,
-      });
-      if (!dataUrl.startsWith("data:image/")) {
-        throw new Error(
-          i18n.t("agent.composer.mentions.imageReadFailed", {
-            title: reference.title,
-          }),
-        );
-      }
-
-      const details =
-        metadata?.naturalWidth && metadata.naturalHeight
-          ? {
-              width: metadata.naturalWidth,
-              height: metadata.naturalHeight,
-              mimeType:
-                metadata.mimeType ||
-                dataUrl.match(/^data:([^;]+)/)?.[1] ||
-                "image/png",
-            }
-          : await readImageMeta(dataUrl);
-
-      return {
-        id: `canvas:${node.id}`,
-        name: reference.title,
-        type: metadata?.mimeType || details.mimeType,
-        size: metadata?.bytes || getDataUrlByteSize(dataUrl),
-        width: details.width,
-        height: details.height,
-        url: reference.previewUrl || dataUrl,
-        dataUrl,
-      };
-    }),
+async function loadReferenceImage(
+  reference: CanvasResourceReference,
+  node: CanvasNodeData,
+  signal?: AbortSignal,
+): Promise<MediaReferenceImage> {
+  const metadata = node.metadata;
+  const dataUrl = await imageToDataUrl(
+    { storageKey: metadata?.storageKey, url: reference.previewUrl },
+    { signal },
   );
+  throwIfAborted(signal);
+  if (!dataUrl.startsWith("data:image/")) {
+    throw new Error(
+      i18n.t("agent.composer.mentions.imageReadFailed", {
+        title: reference.title,
+      }),
+    );
+  }
+  const storedWidth = metadata?.naturalWidth;
+  const storedHeight = metadata?.naturalHeight;
+  const validStoredSize =
+    typeof storedWidth === "number" &&
+    Number.isFinite(storedWidth) &&
+    storedWidth > 0 &&
+    typeof storedHeight === "number" &&
+    Number.isFinite(storedHeight) &&
+    storedHeight > 0;
+  const details = validStoredSize
+    ? {
+        width: storedWidth,
+        height: storedHeight,
+        mimeType: /^data:([^;,]+)/.exec(dataUrl)?.[1] || "image/png",
+      }
+    : await readImageMeta(dataUrl);
+  throwIfAborted(signal);
+  const storedBytes = metadata?.bytes;
+  return {
+    width: details.width,
+    height: details.height,
+    id: `canvas:${node.id}`,
+    name: reference.title,
+    type: metadata?.mimeType || details.mimeType,
+    size:
+      typeof storedBytes === "number" &&
+      Number.isFinite(storedBytes) &&
+      storedBytes >= 0
+        ? storedBytes
+        : getDataUrlByteSize(dataUrl),
+    url: reference.previewUrl || dataUrl,
+    dataUrl,
+  };
 }
 
 export function getMentionResourceNodes(

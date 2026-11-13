@@ -6,6 +6,19 @@ const node = (id: string, x = 0, y = 0, metadata: CanvasNodeData["metadata"] = {
 const document = (nodes: CanvasNodeData[] = [node("a"), node("b", 500, 200)], patch: Partial<StudioDocument> = {}): StudioDocument => ({ nodes, connections: [], viewport: { x: 0, y: 0, k: 1 }, backgroundMode: "dots", showImageInfo: false, ...patch });
 
 describe("independent studio document journal", () => {
+  it("camera frames preserve graph and selection identity, do not touch history, and reject non-finite geometry", () => {
+    const session = new StudioSession(document());
+    session.select(["a"]);
+    const before = session.snapshot();
+    for (let i = 0; i < 50; i++) session.moveViewport({ x: i, y: -i, k: 1 + i / 100 });
+    expect(session.read().nodes).toBe(before.document.nodes);
+    expect(session.read().connections).toBe(before.document.connections);
+    expect(session.snapshot().selection).toBe(before.selection);
+    expect(session.snapshot().undo).toBe(false);
+    session.moveViewport({ x: NaN, y: Infinity, k: 999 });
+    expect(session.read().viewport).toEqual({ x: 0, y: 0, k: 3 });
+    session.select(["missing", "a"]); expect([...session.snapshot().selection]).toEqual(["a"]);
+  });
   it("undoes a drag while retaining a completed asynchronous result", () => {
     const session = new StudioSession(document());
     session.beginGesture(["a"]);

@@ -60,6 +60,23 @@ function assertActive(signal?: AbortSignal) {
   if (signal?.aborted) throw createAbortError();
 }
 
+function awaitPluginResult<T>(
+  work: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!signal) return work;
+  return new Promise<T>((resolve, reject) => {
+    const finish = () => signal.removeEventListener("abort", cancel);
+    const cancel = () => {
+      finish();
+      reject(createAbortError());
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    if (signal.aborted) cancel();
+    work.then(resolve, reject).finally(finish);
+  });
+}
+
 function resolvePluginUrl(config: AiConfig, input: string) {
   if (/^https?:\/\//i.test(input)) return withLocalProxy(input);
   return buildApiUrl(
@@ -179,13 +196,20 @@ function createPoller(signal?: AbortSignal) {
   };
 }
 
-function readBeforeDeadline<T>(read: () => Promise<T>, deadline: number, signal?: AbortSignal) {
+function readBeforeDeadline<T>(
+  read: () => Promise<T>,
+  deadline: number,
+  signal?: AbortSignal,
+) {
   assertActive(signal);
   let timer: ReturnType<typeof setTimeout>;
   let cancel: () => void;
   const interrupted = new Promise<never>((_resolve, reject) => {
     cancel = () => reject(createAbortError());
-    timer = setTimeout(() => reject(new Error(i18n.t("modelPlugin.pollTimeout"))), Math.max(0, deadline - Date.now()));
+    timer = setTimeout(
+      () => reject(new Error(i18n.t("modelPlugin.pollTimeout"))),
+      Math.max(0, deadline - Date.now()),
+    );
     signal?.addEventListener("abort", cancel, { once: true });
   });
   const reading = Promise.resolve().then(() => {
@@ -228,7 +252,11 @@ export async function runModelPlugin<T = unknown>(
     poll: createPoller(signal),
     sleep: (ms: number) => waitForNextPoll(Math.max(1, ms), signal),
     signal,
-    onDelta: args.onDelta,
+    onDelta: args.onDelta
+      ? (text: string) => {
+          if (!signal?.aborted) args.onDelta?.(text);
+        }
+      : undefined,
     capability: args.capability,
   };
   try {
@@ -237,7 +265,7 @@ export async function runModelPlugin<T = unknown>(
       ...Object.keys(bindings),
       `"use strict"; return (async () => {\n${args.script}\n})();`,
     ) as (...values: unknown[]) => Promise<T>;
-    return await execute(...Object.values(bindings));
+    return await awaitPluginResult(execute(...Object.values(bindings)), signal);
   } catch (error) {
     throw normalizePluginFailure(error);
   }

@@ -1250,26 +1250,37 @@ html:not(.dark) .studio-inspector select {
   font-size: 12px;
 }
 .studio-workspace .studio-port {
-  width: 13px;
-  height: 13px;
-  border: 2px solid #a4afb9;
+  background: transparent;
+}
+.studio-workspace .studio-port::before {
+  border-color: #a4afb9;
   background: #191b20;
 }
-.studio-workspace .studio-node.is-selected .studio-port,
-.studio-workspace .studio-port:hover,
-.studio-workspace .studio-port:focus-visible {
+.studio-workspace .studio-node.is-selected .studio-port::before,
+.studio-workspace .studio-port[data-connect-ready]::before,
+.studio-workspace .studio-port:hover::before,
+.studio-workspace .studio-port:focus-visible::before {
   border-color: var(--studio-accent);
 }
-.studio-workspace .studio-port:hover,
-.studio-workspace .studio-port:focus-visible {
+.studio-workspace .studio-port[data-connect-hover]::before,
+.studio-workspace .studio-port:hover::before,
+.studio-workspace .studio-port:focus-visible::before {
   background: var(--studio-accent);
-  outline: 4px solid #9de0c920;
+  transform: scale(1.25);
 }
-.studio-workspace .studio-resize {
-  width: 8px;
-  height: 8px;
-  border-color: var(--studio-accent);
-  background: var(--studio-surface);
+.studio-workspace .studio-node:focus-visible {
+  outline: 2px solid var(--studio-accent);
+  outline-offset: 3px;
+}
+.studio-workspace [data-studio-gesture="move"] .studio-node.is-selected,
+.studio-workspace [data-studio-gesture="move"] .studio-node.is-selected .studio-node-heading button {
+  cursor: grabbing;
+}
+.studio-workspace [data-studio-gesture="move"] .studio-node.is-selected {
+  will-change: transform;
+}
+.studio-workspace [data-studio-gesture="wire"] .studio-node {
+  cursor: crosshair;
 }
 .studio-workspace .studio-wires {
   color: #82929c;
@@ -1329,7 +1340,7 @@ html:not(.dark) .studio-workspace .studio-config-summary small {
   border-top-color: #e7e9ef;
   color: #777e8e;
 }
-html:not(.dark) .studio-workspace .studio-port {
+html:not(.dark) .studio-workspace .studio-port::before {
   border-color: #7a8798;
   background: #fafafb;
 }

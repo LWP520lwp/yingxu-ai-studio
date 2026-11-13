@@ -3,13 +3,13 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import { Modal } from "antd";
+import { useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import { saveAs } from "file-saver";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -38,6 +38,7 @@ import type {
 } from "@/types/canvas";
 import {
   StudioSession,
+  STUDIO_ZOOM_LIMITS,
   fitStudioView,
   makeStudioNode,
   studioId,
@@ -60,6 +61,8 @@ import {
   studioPluginContext,
 } from "./studio-plugins";
 import { installStudioHost } from "./studio-host";
+import { createStudioCamera } from "./studio-camera";
+import { createStudioSaveQueue } from "./studio-save-queue";
 import type { CodexCanvasPlan } from "./codex-plan";
 import "./studio-workspace.css";
 
@@ -138,6 +141,23 @@ export default function StudioWorkspace({
   const [size, setSize] = useState({ width: 1000, height: 700 });
   const sizeRef = useRef(size);
   sizeRef.current = size;
+  const reducedMotion = useReducedMotion();
+  const [cameraMoving, setCameraMoving] = useState(false);
+  const camera = useMemo(
+    () =>
+      createStudioCamera({
+        read: () => session.read().viewport,
+        write: session.moveViewport,
+        active: setCameraMoving,
+      }),
+    [session],
+  );
+  const navigate = useCallback(
+    (view: StudioDocument["viewport"]) => {
+      camera.move(view, sizeRef.current, Boolean(reducedMotion));
+    },
+    [camera, reducedMotion],
+  );
   const life = useRef(true);
   const scope = useRef(getPlatformInit()?.scopeId);
   const alive = useCallback(
@@ -181,6 +201,7 @@ export default function StudioWorkspace({
     containerRef: surface,
     tool,
     configTitle: word("图像创作", "Image creation"),
+    onStart: camera.stop,
   });
   const persist = useCallback(() => {
     if (alive()) {
@@ -192,7 +213,30 @@ export default function StudioWorkspace({
       });
     }
   }, [alive, projectId, session]);
-  useLayoutEffect(persist, [doc, persist]);
+  const saveQueue = useMemo(() => createStudioSaveQueue(persist), [persist]);
+  useEffect(() => {
+    let previous = session.read();
+    const unsubscribe = session.subscribe(() => {
+      const current = session.read();
+      if (current === previous) return;
+      previous = current;
+      saveQueue.schedule();
+    });
+    const flush = () => saveQueue.flush();
+    const hidden = () => {
+      if (document.hidden) flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      unsubscribe();
+      saveQueue.flush();
+      saveQueue.dispose();
+      camera.stop();
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", hidden);
+    };
+  }, [camera, session, saveQueue]);
   useEffect(() => {
     life.current = true;
     tasks.resume();
@@ -234,67 +278,55 @@ export default function StudioWorkspace({
       y: (size.height / 2 - view.y) / view.k,
     };
   };
-  const fit = (onlySelected = false) =>
-    session.change(
-      (current) => ({
-        ...current,
-        viewport: fitStudioView(
-          onlySelected && state.selection.size
-            ? current.nodes.filter((node) => state.selection.has(node.id))
-            : current.nodes,
-          size.width,
-          size.height,
-        ),
-      }),
-      false,
+  const fit = (onlySelected = false) => {
+    const current = session.read();
+    navigate(
+      fitStudioView(
+        onlySelected && state.selection.size
+          ? current.nodes.filter((node) => state.selection.has(node.id))
+          : current.nodes,
+        size.width,
+        size.height,
+      ),
     );
+  };
   const revealComposer = useCallback(
     (id: string) => {
-      session.change((current) => {
-        const node = current.nodes.find((entry) => entry.id === id);
-        if (!node) return current;
-        const viewport = studioNodeEditingView(
-          node,
-          current.viewport,
-          sizeRef.current,
-        );
-        return viewport === current.viewport
-          ? current
-          : { ...current, viewport };
-      }, false);
+      if (gestures.isActive()) return;
+      const current = session.read();
+      const node = current.nodes.find((entry) => entry.id === id);
+      if (!node) return;
+      const view = studioNodeEditingView(
+        node,
+        current.viewport,
+        sizeRef.current,
+      );
+      if (view !== current.viewport) navigate(view);
     },
-    [session],
+    [session, navigate, gestures.isActive],
   );
   const focusDraft = (id: string) => {
     const node = session.read().nodes.find((entry) => entry.id === id);
     if (!node) return;
     session.select([id]);
-    session.change(
-      (current) => ({
-        ...current,
-        viewport: studioNodeEditingView(
-          node,
-          fitStudioView([node], size.width, size.height),
-          size,
-        ),
-      }),
-      false,
+    navigate(
+      studioNodeEditingView(
+        node,
+        fitStudioView([node], size.width, size.height),
+        size,
+      ),
     );
     if (window.innerWidth < 1000) setDrafts(false);
   };
-  const zoom = (scale: number) =>
-    session.change((current) => {
-      const k = Math.min(3, Math.max(0.12, scale));
-      const point = center();
-      return {
-        ...current,
-        viewport: {
-          x: size.width / 2 - point.x * k,
-          y: size.height / 2 - point.y * k,
-          k,
-        },
-      };
-    }, false);
+  const zoom = (scale: number) => {
+    const k = Math.min(3, Math.max(0.12, scale));
+    const point = center();
+    navigate({
+      x: size.width / 2 - point.x * k,
+      y: size.height / 2 - point.y * k,
+      k,
+    });
+  };
   const create = (type: string) => {
     const point = center();
     const names: Record<string, string> = {
@@ -319,6 +351,10 @@ export default function StudioWorkspace({
       node.metadata = { ...definition.defaultMetadata };
     }
     session.insert([node]);
+    if (["config", "image", "video"].includes(node.type))
+      navigate(
+        studioNodeEditingView(node, session.read().viewport, sizeRef.current),
+      );
     setTool("pan");
   };
   const report = (reason: unknown) => {
@@ -1046,9 +1082,12 @@ export default function StudioWorkspace({
           backgroundMode={
             doc.backgroundMode === "none" ? "blank" : doc.backgroundMode
           }
-          onViewportChange={(viewport) =>
-            session.change((current) => ({ ...current, viewport }), false)
-          }
+          onViewportChange={session.moveViewport}
+          onInteractionStart={camera.stop}
+          animating={cameraMoving}
+          zoomLimits={STUDIO_ZOOM_LIMITS}
+          gesture={gestures.interaction}
+          onCanvasDeselect={() => session.select([])}
           onCanvasMouseDown={gestures.onCanvasDown}
           onCanvasDoubleClick={(event) => {
             if (
@@ -1069,6 +1108,7 @@ export default function StudioWorkspace({
             size={size}
             wire={gestures.wire}
             marquee={gestures.marquee}
+            interaction={gestures.interaction}
             onNodeDown={gestures.onNodeDown}
             onConnect={gestures.onConnect}
             onResize={gestures.onResize}
@@ -1100,6 +1140,7 @@ export default function StudioWorkspace({
           node={selected}
           viewport={doc.viewport}
           size={size}
+          moving={Boolean(gestures.interaction)}
           composer={inspectorFor}
           onMode={(generationMode) =>
             session.metadata(selected.id, {
@@ -1167,23 +1208,7 @@ export default function StudioWorkspace({
                 node.title.toLowerCase().includes(query.toLowerCase()),
               )
               .map((node) => (
-                <button
-                  key={node.id}
-                  onClick={() => {
-                    session.select([node.id]);
-                    session.change(
-                      (current) => ({
-                        ...current,
-                        viewport: fitStudioView(
-                          [node],
-                          size.width,
-                          size.height,
-                        ),
-                      }),
-                      false,
-                    );
-                  }}
-                >
+                <button key={node.id} onClick={() => focusDraft(node.id)}>
                   <span>{node.type.toUpperCase()}</span>
                   {node.title}
                 </button>

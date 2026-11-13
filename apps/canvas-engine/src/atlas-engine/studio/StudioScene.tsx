@@ -1,9 +1,9 @@
 import {
   memo,
   useEffect,
+  useMemo,
   useRef,
   useState,
-  type MouseEvent,
   type PointerEvent,
   type ReactNode,
 } from "react";
@@ -36,10 +36,15 @@ type Props = {
   size: { width: number; height: number };
   wire: StudioWire | null;
   marquee: StudioMarquee | null;
-  onNodeDown: (event: MouseEvent, node: CanvasNodeData) => void;
+  interaction?: string | null;
+  onNodeDown: (event: PointerEvent, node: CanvasNodeData) => void;
   onSelect: (id: string) => void;
   onEdge: (id: string) => void;
-  onConnect: (event: MouseEvent, id: string, side: "source" | "target") => void;
+  onConnect: (
+    event: PointerEvent,
+    id: string,
+    side: "source" | "target",
+  ) => void;
   onResize: (
     event: PointerEvent,
     node: CanvasNodeData,
@@ -50,6 +55,17 @@ type Props = {
   onAction: (action: string, node: CanvasNodeData) => void;
   renderExtension: (node: CanvasNodeData) => ReactNode;
 };
+type NodeEvents = Pick<
+  Props,
+  | "onNodeDown"
+  | "onSelect"
+  | "onConnect"
+  | "onResize"
+  | "onTitle"
+  | "onContent"
+  | "onAction"
+  | "renderExtension"
+>;
 const glyphs = {
   text: FileText,
   image: Image,
@@ -76,11 +92,15 @@ const StudioNode = memo(
   function StudioNode({
     node,
     selected,
+    connectionSide,
+    connectionHover,
     props,
   }: {
     node: CanvasNodeData;
     selected: boolean;
-    props: Props;
+    connectionSide?: "source" | "target";
+    connectionHover: boolean;
+    props: NodeEvents;
   }) {
     const { i18n } = useTranslation();
     const zh = !i18n.resolvedLanguage?.startsWith("en");
@@ -137,13 +157,20 @@ const StudioNode = memo(
         data-studio-node={node.type}
         className={`studio-node ${selected ? "is-selected" : ""} ${group ? "is-group" : ""}`}
         style={{
-          left: node.position.x,
-          top: node.position.y,
+          transform: `translate3d(${node.position.x}px, ${node.position.y}px, 0)`,
           width: node.width,
           height: node.height,
           zIndex: group ? 1 : selected ? 4 : 3,
         }}
-        onMouseDown={(event) => props.onNodeDown(event, node)}
+        onPointerDown={(event) => props.onNodeDown(event, node)}
+        tabIndex={0}
+        aria-label={`${zh ? "节点" : "Node"}: ${node.title}`}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget || event.key !== "Enter")
+            return;
+          event.preventDefault();
+          props.onSelect(node.id);
+        }}
       >
         <header className="studio-node-heading">
           <Icon size={15} aria-hidden="true" />
@@ -289,13 +316,17 @@ const StudioNode = memo(
             className={`studio-port studio-port-${side}`}
             data-studio-port={node.id}
             data-port-side={side}
+            data-connect-ready={connectionSide === side || undefined}
+            data-connect-hover={
+              (connectionSide === side && connectionHover) || undefined
+            }
             style={{ top: Math.min(74, node.height / 2) }}
             aria-label={
               zh
                 ? `${side === "source" ? "输出" : "输入"}连接：${node.title}`
                 : `${side === "source" ? "Output" : "Input"}: ${node.title}`
             }
-            onMouseDown={(event) => props.onConnect(event, node.id, side)}
+            onPointerDown={(event) => props.onConnect(event, node.id, side)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
@@ -322,13 +353,60 @@ const StudioNode = memo(
   (previous, next) =>
     previous.node === next.node &&
     previous.selected === next.selected &&
+    previous.connectionSide === next.connectionSide &&
+    previous.connectionHover === next.connectionHover &&
     Object.hasOwn(glyphs, next.node.type),
 );
 
 export function StudioScene(props: Props) {
   const { document: doc, selection, size, wire, marquee } = props;
   const view = doc.viewport;
-  const nodes = new Map(doc.nodes.map((node) => [node.id, node]));
+  const nodes = useMemo(
+    () => new Map(doc.nodes.map((node) => [node.id, node])),
+    [doc.nodes],
+  );
+  const latest = useRef(props);
+  latest.current = props;
+  // Memoised cards always invoke the current command closures, never stale config or selection.
+  const events = useMemo<NodeEvents>(
+    () => ({
+      onNodeDown: (...args) => latest.current.onNodeDown(...args),
+      onSelect: (...args) => latest.current.onSelect(...args),
+      onConnect: (...args) => latest.current.onConnect(...args),
+      onResize: (...args) => latest.current.onResize(...args),
+      onTitle: (...args) => latest.current.onTitle(...args),
+      onContent: (...args) => latest.current.onContent(...args),
+      onAction: (...args) => latest.current.onAction(...args),
+      renderExtension: (...args) => latest.current.renderExtension(...args),
+    }),
+    [],
+  );
+  const connectable = useMemo(() => {
+    if (!wire) return null;
+    const blocked = new Set([wire.nodeId]);
+    const adjacency = new Map<string, string[]>();
+    for (const edge of doc.connections) {
+      const from = wire.side === "source" ? edge.toNodeId : edge.fromNodeId;
+      const to = wire.side === "source" ? edge.fromNodeId : edge.toNodeId;
+      adjacency.set(from, [...(adjacency.get(from) || []), to]);
+      if (
+        (wire.side === "source" ? edge.fromNodeId : edge.toNodeId) ===
+        wire.nodeId
+      )
+        blocked.add(wire.side === "source" ? edge.toNodeId : edge.fromNodeId);
+    }
+    const pending = [wire.nodeId];
+    const visited = new Set(pending);
+    for (let i = 0; i < pending.length; i++)
+      for (const id of adjacency.get(pending[i]) || []) {
+        blocked.add(id);
+        if (!visited.has(id)) {
+          visited.add(id);
+          pending.push(id);
+        }
+      }
+    return blocked;
+  }, [wire?.nodeId, wire?.side, doc.connections]);
   const left = (-view.x - 500) / view.k;
   const top = (-view.y - 500) / view.k;
   const right = (size.width - view.x + 500) / view.k;
@@ -436,7 +514,27 @@ export function StudioScene(props: Props) {
           key={node.id}
           node={node}
           selected={selection.has(node.id)}
-          props={props}
+          connectionSide={
+            wire && connectable && !connectable.has(node.id)
+              ? wire.side === "source"
+                ? "target"
+                : "source"
+              : undefined
+          }
+          connectionHover={Boolean(
+            wire &&
+            Math.abs(
+              wire.cursor.x -
+                studioPortPosition(
+                  node,
+                  wire.side === "source" ? "target" : "source",
+                ).x,
+            ) <
+              40 / view.k &&
+            Math.abs(wire.cursor.y - studioPortPosition(node, "target").y) <
+              40 / view.k,
+          )}
+          props={events}
         />
       ))}
       {marquee && (

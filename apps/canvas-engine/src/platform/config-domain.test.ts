@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { defaultConfig, defaultWebdavSyncConfig } from "@/lib/config/defaults";
+import {
+  createDefaultConfig,
+  defaultConfig,
+  defaultWebdavSyncConfig,
+} from "@/lib/config/defaults";
 import {
   createChannelModelIndex,
   decodeChannelModel,
@@ -38,6 +42,18 @@ const catalog = {
 };
 
 describe("configuration snapshot domain", () => {
+  it("creates defaults without shared nested arrays or model records", () => {
+    const edited = createDefaultConfig();
+    edited.channels[0].models[0].name = "local-model";
+    edited.models.push("extra");
+    const next = createDefaultConfig();
+    expect(next.channels[0].models[0].name).toBe("muse-image");
+    expect(next.models).toEqual([
+      "platform::muse-image",
+      "platform::muse-video",
+    ]);
+    expect(defaultConfig.channels[0].models[0].name).toBe("muse-image");
+  });
   it("migrates raw-name selections from legacy channels while retaining generation preferences", () => {
     const legacy = {
       config: {

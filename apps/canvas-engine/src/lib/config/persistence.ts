@@ -1,5 +1,6 @@
 import {
   defaultConfig,
+  createDefaultConfig,
   defaultWebdavSyncConfig,
   DEFAULT_LOCAL_PROXY_URL,
 } from "./defaults";
@@ -42,7 +43,7 @@ const REQUIRED_PREFERENCES = [
 ] as const;
 
 function readPreferences(input: Record<string, unknown>): AiConfig {
-  const result = { ...defaultConfig };
+  const result = createDefaultConfig();
   // Stored versions used this same field vocabulary. Copy only compatible
   // scalar fields so a corrupt or stale import cannot change runtime shapes.
   for (const key of Object.keys(defaultConfig) as Array<keyof AiConfig>) {

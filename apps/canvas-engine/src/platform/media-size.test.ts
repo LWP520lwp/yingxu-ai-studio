@@ -13,6 +13,9 @@ import {
   parseVideoResolution,
   readMediaDimensions,
   readVideoDimensions,
+  imageSizePresets,
+  mediaRatioOptions,
+  videoRatioOptions,
 } from "@/lib/media-size";
 
 describe("media dimensions", () => {
@@ -57,5 +60,38 @@ describe("media dimensions", () => {
     expect(clampVideoSeconds("3.9")).toBe("4");
     expect(clampVideoSeconds("99")).toBe("30");
     expect(clampVideoSeconds("bad")).toBe("6");
+  });
+
+  it("keeps every image preset and its portrait transpose available to old drafts", () => {
+    for (const [scale, presets] of Object.entries(imageSizePresets)) {
+      expect(Object.keys(presets)).toHaveLength(mediaRatioOptions.length - 1);
+      for (const [ratio, size] of Object.entries(presets)) {
+        const [width, height] = ratio.split(":");
+        const pixels = parsePixelSize(size)!;
+        expect(presets[`${height}:${width}`]).toBe(
+          `${pixels.height}x${pixels.width}`,
+        );
+        expect(inferMediaScale(size)).toBe(scale);
+        expect(computeMediaSize(scale, ratio)).toBe(size);
+      }
+    }
+    expect(videoRatioOptions.map(({ value }) => value)).toEqual([
+      "1:1",
+      "3:4",
+      "4:3",
+      "16:9",
+      "9:16",
+      "21:9",
+      "auto",
+    ]);
+  });
+
+  it("rejects unsafe integers and keeps both video axes codec-compatible for odd resolutions", () => {
+    expect(parsePixelSize("9007199254740993x1080")).toBeNull();
+    expect(parseVideoResolution("9".repeat(320))).toBe("720");
+    expect(computeVideoSize("721", "16:9")).toBe("1284x722");
+    expect(computeVideoSize("721", "9:16")).toBe("722x1284");
+    expect(computeVideoSize("720", "0.00000000000000000001:1")).toBe("auto");
+    expect(inferMediaRatio(" 16:9 ")).toBe("16:9");
   });
 });

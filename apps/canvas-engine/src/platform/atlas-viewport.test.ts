@@ -10,6 +10,21 @@ import {
 } from "@/atlas-engine/surface/viewport";
 
 describe("Atlas canvas viewport math", () => {
+  it("uses the editor zoom limits before calculating offsets, so boundary wheel input does not drift", () => {
+    const limits = { minScale: 0.12, maxScale: 3 };
+    for (const [k, factor] of [
+      [3, 2],
+      [0.12, 0.5],
+    ]) {
+      const view = { x: -120, y: 80, k };
+      expect(zoomCanvasAt(view, { x: 600, y: 400 }, factor, limits)).toBe(view);
+    }
+    const view = { x: 50, y: -40, k: 2.8 };
+    const next = zoomCanvasAt(view, { x: 600, y: 400 }, 2, limits);
+    expect(next.k).toBe(3);
+    expect((600 - next.x) / next.k).toBeCloseTo((600 - view.x) / view.k);
+    expect((400 - next.y) / next.k).toBeCloseTo((400 - view.y) / view.k);
+  });
   it.each([0.1, 0.2, 0.37, 0.6, 1])(
     "keeps the grid readable at zoom %s without changing its world alignment",
     (k) => {

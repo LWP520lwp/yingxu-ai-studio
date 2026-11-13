@@ -142,6 +142,8 @@ export const CanvasEngine = forwardRef<CanvasEngineHandle, Props>(function Canva
   const [status, setStatus] = useState("正在加载画布…");
   const [failure, setFailure] = useState("");
   const [reload, setReload] = useState(0);
+  const frameIdentity = `${props.userId}:${props.project.id}:${reload}`;
+  const [mountedIdentity, setMountedIdentity] = useState("");
   const scope = useRef(crypto.randomUUID());
   const commandChannel = useRef<ReturnType<typeof createCanvasCommandChannel> | null>(null);
   const lastTitleSent = useRef<{ scopeId: string; title: string } | null>(null);
@@ -330,6 +332,7 @@ export const CanvasEngine = forwardRef<CanvasEngineHandle, Props>(function Canva
       if (request.scopeId !== scopeId) return;
       if (request.type === "frameflow:mounted") {
         channel.markMounted();
+        setMountedIdentity(frameIdentity);
         current.current.onReadinessChange?.(true);
         current.current.onReady?.();
         return;
@@ -371,8 +374,13 @@ export const CanvasEngine = forwardRef<CanvasEngineHandle, Props>(function Canva
     commandChannel.current.command("rename", { title });
   }, [props.project.id, props.project.title, props.userId, reload]);
 
-  return <div className="canvas-engine-shell">
-    <iframe key={`${props.userId}:${props.project.id}:${reload}`} ref={frame} src="/canvas-engine/index.html" title="映序完整 AI 画布" className="canvas-engine-frame" allow="clipboard-read; clipboard-write; fullscreen" />
+  const mounted = mountedIdentity === frameIdentity;
+  return <div className="canvas-engine-shell" data-ready={mounted} aria-busy={!mounted}>
+    <iframe key={frameIdentity} ref={frame} src="/canvas-engine/index.html" title="映序完整 AI 画布" className="canvas-engine-frame" allow="clipboard-read; clipboard-write; fullscreen" />
+    {!mounted && !failure && <div className="canvas-engine-opening" role="status" aria-label="正在打开画布">
+      <div className="canvas-engine-opening-scene" aria-hidden="true"><i /><span /><i /></div>
+      <strong>正在打开画布</strong><span>恢复节点、连接与上次视角</span>
+    </div>}
     {failure && <div className="canvas-engine-error" role="alert"><span>{failure}</span><button onClick={() => setReload((value) => value + 1)}>重新加载</button></div>}
     <div className="canvas-engine-sync" role="status">{status}</div>
   </div>;

@@ -3,7 +3,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
@@ -22,6 +21,7 @@ type Options = {
   containerRef: RefObject<HTMLElement | null>;
   tool: "select" | "pan";
   configTitle?: string;
+  onStart?(): void;
 };
 type Start = { client: ClientPoint; moved: boolean; pointerId?: number };
 type Gesture = Start &
@@ -189,6 +189,7 @@ export function useStudioGestures(options: Options) {
   const space = useRef(false);
   const [wire, setWire] = useState<StudioWire | null>(null);
   const [marquee, setMarquee] = useState<StudioMarquee | null>(null);
+  const [interaction, setInteraction] = useState<Gesture["kind"] | null>(null);
 
   const world = useCallback(
     (point: ClientPoint): Position => {
@@ -216,6 +217,7 @@ export function useStudioGestures(options: Options) {
       const dx = point.x - gesture.client.x,
         dy = point.y - gesture.client.y;
       if (!gesture.moved && Math.hypot(dx, dy) < 3) return;
+      if (!gesture.moved) setInteraction(gesture.kind);
       gesture.moved = true;
       if (gesture.kind === "move" || gesture.kind === "resize") {
         if (!gesture.journal) {
@@ -272,17 +274,11 @@ export function useStudioGestures(options: Options) {
           });
         }
       } else if (gesture.kind === "pan") {
-        session.change(
-          (doc) => ({
-            ...doc,
-            viewport: {
-              ...gesture.viewport,
-              x: gesture.viewport.x + dx,
-              y: gesture.viewport.y + dy,
-            },
-          }),
-          false,
-        );
+        session.moveViewport({
+          ...gesture.viewport,
+          x: gesture.viewport.x + dx,
+          y: gesture.viewport.y + dy,
+        });
       } else if (gesture.kind === "marquee") {
         const box = { from: gesture.from, to: world(point) };
         setMarquee(box);
@@ -300,6 +296,7 @@ export function useStudioGestures(options: Options) {
     pending.current = null;
     const gesture = active.current;
     active.current = null;
+    if (gesture) setInteraction(null);
     if (
       (gesture?.kind === "move" || gesture?.kind === "resize") &&
       gesture.journal
@@ -312,6 +309,7 @@ export function useStudioGestures(options: Options) {
   const start = useCallback(
     (gesture: Gesture) => {
       clear();
+      settings.current.onStart?.();
       active.current = gesture;
     },
     [clear],
@@ -423,16 +421,17 @@ export function useStudioGestures(options: Options) {
   }, [clear, containerRef, session, update, world]);
 
   const intent = (
-    event: ReactMouseEvent | ReactPointerEvent,
+    event: ReactPointerEvent,
     surface: "canvas" | "node" | "port" | "resize",
-  ) => studioGestureIntent({
-    tool: settings.current.tool,
-    surface,
-    button: event.button,
-    shiftKey: event.shiftKey,
-    space: space.current,
-  });
-  const beginPan = (event: ReactMouseEvent | ReactPointerEvent) => {
+  ) =>
+    studioGestureIntent({
+      tool: settings.current.tool,
+      surface,
+      button: event.button,
+      shiftKey: event.shiftKey,
+      space: space.current,
+    });
+  const beginPan = (event: ReactPointerEvent) => {
     event.stopPropagation();
     event.preventDefault();
     start({
@@ -474,7 +473,7 @@ export function useStudioGestures(options: Options) {
       start({ ...base, kind: "marquee", from: world(base.client), baseline });
     }
   };
-  const onNodeDown = (event: ReactMouseEvent, node: CanvasNodeData) => {
+  const onNodeDown = (event: ReactPointerEvent, node: CanvasNodeData) => {
     const action = intent(event, "node");
     if (action === "ignore") return;
     if (action === "pan") {
@@ -493,6 +492,7 @@ export function useStudioGestures(options: Options) {
     const base = {
       client: { x: event.clientX, y: event.clientY },
       moved: false,
+      pointerId: event.pointerId,
     };
     const selection = new Set(session.snapshot().selection);
     if (event.shiftKey && selection.has(node.id)) {
@@ -521,7 +521,7 @@ export function useStudioGestures(options: Options) {
     });
   };
   const onConnect = (
-    event: ReactMouseEvent,
+    event: ReactPointerEvent,
     nodeId: string,
     side: "source" | "target",
   ) => {
@@ -533,9 +533,16 @@ export function useStudioGestures(options: Options) {
     }
     event.stopPropagation();
     event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
     const client = { x: event.clientX, y: event.clientY };
     const next = { nodeId, side, cursor: world(client) };
-    start({ kind: "wire", client, moved: false, wire: next });
+    start({
+      kind: "wire",
+      client,
+      moved: false,
+      wire: next,
+      pointerId: event.pointerId,
+    });
     setWire(next);
   };
   const onResize = (
@@ -551,6 +558,7 @@ export function useStudioGestures(options: Options) {
     }
     event.stopPropagation();
     event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
     session.select([node.id]);
     start({
       kind: "resize",
@@ -566,6 +574,8 @@ export function useStudioGestures(options: Options) {
   return {
     wire,
     marquee,
+    interaction,
+    isActive: useCallback(() => active.current !== null, []),
     onCanvasDown,
     onNodeDown,
     onConnect,

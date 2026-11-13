@@ -1,5 +1,7 @@
 .studio-node {
   position: absolute;
+  left: 0;
+  top: 0;
   display: flex;
   flex-direction: column;
   border: 1px solid #3a4444;
@@ -9,6 +11,8 @@
   box-shadow: 0 5px 16px #0002;
   user-select: none;
   overflow: visible;
+  cursor: grab;
+  touch-action: none;
 }
 .studio-node.is-selected {
   border-color: #a4dfc3;
@@ -149,10 +153,10 @@
 }
 .studio-port {
   position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 2px solid #a4dfc3;
-  background: #1c2922;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: transparent;
   border-radius: 50%;
   transform: translateY(-50%);
   cursor: crosshair;
@@ -160,45 +164,62 @@
   touch-action: none;
   padding: 0;
 }
+.studio-port::before {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 7px;
+  border: 2px solid #a4dfc3;
+  background: #1c2922;
+  border-radius: 50%;
+  transition: transform 140ms ease-out;
+}
 .studio-port-source {
-  right: -8px;
+  right: -14px;
 }
 .studio-port-target {
-  left: -8px;
+  left: -14px;
 }
 .studio-port:hover,
 .studio-port:focus-visible {
-  background: #b2e5cb;
-  outline: 5px solid #9be0bb33;
+  outline: none;
 }
 .studio-resize {
   position: absolute;
-  width: 10px;
-  height: 10px;
-  border: 1px solid #a4dfc3;
-  background: #20372b;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  background: transparent;
   z-index: 9;
   touch-action: none;
   padding: 0;
 }
+.studio-resize::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1px solid var(--studio-accent);
+  border-radius: 2px;
+  background: var(--studio-surface);
+}
 .studio-resize-nw {
-  left: -5px;
-  top: -5px;
+  left: -10px;
+  top: -10px;
   cursor: nwse-resize;
 }
 .studio-resize-ne {
-  right: -5px;
-  top: -5px;
+  right: -10px;
+  top: -10px;
   cursor: nesw-resize;
 }
 .studio-resize-sw {
-  left: -5px;
-  bottom: -5px;
+  left: -10px;
+  bottom: -10px;
   cursor: nesw-resize;
 }
 .studio-resize-se {
-  right: -5px;
-  bottom: -5px;
+  right: -10px;
+  bottom: -10px;
   cursor: nwse-resize;
 }
 .studio-node-error {
@@ -225,6 +246,7 @@
   stroke: currentColor;
   stroke-width: 2;
   pointer-events: none;
+  vector-effect: non-scaling-stroke;
 }
 .studio-wires .is-active {
   color: #a4dfc3;
@@ -238,6 +260,7 @@
   stroke-width: 24;
   pointer-events: stroke;
   cursor: pointer;
+  vector-effect: non-scaling-stroke;
 }
 .studio-wire-hit:focus-visible {
   stroke: #a4dfc344;

@@ -38,7 +38,9 @@ type PromptSourceStore = {
 export function isPromptSourceInterval(
   value: number,
 ): value is (typeof PROMPT_SOURCE_INTERVALS)[number] {
-  return PROMPT_SOURCE_INTERVALS.includes(value as (typeof PROMPT_SOURCE_INTERVALS)[number]);
+  return PROMPT_SOURCE_INTERVALS.includes(
+    value as (typeof PROMPT_SOURCE_INTERVALS)[number],
+  );
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -93,7 +95,10 @@ function restoreSources(value: unknown): PromptSource[] {
   return [...builtIns, ...custom];
 }
 
-function saveInto(sources: PromptSource[], input: PromptSource): PromptSource[] {
+function saveInto(
+  sources: PromptSource[],
+  input: PromptSource,
+): PromptSource[] {
   const current = sources.find((source) => source.id === input.id);
   if (current?.builtIn) return sources;
   const next = createPromptSource({ ...input, builtIn: false });
@@ -109,7 +114,11 @@ function removeFrom(sources: PromptSource[], id: string): PromptSource[] {
     : sources.filter((source) => source.id !== id);
 }
 
-function setEnabled(sources: PromptSource[], id: string, enabled: boolean): PromptSource[] {
+function setEnabled(
+  sources: PromptSource[],
+  id: string,
+  enabled: boolean,
+): PromptSource[] {
   const target = sources.find((source) => source.id === id);
   return !target || target.enabled === enabled
     ? sources
@@ -121,7 +130,7 @@ function setEnabled(sources: PromptSource[], id: string, enabled: boolean): Prom
 export const usePromptSourceStore = create<PromptSourceStore>()(
   persist(
     (set) => ({
-      sources: DEFAULT_PROMPT_SOURCES,
+      sources: DEFAULT_PROMPT_SOURCES.map((source) => ({ ...source })),
       schedule: { ...DEFAULT_PROMPT_SOURCE_SCHEDULE },
       addSource: () => createPromptSource(),
       saveSource: (source) =>

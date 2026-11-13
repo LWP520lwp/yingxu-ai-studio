@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { DropdownMenu } from "radix-ui";
 import {
   Copy,
@@ -31,6 +32,7 @@ type Props = {
   node: CanvasNodeData;
   viewport: ViewportTransform;
   size: { width: number; height: number };
+  moving?: boolean;
   composer: (
     section: StudioNodeSection,
     onAction: Props["onAction"],
@@ -45,6 +47,7 @@ export function StudioNodeDock({
   node,
   viewport,
   size,
+  moving = false,
   composer,
   onMode,
   onAction,
@@ -58,9 +61,7 @@ export function StudioNodeDock({
     ["config", "image", "video"].includes(node.type),
   );
   const [section, setSection] = useState<StudioNodeSection>("compose");
-  useEffect(() => {
-    if (["config", "image", "video"].includes(node.type)) onReveal(node.id);
-  }, [node.id, node.type, onReveal, size.width, size.height]);
+  const reducedMotion = useReducedMotion();
   const place = studioNodePlacement(node, viewport, size);
   if (!place) return null;
   const hasContent = Boolean(node.metadata?.content);
@@ -105,10 +106,18 @@ export function StudioNodeDock({
           ] as const)
         : [];
   return (
-    <div className="studio-node-dock" data-node-dock={node.id}>
-      <div
+    <div
+      className="studio-node-dock"
+      data-node-dock={node.id}
+      data-moving={moving || undefined}
+      inert={moving}
+    >
+      <motion.div
         className="studio-node-quickbar"
-        style={{ left: place.x, top: place.y, width: place.width }}
+        style={{ x: place.x, y: place.y, width: place.width }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: moving ? 0 : 1 }}
+        transition={{ duration: reducedMotion ? 0 : 0.14, ease: "easeOut" }}
         role="toolbar"
         aria-label={word("节点快捷操作", "Node actions")}
       >
@@ -245,71 +254,78 @@ export function StudioNodeDock({
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
-      </div>
-      {expanded && (
-        <section
-          className="studio-node-composer"
-          aria-label={word("节点创作面板", "Node composer")}
-          style={{
-            left: place.panelX,
-            top: place.panelY,
-            width: place.panelWidth,
-            height: place.panelHeight,
-          }}
-          data-composer-side={place.panelBelow ? "below" : "above"}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              setExpanded(false);
-            }
-          }}
-        >
-          <header className="studio-node-composer-header">
-            <span title={node.title}>
-              {section === "skills"
-                ? word("导演 Skill", "Director Skills")
-                : section === "references"
-                  ? word("参考素材", "References")
-                  : section === "properties"
-                    ? word("节点属性", "Node properties")
-                    : node.metadata?.generationMode === "video" ||
-                        node.type === "video"
-                      ? word("视频创作", "Video creation")
-                      : word("图像创作", "Image creation")}
-            </span>
-            <button
-              className="studio-node-composer-close"
-              type="button"
-              onClick={() => setExpanded(false)}
-              aria-label={word("收起节点创作面板", "Close node composer")}
-            >
-              <X size={16} />
-            </button>
-          </header>
-          {section !== "compose" && (
-            <nav
-              className="studio-node-composer-tabs"
-              aria-label={word("节点创作功能", "Node tools")}
-            >
-              {(["compose", "skills", "references"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  aria-pressed={section === tab}
-                  onClick={() => openSection(tab)}
-                >
-                  {tab === "compose"
-                    ? word("创作", "Create")
-                    : tab === "skills"
-                      ? "Skill"
-                      : word("参考", "References")}
-                </button>
-              ))}
-            </nav>
-          )}
-          {composer(section, dispatch)}
-        </section>
-      )}
+      </motion.div>
+      <AnimatePresence>
+        {expanded && (
+          <motion.section
+            key="composer"
+            className="studio-node-composer"
+            aria-label={word("节点创作面板", "Node composer")}
+            style={{
+              x: place.panelX,
+              y: place.panelY,
+              width: place.panelWidth,
+              height: place.panelHeight,
+            }}
+            initial={{ opacity: 0, scale: reducedMotion ? 1 : 0.985 }}
+            animate={{ opacity: moving ? 0 : 1, scale: 1 }}
+            exit={{ opacity: 0, scale: reducedMotion ? 1 : 0.985 }}
+            transition={{ duration: reducedMotion ? 0 : 0.16, ease: "easeOut" }}
+            data-composer-side={place.panelBelow ? "below" : "above"}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                setExpanded(false);
+              }
+            }}
+          >
+            <header className="studio-node-composer-header">
+              <span title={node.title}>
+                {section === "skills"
+                  ? word("导演 Skill", "Director Skills")
+                  : section === "references"
+                    ? word("参考素材", "References")
+                    : section === "properties"
+                      ? word("节点属性", "Node properties")
+                      : node.metadata?.generationMode === "video" ||
+                          node.type === "video"
+                        ? word("视频创作", "Video creation")
+                        : word("图像创作", "Image creation")}
+              </span>
+              <button
+                className="studio-node-composer-close"
+                type="button"
+                onClick={() => setExpanded(false)}
+                aria-label={word("收起节点创作面板", "Close node composer")}
+              >
+                <X size={16} />
+              </button>
+            </header>
+            {section !== "compose" && (
+              <nav
+                className="studio-node-composer-tabs"
+                aria-label={word("节点创作功能", "Node tools")}
+              >
+                {(["compose", "skills", "references"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    aria-pressed={section === tab}
+                    onClick={() => openSection(tab)}
+                  >
+                    {tab === "compose"
+                      ? word("创作", "Create")
+                      : tab === "skills"
+                        ? "Skill"
+                        : word("参考", "References")}
+                  </button>
+                ))}
+              </nav>
+            )}
+            {composer(section, dispatch)}
+          </motion.section>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

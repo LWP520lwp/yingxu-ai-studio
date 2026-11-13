@@ -20,6 +20,7 @@ import {
   type AtlasCanvasBackground,
   type AtlasCanvasPoint,
   type AtlasCanvasViewportValue,
+  type AtlasZoomLimits,
 } from "./viewport";
 
 type AtlasTool = "select" | "pan";
@@ -36,6 +37,10 @@ type ViewportProps = {
   tool: AtlasTool;
   backgroundMode?: AtlasCanvasBackground;
   onViewportChange: (viewport: AtlasCanvasViewportValue) => void;
+  onInteractionStart?: () => void;
+  animating?: boolean;
+  gesture?: string | null;
+  zoomLimits?: AtlasZoomLimits;
   onCanvasMouseDown?: (event: PointerEvent<HTMLDivElement>) => void;
   onCanvasDeselect?: () => void;
   onCanvasDoubleClick?: (event: MouseEvent<HTMLDivElement>) => void;
@@ -78,6 +83,10 @@ export function AtlasCanvasViewport({
   tool,
   backgroundMode = "lines",
   onViewportChange,
+  onInteractionStart,
+  animating = false,
+  gesture,
+  zoomLimits,
   onCanvasMouseDown,
   onCanvasDeselect,
   onCanvasDoubleClick,
@@ -97,21 +106,10 @@ export function AtlasCanvasViewport({
     [backgroundMode, viewport],
   );
 
-  useEffect(() => {
-    current.current = viewport;
-  }, [viewport]);
+  current.current = viewport;
+  publish.current = onViewportChange;
 
   useEffect(() => {
-    publish.current = onViewportChange;
-  }, [onViewportChange]);
-
-  useEffect(() => {
-    const flush = () => {
-      frame.current = undefined;
-      const next = queued.current;
-      queued.current = undefined;
-      if (next) publish.current(next);
-    };
     const resetPan = () => {
       pan.current = undefined;
       setDragging(false);
@@ -172,17 +170,32 @@ export function AtlasCanvasViewport({
   const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
     if (isCanvasControl(event.target)) return;
     event.preventDefault();
-    schedule(
-      zoomCanvasAt(
-        current.current,
-        canvasPoint(event),
-        wheelZoomFactor(
-          event.deltaY,
-          event.deltaMode,
-          event.currentTarget.clientHeight,
-        ),
+    onInteractionStart?.();
+    if (gesture || pan.current) return;
+    // Wheel input commits synchronously: a later pointer/navigation command cannot
+    // be overwritten by a queued wheel frame from an earlier interaction.
+    const next = zoomCanvasAt(
+      current.current,
+      canvasPoint(event),
+      wheelZoomFactor(
+        event.deltaY,
+        event.deltaMode,
+        event.currentTarget.clientHeight,
       ),
+      zoomLimits,
     );
+    current.current = next;
+    publish.current(next);
+  };
+  const flushPending = () => {
+    if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+    frame.current = undefined;
+    const next = queued.current;
+    queued.current = undefined;
+    if (next) {
+      current.current = next;
+      publish.current(next);
+    }
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -238,6 +251,7 @@ export function AtlasCanvasViewport({
 
   const finishPointer = (event: PointerEvent<HTMLDivElement>) => {
     if (pan.current?.pointerId !== event.pointerId) return;
+    flushPending();
     if (!pan.current.moved) onCanvasDeselect?.();
     pan.current = undefined;
     setDragging(false);
@@ -246,6 +260,7 @@ export function AtlasCanvasViewport({
 
   const cancelPointer = (event: PointerEvent<HTMLDivElement>) => {
     if (pan.current?.pointerId !== event.pointerId) return;
+    flushPending();
     pan.current = undefined;
     setDragging(false);
     document.body.style.cursor = "";
@@ -255,15 +270,22 @@ export function AtlasCanvasViewport({
     <div
       ref={containerRef}
       data-canvas-viewport
+      data-studio-gesture={gesture || (dragging ? "pan" : undefined)}
+      data-camera-moving={animating || undefined}
       className="atlas-canvas-viewport relative h-full w-full select-none overflow-hidden"
       style={{
         background: "var(--atlas-canvas-bg, #0b1020)",
-        cursor: dragging
-          ? "grabbing"
-          : tool === "pan" || spaceHeld
-            ? "grab"
-            : undefined,
+        cursor:
+          dragging || gesture === "move" || gesture === "pan"
+            ? "grabbing"
+            : tool === "pan" || spaceHeld
+              ? "grab"
+              : undefined,
         touchAction: "none",
+      }}
+      onPointerDownCapture={() => {
+        flushPending();
+        onInteractionStart?.();
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -291,7 +313,10 @@ export function AtlasCanvasViewport({
         className="absolute inset-0 origin-top-left"
         style={{
           transform: `translate3d(${viewport.x}px, ${viewport.y}px, 0) scale(${viewport.k})`,
-          willChange: dragging ? "transform" : undefined,
+          willChange:
+            dragging || animating || gesture === "pan"
+              ? "transform"
+              : undefined,
         }}
       >
         {children}

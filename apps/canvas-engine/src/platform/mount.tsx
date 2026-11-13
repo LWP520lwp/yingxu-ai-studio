@@ -63,11 +63,14 @@ export function mountCanvas(init: PlatformInit, session: DocumentSession) {
                 parent.postMessage({ type: "frameflow:command-response", scopeId: init.scopeId, id: requestId, command: "flush", ok: false, result: { saved: false }, error: { message } }, window.location.origin);
             });
         }
-        if (command.command === "export") void import("../atlas-engine/workflows/project-export").then(async ({ exportAtlasProjects }) => {
+        if (command.command === "export") void (async () => {
+            commitEditor();
+            if (!capture()) throw new Error("画布尚未就绪，请等待加载完成后再导出");
+            const { exportAtlasProjects } = await import("../atlas-engine/workflows/project-export");
             const { useCanvasStore } = await import("../stores/canvas/use-canvas-store");
             const project = useCanvasStore.getState().openProject(init.project.id);
             if (project) await exportAtlasProjects([project], project.title);
-        }).catch((error) => notifyPlatformStatus(error instanceof Error ? error.message : "导出失败，请重试"));
+        })().catch((error) => notifyPlatformStatus(error instanceof Error ? error.message : "导出失败，请重试"));
         if (command.command === "upload") document.querySelector<HTMLInputElement>('input[type="file"]')?.click();
     };
     window.addEventListener("message", receiveCommand);

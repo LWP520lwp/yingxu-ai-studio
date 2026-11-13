@@ -69,6 +69,26 @@ describe("model plugin runtime", () => {
     expect(await rejection).toMatchObject({ name: "AbortError" });
   });
 
+  it("cancels scripts awaiting their own promises and discards late results", async () => {
+    const controller = new AbortController();
+    let complete: (value: string) => void = () => undefined;
+    const pending = runModelPlugin(
+      args("return new Promise(resolve => { params.capture(resolve); });", {
+        signal: controller.signal,
+        params: {
+          capture: (resolve: (value: string) => void) => {
+            complete = resolve;
+          },
+        },
+      }),
+    );
+    const rejection = pending.catch((error: unknown) => error);
+    controller.abort();
+    expect(await rejection).toMatchObject({ name: "AbortError" });
+    complete("late success");
+    expect(await rejection).toMatchObject({ name: "AbortError" });
+  });
+
   it("expires polling even when a provider request never resolves", async () => {
     vi.useFakeTimers();
     const pending = runModelPlugin(

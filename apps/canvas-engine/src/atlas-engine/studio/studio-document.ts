@@ -31,6 +31,7 @@ export type StudioSnapshot = {
   revision: number;
 };
 const finite = (n: number, fallback = 0) => (Number.isFinite(n) ? n : fallback);
+export const STUDIO_ZOOM_LIMITS = { minScale: 0.12, maxScale: 3 } as const;
 export const studioId = () => crypto.randomUUID();
 
 export function makeStudioNode(
@@ -151,17 +152,46 @@ export class StudioSession {
     edge = this.current.edge,
   ) {
     if (this.closed) return;
-    const ids = new Set(document.nodes.map((node) => node.id));
+    const sameNodes = document.nodes === this.current.document.nodes;
+    const ids =
+      sameNodes && selection === this.current.selection
+        ? null
+        : new Set(document.nodes.map((node) => node.id));
     this.current = {
       document,
-      selection: new Set([...selection].filter((id) => ids.has(id))),
-      edge: document.connections.some((item) => item.id === edge) ? edge : null,
+      selection: ids
+        ? new Set([...selection].filter((id) => ids.has(id)))
+        : selection,
+      edge:
+        document.connections === this.current.document.connections &&
+        edge === this.current.edge
+          ? edge
+          : document.connections.some((item) => item.id === edge)
+            ? edge
+            : null,
       undo: this.past.length > 0,
       redo: this.future.length > 0,
       revision: this.current.revision + 1,
     };
     for (const listener of this.listeners) listener();
   }
+  /** Camera frames cannot change graph validity or undo history. Keep this path O(1). */
+  moveViewport = (view: ViewportTransform) => {
+    if (this.closed) return;
+    const viewport = {
+      x: finite(view.x),
+      y: finite(view.y),
+      k: Math.max(0.12, Math.min(3, finite(view.k, 1))),
+    };
+    const before = this.read();
+    if (
+      viewport.x === before.viewport.x &&
+      viewport.y === before.viewport.y &&
+      viewport.k === before.viewport.k
+    )
+      return;
+    this.publish({ ...before, viewport });
+  };
   private remember(document: StudioDocument) {
     this.past = [...this.past.slice(-99), document];
     this.future = [];

@@ -36,22 +36,38 @@ type AppConfigFile = {
   };
 };
 
-export function exportAppConfig() {
-  const { config, webdav } = useConfigStore.getState();
-  const { sources, schedule } = usePromptSourceStore.getState();
+type PreferenceSnapshot = {
+  models: AiConfig;
+  synchronization: WebdavSyncConfig;
+  library: { sources: PromptSource[]; schedule: PromptSourceSchedule };
+};
+
+/** Encode a detached, portable snapshot without reading stores or exporting secrets. */
+export function serializeAppConfig(
+  snapshot: PreferenceSnapshot,
+  exportedAt = new Date().toISOString(),
+): string {
   const file: AppConfigFile = {
     app: PRODUCT_FILE_ID,
     version: CONFIG_FORMAT_VERSION,
-    exportedAt: new Date().toISOString(),
-    config: redactConfigCredentials(platformConfig(config)),
-    webdav: { ...webdav, password: "" },
-    promptSources: { sources, schedule },
+    exportedAt,
+    config: redactConfigCredentials(platformConfig(snapshot.models)),
+    webdav: { ...snapshot.synchronization, password: "" },
+    promptSources: snapshot.library,
   };
+  return JSON.stringify(file, null, 2);
+}
 
+export function exportAppConfig() {
+  const settings = useConfigStore.getState();
+  const library = usePromptSourceStore.getState();
+  const json = serializeAppConfig({
+    models: settings.config,
+    synchronization: settings.webdav,
+    library: { sources: library.sources, schedule: library.schedule },
+  });
   saveAs(
-    new Blob([JSON.stringify(file, null, 2)], {
-      type: "application/json;charset=utf-8",
-    }),
+    new Blob([json], { type: "application/json;charset=utf-8" }),
     CONFIG_DOWNLOAD_NAME,
   );
 }
@@ -79,7 +95,8 @@ async function readConfigFile(file: File): Promise<AppConfigFile> {
   try {
     if (file.size > MAX_CONFIG_BYTES) throw new Error("size");
     const value: unknown = JSON.parse(await file.text());
-    if (!isRecord(value) || !isSupportedFileId(value.app)) throw new Error("format");
+    if (!isRecord(value) || !isSupportedFileId(value.app))
+      throw new Error("format");
     if (
       value.version !== CONFIG_FORMAT_VERSION ||
       !isRecord(value.config) ||
@@ -126,12 +143,14 @@ function restoreWebdav(source: Record<string, unknown>): WebdavSyncConfig {
   const previous = useConfigStore.getState().webdav;
   const next: WebdavSyncConfig = { ...defaultWebdavSyncConfig, ...previous };
   for (const key of ["url", "username", "directory", "lastSyncedAt"] as const) {
-    if (typeof source[key] === "string") next[key] = (source[key] as string).slice(0, 2048);
+    if (typeof source[key] === "string")
+      next[key] = (source[key] as string).slice(0, 2048);
   }
   next.url = safeHttpUrl(next.url);
 
   // Passwords stay attached to their current destination and never arrive from an imported file.
-  if (next.url !== previous.url || next.username !== previous.username) next.password = "";
+  if (next.url !== previous.url || next.username !== previous.username)
+    next.password = "";
   return next;
 }
 
@@ -139,7 +158,10 @@ function restorePromptSources(values: unknown[]): PromptSource[] {
   const saved = values.filter(isRecord);
   const enabledById = new Map(
     saved
-      .filter((item) => typeof item.id === "string" && typeof item.enabled === "boolean")
+      .filter(
+        (item) =>
+          typeof item.id === "string" && typeof item.enabled === "boolean",
+      )
       .map((item) => [item.id as string, item.enabled as boolean]),
   );
   const restored = DEFAULT_PROMPT_SOURCES.map((source) => ({
@@ -183,7 +205,8 @@ function safeHttpUrl(value: string) {
   if (!candidate) return "";
   try {
     const url = new URL(candidate);
-    if (!/^https?:$/.test(url.protocol) || url.username || url.password) return "";
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password)
+      return "";
     return url.toString().replace(/\/$/, "");
   } catch {
     return "";
